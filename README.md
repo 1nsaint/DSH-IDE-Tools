@@ -23,15 +23,28 @@ Plugin authoring reference: [`plugins/PLUGIN_DEV.md`](plugins/PLUGIN_DEV.md).
 
 ## ProDesk reference install
 
-On the maintainer machine, plugin sources are developed in this repo and synced into the live Harness bind mount:
+This repo is a **git submodule** of [`Containers`](https://github.com/1nsaint/Containers) at `DSH-IDE-Tools/`.
+
+Harness bind-mounts plugin sources via:
+
+- Host symlink: `deepseek-harness/data/home/plugins` → `../../../DSH-IDE-Tools/plugins`
+- Docker override: `../DSH-IDE-Tools/plugins:/home/node/.dsh/plugins`
+
+Edit plugins here, commit/push to **this repo**, then in the parent repo bump the submodule pointer:
 
 ```bash
-./scripts/sync-to-harness.sh
+cd ~/Containers/DSH-IDE-Tools && git push
+cd ~/Containers && git add DSH-IDE-Tools && git commit -m "chore: bump DSH-IDE-Tools"
 ```
 
-Target default: `../deepseek-harness/data/home/plugins` (override with `HARNESS_PLUGINS_DIR`).
+On a fresh clone:
 
-After syncing, recreate `deepseek-harness` + `dsh-https` if host plugins changed, then hard-refresh the browser.
+```bash
+git clone --recurse-submodules https://github.com/1nsaint/Containers.git
+# or: git submodule update --init --recursive
+```
+
+The legacy `./scripts/sync-to-harness.sh` is only needed when this repo is **not** checked out as the submodule (e.g. standalone clone elsewhere).
 
 ## License
 
