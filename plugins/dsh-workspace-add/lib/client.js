@@ -150,6 +150,10 @@ window.__ModuleLoader__.load({
 			const openWorkspace = React.useCallback(async () => {
 				const targetPath = stateRef.current.selected?.path || stateRef.current.cwd;
 				if (!targetPath || stateRef.current.busy) return;
+				if (String(targetPath).replace(/\/+$/, "") === "/workspace") {
+					setError("Pick a subfolder — /workspace is the parent mount, not a workspace.");
+					return;
+				}
 				setBusy(true);
 				setError(null);
 				try {

@@ -41,6 +41,19 @@ Plugin authoring: [`plugins/PLUGIN_DEV.md`](plugins/PLUGIN_DEV.md).
 
 Stock Harness core is unmodified `@deepseek-ai/dsh` — all IDE behaviour comes from plugins + profile config.
 
+## SSH remote workspaces
+
+The `dsh-ssh-workspace` plugin adds Cursor-style remote folders:
+
+1. **Settings → SSH** — save hosts (user, hostname, identity file).
+2. **Add workspace → SSH** — browse remote directories over SFTP, register as `dssh://host/path`.
+3. Sidebar chips show **local** vs host label (ProDesk, Jetson, …).
+4. **Files / Code / Terminal** follow the remote path when that workspace is active.
+
+Requirements: SSH keys inside the Harness container (`~/.ssh` mount in compose). Agent tools on the remote host are not yet routed.
+
+Details: [`docs/FAQ.md`](docs/FAQ.md#ssh-remote-workspaces-cursor-comparison)
+
 ## ProDesk reference install
 
 This repo is a **git submodule** of `Containers` at `DSH-IDE-Tools/`. ProDesk bind-mounts `plugins/` in `deepseek-harness/docker-compose.yml` instead of copying into `./data`.

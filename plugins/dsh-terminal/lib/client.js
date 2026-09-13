@@ -259,10 +259,12 @@ window.__ModuleLoader__.load({
 							return;
 						}
 						termIdRef.current = res.termId;
-						const shell = shellBase(res.shell);
+						const shell = res.remote ? "ssh" : shellBase(res.shell);
 						statusRef.current?.({
 							phase: "ready",
-							meta: `${shell} · ${res.cwd || ""}`,
+							meta: res.remote
+								? `SSH · ${res.shell || res.hostId || "remote"} · ${res.cwd || ""}`
+								: `${shell} · ${res.cwd || ""}`,
 							shell,
 						});
 

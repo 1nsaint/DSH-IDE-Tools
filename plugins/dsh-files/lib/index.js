@@ -5,9 +5,11 @@
 // Independent of dsh-filelens (UI). Same containment rules:
 //   - guard fail-closed when root is supplied
 //   - write / remove REQUIRE an explicit root
+// Remote dssh:// paths are handled via dsh-ssh-workspace SFTP bridge.
 import path from "node:path";
 import { rename, rm } from "node:fs/promises";
 import { TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
+import * as ssh from "./ssh-delegate.js";
 
 export class FilesService extends TypertRemoteService {
 	constructor(ctx) {
@@ -156,13 +158,21 @@ export class FilesService extends TypertRemoteService {
 				if (typeof cwd === "string" && cwd) return { root: cwd };
 			} catch { /* ignore */ }
 		}
-		return { root: this.defaultRoot() };
+		const def = this.defaultRoot();
+		return { root: def };
 	}
 
 	async list(args) {
 		const a = args && typeof args === "object" ? args : {};
 		if (typeof a.path !== "string" || !a.path) {
 			return { ok: false, kind: "error", message: "missing path" };
+		}
+		if (ssh.pathIsRemote(a.path)) {
+			try {
+				return await ssh.remoteList(a);
+			} catch (err) {
+				return this.fail(err);
+			}
 		}
 		const root = typeof a.root === "string" && a.root ? a.root : null;
 		try {
@@ -179,6 +189,13 @@ export class FilesService extends TypertRemoteService {
 		const a = args && typeof args === "object" ? args : {};
 		if (typeof a.path !== "string" || !a.path) {
 			return { ok: false, kind: "error", message: "missing path" };
+		}
+		if (ssh.pathIsRemote(a.path)) {
+			try {
+				return await ssh.remoteStatEntry(a);
+			} catch (err) {
+				return this.fail(err);
+			}
 		}
 		const root = typeof a.root === "string" && a.root ? a.root : null;
 		try {
@@ -266,6 +283,13 @@ export class FilesService extends TypertRemoteService {
 		if (typeof a.path !== "string" || !a.path) {
 			return { ok: false, kind: "error", message: "missing path" };
 		}
+		if (ssh.pathIsRemote(a.path)) {
+			try {
+				return await ssh.remoteRead(a, this.MAX_PREVIEW);
+			} catch (err) {
+				return this.fail(err);
+			}
+		}
 		const root = typeof a.root === "string" && a.root ? a.root : null;
 		try {
 			const target = await this.fs.resolve(a.path);
@@ -292,6 +316,13 @@ export class FilesService extends TypertRemoteService {
 			return { ok: false, kind: "error", message: "missing path/text" };
 		}
 		const root = typeof a.root === "string" && a.root ? a.root : null;
+		if (ssh.pathIsRemote(a.path) || ssh.pathIsRemote(root)) {
+			try {
+				return await ssh.remoteWrite(a);
+			} catch (err) {
+				return this.fail(err);
+			}
+		}
 		if (!root) return { ok: false, kind: "error", message: "write requires an explicit root" };
 		try {
 			const target = await this.fs.resolve(a.path);
@@ -312,6 +343,14 @@ export class FilesService extends TypertRemoteService {
 			return { ok: false, kind: "error", message: "missing path" };
 		}
 		const root = typeof a.root === "string" && a.root ? a.root : null;
+		if (ssh.pathIsRemote(a.path)) {
+			try {
+				const st = await ssh.remoteStatEntry(a);
+				return await ssh.remoteRemoveEntry({ ...a, type: st.type });
+			} catch (err) {
+				return this.fail(err);
+			}
+		}
 		if (!root) return { ok: false, kind: "error", message: "remove requires an explicit root" };
 		try {
 			const target = await this.fs.resolve(a.path);
@@ -336,11 +375,18 @@ export class FilesService extends TypertRemoteService {
 			return { ok: false, kind: "error", message: "missing path/newName" };
 		}
 		const root = typeof a.root === "string" && a.root ? a.root : null;
-		if (!root) return { ok: false, kind: "error", message: "rename requires an explicit root" };
 		const newName = a.newName.trim();
 		if (newName.includes("/") || newName.includes("\\") || newName === "." || newName === "..") {
 			return { ok: false, kind: "error", message: "invalid name" };
 		}
+		if (ssh.pathIsRemote(a.path)) {
+			try {
+				return await ssh.remoteRenameEntry(a);
+			} catch (err) {
+				return this.fail(err);
+			}
+		}
+		if (!root) return { ok: false, kind: "error", message: "rename requires an explicit root" };
 		try {
 			const target = await this.fs.resolve(a.path);
 			await this.guard(root, target);

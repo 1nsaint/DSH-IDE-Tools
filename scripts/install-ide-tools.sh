@@ -131,6 +131,7 @@ install_plugin_deps() {
 
 install_plugin_deps "$PLUGINS_DIR/dsh-database" npm
 install_plugin_deps "$PLUGINS_DIR/dsh-files" npm
+install_plugin_deps "$PLUGINS_DIR/dsh-ssh-workspace" npm
 install_plugin_deps "$PLUGINS_DIR/dsh-web-search-router" npm
 
 if [ "$SKIP_AUTOMATION" -eq 0 ]; then

@@ -27,6 +27,9 @@
       name: dsh-sidebar-files
     - id: dsh-workspace-add
       name: dsh-workspace-add
+      disabled: true
+    - id: dsh-ssh-workspace
+      name: dsh-ssh-workspace
     - id: dsh-workspace-sync
       name: dsh-workspace-sync
     - id: dsh-workspace-delete

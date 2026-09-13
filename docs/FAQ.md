@@ -63,7 +63,40 @@ Mount `./data` → `/home/node/.dsh` and `./workspace` → `/workspace`. Chats, 
 
 ## What about automation / cron?
 
-The default profile includes `dsh-automation` and `dsh-cron` bundles. A separate worker container is optional for scheduled jobs. Pass `--skip-automation` to the install script if you only want the web UI plugins.
+The default profile includes `dsh-automation` and `dsh-cron` **plugins** inside the Web UI (same as Git/Terminal — no container per plugin).
+
+Scheduled jobs that should keep running with the browser closed need a **second compose service** (`automation` worker). Enabling a plugin in Settings does **not** start that container — it must be in `docker-compose`. The redistributable `deploy/docker-compose.example.yml` includes it.
+
+Pass `--skip-automation` to the install script only if you do not want those plugin packages installed at all.
+
+## Why an HTTPS sidecar if I already have NPM / Caddy?
+
+Plain `http://<lan-ip>:3080` needs no sidecar. For **HTTPS** (LAN `:3443` or a public hostname), the sidecar sits in Harness’s network namespace, terminates TLS, and rewrites Host/Origin to loopback so privileged Settings APIs work. Your reverse proxy (if any) forwards to `:3443`. Always recreate **harness + https** together.
+
+## SSH remote workspaces (Cursor comparison)
+
+**Cursor / VS Code Remote SSH** runs a small server on the remote machine; file tree, terminal, and tools operate on that host. Your browser never touches the remote disk — the IDE backend does.
+
+**DSH IDE Tools** does the same from the Harness container (Docker on ProDesk):
+
+| Step | Behaviour |
+|------|-----------|
+| Save hosts | **Settings → SSH** (stored in `$DSH_HOME/plugins-data/dsh-ssh-workspace.json`) |
+| Open remote folder | **Add workspace → SSH** → SFTP browse → workspace path `dssh://hostId/remote/path` |
+| Sidebar | Chip per workspace: `local` or host label |
+| Files / Code | SFTP via `dsh-files` when path is `dssh://…` |
+| Terminal | SSH shell on the remote host when active workspace cwd is remote |
+
+### Security
+
+- Mount **only** the SSH keys Harness needs (`~/.ssh:ro` in compose). Do not mount entire home dirs unless you accept that risk.
+- Keys must allow login to each saved host (`BatchMode` — no password prompts in the UI).
+- Remote workspaces do **not** yet route the **agent** shell/file tools to SSH; keep preset **workspace-write** so local agent actions still prompt.
+- Treat saved hostnames like secrets in shared `$DSH_HOME` backups.
+
+### vs `dsh-workspace-add`
+
+The older `dsh-workspace-add` plugin (local picker only) is **disabled** when `dsh-ssh-workspace` is enabled — the new dialog covers **Local | SSH**.
 
 ## ProDesk vs this repo
 

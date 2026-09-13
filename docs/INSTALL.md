@@ -11,10 +11,16 @@ cp .env.example .env
 # Edit .env — set DOCKER_GID=$(getent group docker | cut -d: -f3)
 
 ../scripts/install-ide-tools.sh --dsh-home ./data
+# Self-signed TLS for the HTTPS sidecar (once):
+( cd certs && openssl req -x509 -nodes -newkey rsa:2048 -days 825 \
+    -keyout key.pem -out cert.pem -subj "/CN=localhost" \
+    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" )
 docker compose -f docker-compose.example.yml up -d --build
 ```
 
-Open **http://127.0.0.1:3080** → **Settings → Models** → configure your LLM.
+Open **http://127.0.0.1:3080** (or **https://127.0.0.1:3443**) → **Settings → Models** → configure your LLM.
+
+Compose starts three services: Web UI, HTTPS sidecar, and Automation worker. From another PC on the LAN use `http://<host-lan-ip>:3080`. After recreating the UI container, always recreate **harness and https** together.
 
 After plugin updates, re-run the install script and recreate the container:
 
@@ -67,6 +73,7 @@ cp -a DSH-IDE-Tools/plugins/* "$DSH_HOME/plugins/"
 | **Database** tab | Same socket + `npm install --omit=dev` in `plugins/dsh-database` |
 | **Automation / Cron** | `pnpm install` in `plugins/dsh-automation` and `plugins/dsh-cron` |
 | **Web search router** | `npm install --omit=dev` in `plugins/dsh-web-search-router` |
+| **SSH remote workspaces** | `~/.ssh` keys mounted in compose + `npm install --omit=dev` in `plugins/dsh-ssh-workspace` |
 | **Public HTTPS hostname** | Your reverse proxy (NPM, Caddy, …) — not bundled here |
 
 The install script handles profile wiring and dependency installs automatically.

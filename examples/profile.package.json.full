@@ -27,6 +27,7 @@
     "dsh-workspace-accent": "link:__DSH_LINK_PREFIX__/plugins/dsh-workspace-accent",
     "dsh-sidebar-files": "link:__DSH_LINK_PREFIX__/plugins/dsh-sidebar-files",
     "dsh-workspace-add": "link:__DSH_LINK_PREFIX__/plugins/dsh-workspace-add",
+    "dsh-ssh-workspace": "link:__DSH_LINK_PREFIX__/plugins/dsh-ssh-workspace",
     "dsh-workspace-sync": "link:__DSH_LINK_PREFIX__/plugins/dsh-workspace-sync",
     "dsh-workspace-delete": "link:__DSH_LINK_PREFIX__/plugins/dsh-workspace-delete",
     "dsh-git": "link:__DSH_LINK_PREFIX__/plugins/dsh-git",

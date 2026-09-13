@@ -7,6 +7,8 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDsshPath, openSshShell } from "../../dsh-ssh-workspace/lib/ssh.js";
+import { parseDsshPath } from "../../dsh-ssh-workspace/lib/config.js";
 
 const name = "dsh-terminal";
 const RPC_CHANNEL = "/terminal";
@@ -57,20 +59,27 @@ function resolveTerminalCwd(ctx, sessionId, workspaceCwd) {
 			const sessions = ctx.get?.("sessions");
 			const session = sessions?.get?.(sessionId.trim());
 			const cwd = session?.header?.cwd;
-			if (typeof cwd === "string" && cwd.trim()) return cwd;
+			if (typeof cwd === "string" && cwd.trim()) {
+				const trimmed = cwd.trim();
+				if (isDsshPath(trimmed)) return trimmed;
+				const target = resolve(trimmed);
+				if (existsSync(target)) return target;
+			}
 		} catch {
 			/* ignore */
 		}
 	}
 	if (typeof workspaceCwd === "string" && workspaceCwd.trim()) {
-		const target = resolve(workspaceCwd.trim());
+		const trimmed = workspaceCwd.trim();
+		if (isDsshPath(trimmed)) return trimmed;
+		const target = resolve(trimmed);
 		if (existsSync(target)) return target;
 	}
 	const fallback = resolve(process.env.HOME || "/workspace");
 	return existsSync(fallback) ? fallback : "/workspace";
 }
 
-/** @type {Map<string, { pty: any, buf: string, sessionId: string, closed: boolean }>} */
+/** @type {Map<string, { pty?: any, stream?: any, buf: string, sessionId: string, closed: boolean, remote?: boolean }>} */
 const terms = new Map();
 
 const MAX_BUF = 512 * 1024;
@@ -96,6 +105,36 @@ function registerRpc(ctx) {
 						const cwd = resolveTerminalCwd(ctx, sessionId, payload?.workspaceCwd);
 						const cols = Math.min(Math.max(Number(payload?.cols) || 80, 20), 300);
 						const rows = Math.min(Math.max(Number(payload?.rows) || 24, 5), 120);
+						if (isDsshPath(cwd)) {
+							const parsed = parseDsshPath(cwd);
+							if (!parsed) throw new Error("invalid remote workspace path");
+							const { stream, cwd: remoteCwd, host } = await openSshShell(
+								parsed.hostId,
+								parsed.remotePath,
+								cols,
+								rows,
+							);
+							const termId = randomUUID();
+							const entry = { stream, buf: "", sessionId, closed: false, remote: true };
+							stream.on("data", (data) => {
+								entry.buf += data.toString("utf8");
+								if (entry.buf.length > MAX_BUF) {
+									entry.buf = entry.buf.slice(entry.buf.length - MAX_BUF);
+								}
+							});
+							stream.on("close", () => {
+								entry.closed = true;
+								entry.buf += "\r\n[ssh session closed]\r\n";
+							});
+							terms.set(termId, entry);
+							return ok({
+								termId,
+								cwd: remoteCwd || parsed.remotePath,
+								shell: `ssh:${host?.label || parsed.hostId}`,
+								remote: true,
+								hostId: parsed.hostId,
+							});
+						}
 						const shell = process.env.DSH_TERMINAL_SHELL || process.env.SHELL || "/bin/bash";
 						const termId = randomUUID();
 						const proc = pty.spawn(shell, ["-l"], {
@@ -132,7 +171,8 @@ function registerRpc(ctx) {
 						const entry = terms.get(termId);
 						if (!entry || entry.closed) throw new Error("terminal closed");
 						if (typeof data !== "string") throw new Error("data required");
-						entry.pty.write(data);
+						if (entry.stream) entry.stream.write(data);
+						else entry.pty.write(data);
 						return ok({ written: data.length });
 					}
 					case "read": {
@@ -149,7 +189,11 @@ function registerRpc(ctx) {
 						if (!entry || entry.closed) throw new Error("terminal closed");
 						const cols = Math.min(Math.max(Number(payload?.cols) || 80, 20), 300);
 						const rows = Math.min(Math.max(Number(payload?.rows) || 24, 5), 120);
-						entry.pty.resize(cols, rows);
+						if (entry.stream && typeof entry.stream.setWindow === "function") {
+							entry.stream.setWindow(rows, cols, 0, 0, 0, 0);
+						} else {
+							entry.pty.resize(cols, rows);
+						}
 						return ok({ cols, rows });
 					}
 					case "close": {
@@ -157,7 +201,8 @@ function registerRpc(ctx) {
 						const entry = terms.get(termId);
 						if (entry) {
 							try {
-								entry.pty.kill();
+								if (entry.stream) entry.stream.close();
+								else entry.pty.kill();
 							} catch {
 								/* ignore */
 							}
@@ -185,7 +230,8 @@ function apply(ctx) {
 					dispose();
 					for (const [id, entry] of terms) {
 						try {
-							entry.pty.kill();
+							if (entry.stream) entry.stream.close();
+							else entry.pty.kill();
 						} catch {
 							/* ignore */
 						}

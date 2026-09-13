@@ -31,6 +31,10 @@ const ROOT = process.env.DSH_WORKSPACE_ROOT || "/workspace";
 const INTERVAL_MS = 15_000;
 const WATCH_DEBOUNCE_MS = 750;
 
+function isWorkspaceMountRoot(dir, root = ROOT) {
+	return path.resolve(String(dir || "")) === path.resolve(root);
+}
+
 /** Top-level basenames that are plugin library roots, not user workspaces. */
 const NEVER_REGISTER = new Set(
 	String(process.env.DSH_WORKSPACE_SYNC_SKIP || "repos")
@@ -88,10 +92,22 @@ async function pruneStale(registry, root = ROOT) {
 	let removed = 0;
 	for (const entity of entities) {
 		const p = path.resolve(String(entity.path || ""));
-		if (path.dirname(p) !== rootR) continue;
-		const base = path.basename(p);
 		const id = entityId(entity);
 		if (!id || typeof registry.delete !== "function") continue;
+
+		// The bind mount root (/workspace) is the parent of all workspaces, not a workspace itself.
+		if (isWorkspaceMountRoot(p, rootR)) {
+			try {
+				await registry.delete(id);
+				removed += 1;
+			} catch (err) {
+				console.warn(`[${name}] prune mount root failed for ${p}:`, err instanceof Error ? err.message : err);
+			}
+			continue;
+		}
+
+		if (path.dirname(p) !== rootR) continue;
+		const base = path.basename(p);
 
 		if (NEVER_REGISTER.has(base)) {
 			try {
@@ -216,4 +232,4 @@ function apply(ctx) {
 	});
 }
 
-export { apply, name, syncOnce, listTopLevelDirs, NEVER_REGISTER, isEffectivelyEmpty };
+export { apply, name, syncOnce, listTopLevelDirs, NEVER_REGISTER, isEffectivelyEmpty, isWorkspaceMountRoot };

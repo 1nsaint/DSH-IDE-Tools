@@ -1,3 +1,6 @@
 data/
 workspace/
 .env
+certs/*.pem
+certs/*.key
+!certs/README.md
