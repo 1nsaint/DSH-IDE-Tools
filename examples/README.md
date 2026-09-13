@@ -1,23 +1,13 @@
 # Example profile wiring
 
-Copy the snippets you need into your Harness web profile under `$DSH_HOME/profiles/web/`.
+The install script uses the **full** files:
 
-## `cordis.patch.yml` (insert block)
+- [`cordis.patch.full.yml`](cordis.patch.full.yml) → `$DSH_HOME/profiles/web/cordis.patch.yml`
+- [`profile.package.json.full`](profile.package.json.full) → `$DSH_HOME/profiles/web/package.json` (`__DSH_LINK_PREFIX__` → `/home/node/.dsh` by default)
 
-See `examples/cordis.patch.example.yml` for the full list used on the reference install.
+Smaller snippets for manual merges:
 
-## `package.json` dependencies
+- [`cordis.patch.example.yml`](cordis.patch.example.yml) — partial insert list
+- [`profile.package.json.example`](profile.package.json.example) — sample link deps
 
-Each enabled plugin needs a link dependency, e.g.:
-
-```json
-"dsh-browser": "link:/home/node/.dsh/plugins/dsh-browser"
-```
-
-Run inside the profile directory after editing:
-
-```bash
-cd "$DSH_HOME/profiles/web" && pnpm install
-```
-
-Then recreate Harness (and HTTPS sidecar if used) and hard-refresh the browser.
+After any manual edit, run `pnpm install` in the profile directory and restart Harness.

@@ -1,46 +1,82 @@
 # Install
 
-These plugins target [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (Cordis/dsh web profile).
+These plugins target [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (Cordis web profile).
 
-## 1. Copy plugins into `$DSH_HOME`
+## Quick install (Docker — recommended)
 
 ```bash
 git clone https://github.com/1nsaint/DSH-IDE-Tools.git
+cd DSH-IDE-Tools/deploy
+cp .env.example .env
+# Edit .env — set DOCKER_GID=$(getent group docker | cut -d: -f3)
+
+../scripts/install-ide-tools.sh --dsh-home ./data
+docker compose -f docker-compose.example.yml up -d --build
+```
+
+Open **http://127.0.0.1:3080** → **Settings → Models** → configure your LLM.
+
+After plugin updates, re-run the install script and recreate the container:
+
+```bash
+../scripts/install-ide-tools.sh --dsh-home ./data
+docker compose -f docker-compose.example.yml up -d --force-recreate
+```
+
+See [`docs/FAQ.md`](FAQ.md) for Cordis, pnpm, Docker socket security, and data volumes.
+
+## Quick install (existing Harness)
+
+If you already run stock Harness (native or your own Docker):
+
+```bash
+git clone https://github.com/1nsaint/DSH-IDE-Tools.git
+cd DSH-IDE-Tools
+./scripts/install-ide-tools.sh --native-links --dsh-home "$HOME/.dsh"
+# Restart Harness, hard-refresh the browser
+```
+
+Inside an existing container (paths already use `/home/node/.dsh`):
+
+```bash
+docker exec -it YOUR_HARNESS_CONTAINER sh -c \
+  'cd /path/to/DSH-IDE-Tools && DSH_HOME=/home/node/.dsh ./scripts/install-ide-tools.sh'
+docker restart YOUR_HARNESS_CONTAINER
+```
+
+## Manual install
+
+### 1. Copy plugins into `$DSH_HOME`
+
+```bash
 cp -a DSH-IDE-Tools/plugins/* "$DSH_HOME/plugins/"
 ```
 
-Or symlink (recommended for development):
+### 2. Wire the web profile
 
-```bash
-ln -sfn /path/to/DSH-IDE-Tools/plugins "$DSH_HOME/plugins"
-```
+1. Copy [`examples/cordis.patch.full.yml`](../examples/cordis.patch.full.yml) → `$DSH_HOME/profiles/web/cordis.patch.yml`
+2. Copy [`examples/profile.package.json.full`](../examples/profile.package.json.full) → `$DSH_HOME/profiles/web/package.json` (replace `__DSH_LINK_PREFIX__` with `/home/node/.dsh` or your `$DSH_HOME` path)
+3. Run `pnpm install` in the profile directory
+4. Restart Harness and hard-refresh the browser
 
-Inside Docker, `$DSH_HOME` is usually `/home/node/.dsh` (bind-mounted from your host).
-
-## 2. Wire the web profile
-
-1. Add `link:` dependencies in `$DSH_HOME/profiles/web/package.json` (see `examples/profile.package.json.example`).
-2. Add plugin rows to `cordis.patch.yml` (see `examples/cordis.patch.example.yml`).
-3. Run `pnpm install` in the profile directory.
-4. Recreate Harness (+ HTTPS sidecar if you use one) and hard-refresh the browser.
-
-## 3. Optional capabilities
+## Optional capabilities
 
 | Feature | Requirement |
 | --- | --- |
-| **Containers** tab | Docker CLI + socket reachable from the Harness process |
-| **Database** tab | `npm install --omit=dev` in `plugins/dsh-database` (needs `pg`) |
+| **Containers** tab | Docker socket in compose + `DOCKER_GID` in `.env` |
+| **Database** tab | Same socket + `npm install --omit=dev` in `plugins/dsh-database` |
 | **Automation / Cron** | `pnpm install` in `plugins/dsh-automation` and `plugins/dsh-cron` |
 | **Web search router** | `npm install --omit=dev` in `plugins/dsh-web-search-router` |
-| **Remote Settings** | Auth in front of the public hostname; see `dsh-settings-polish` notes |
+| **Public HTTPS hostname** | Your reverse proxy (NPM, Caddy, …) — not bundled here |
 
-After installing plugin dependencies on the host, run `./scripts/sync-to-harness.sh` (node_modules are excluded from git but stay on disk when present).
+The install script handles profile wiring and dependency installs automatically.
 
 ## Development notes
 
-See `plugins/PLUGIN_DEV.md` for inject rules, deploy habit, and debugging.
+See [`plugins/PLUGIN_DEV.md`](../plugins/PLUGIN_DEV.md) for inject rules, deploy habit, and debugging.
 
 ## Security
 
 - Do not commit API keys, PATs, or `settings.yaml` with live credentials.
 - Mounting the Docker socket grants full engine control — treat as privileged.
+- Keep agent preset **workspace-write** so shell/Docker actions prompt for approval.

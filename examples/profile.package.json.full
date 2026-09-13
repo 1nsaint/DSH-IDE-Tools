@@ -1,0 +1,47 @@
+{
+  "name": "dsh-profile-web",
+  "private": true,
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "dsh-automation",
+        "dsh-cron"
+      ]
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-typert-protocol": "0.1.1-rc.2",
+    "dsh-automation": "link:__DSH_LINK_PREFIX__/plugins/dsh-automation",
+    "dsh-cron": "link:__DSH_LINK_PREFIX__/plugins/dsh-cron",
+    "dsh-notify": "link:__DSH_LINK_PREFIX__/plugins/dsh-notify",
+    "dsh-jetson-metrics": "link:__DSH_LINK_PREFIX__/plugins/dsh-jetson-metrics",
+    "dsh-ai-metrics": "link:__DSH_LINK_PREFIX__/plugins/dsh-ai-metrics",
+    "dsh-image-upload": "link:__DSH_LINK_PREFIX__/plugins/dsh-image-upload",
+    "dsh-archive": "link:__DSH_LINK_PREFIX__/plugins/dsh-archive",
+    "dsh-session-move": "link:__DSH_LINK_PREFIX__/plugins/dsh-session-move",
+    "dsh-files": "link:__DSH_LINK_PREFIX__/plugins/dsh-files",
+    "dsh-code-tab": "link:__DSH_LINK_PREFIX__/plugins/dsh-code-tab",
+    "dsh-web-search-router": "link:__DSH_LINK_PREFIX__/plugins/dsh-web-search-router",
+    "dsh-workspace-accent": "link:__DSH_LINK_PREFIX__/plugins/dsh-workspace-accent",
+    "dsh-sidebar-files": "link:__DSH_LINK_PREFIX__/plugins/dsh-sidebar-files",
+    "dsh-workspace-add": "link:__DSH_LINK_PREFIX__/plugins/dsh-workspace-add",
+    "dsh-workspace-sync": "link:__DSH_LINK_PREFIX__/plugins/dsh-workspace-sync",
+    "dsh-workspace-delete": "link:__DSH_LINK_PREFIX__/plugins/dsh-workspace-delete",
+    "dsh-git": "link:__DSH_LINK_PREFIX__/plugins/dsh-git",
+    "dsh-agent-review": "link:__DSH_LINK_PREFIX__/plugins/dsh-agent-review",
+    "dsh-containers": "link:__DSH_LINK_PREFIX__/plugins/dsh-containers",
+    "dsh-testenv": "link:__DSH_LINK_PREFIX__/plugins/dsh-testenv",
+    "dsh-terminal": "link:__DSH_LINK_PREFIX__/plugins/dsh-terminal",
+    "dsh-database": "link:__DSH_LINK_PREFIX__/plugins/dsh-database",
+    "dsh-browser": "link:__DSH_LINK_PREFIX__/plugins/dsh-browser",
+    "dsh-hero-tools": "link:__DSH_LINK_PREFIX__/plugins/dsh-hero-tools",
+    "dsh-session-tabs": "link:__DSH_LINK_PREFIX__/plugins/dsh-session-tabs",
+    "dsh-settings-polish": "link:__DSH_LINK_PREFIX__/plugins/dsh-settings-polish",
+    "dsh-plugin-list-filter": "link:__DSH_LINK_PREFIX__/plugins/dsh-plugin-list-filter",
+    "dsh-ui-polish": "link:__DSH_LINK_PREFIX__/plugins/dsh-ui-polish",
+    "dsh-runtime-clock": "link:__DSH_LINK_PREFIX__/plugins/dsh-runtime-clock",
+    "dsh-split-view": "link:__DSH_LINK_PREFIX__/plugins/dsh-split-view"
+  }
+}

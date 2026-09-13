@@ -4,47 +4,51 @@ Collection of plugins for [DeepSeek Harness](https://github.com/deepseek-ai/deep
 
 ## Quick start
 
-1. Clone this repo and copy or symlink `plugins/` into `$DSH_HOME/plugins/`.
-2. Wire your web profile (`package.json` + `cordis.patch.yml`) — see [`docs/INSTALL.md`](docs/INSTALL.md) and [`examples/`](examples/).
-3. Run `pnpm install` in the profile, recreate Harness, hard-refresh.
+```bash
+git clone https://github.com/1nsaint/DSH-IDE-Tools.git
+cd DSH-IDE-Tools/deploy
+cp .env.example .env   # set DOCKER_GID
+../scripts/install-ide-tools.sh --dsh-home ./data
+docker compose -f docker-compose.example.yml up -d --build
+```
+
+Open **http://127.0.0.1:3080** → **Settings → Models** → add your LLM.
+
+Full details: [`docs/INSTALL.md`](docs/INSTALL.md) · [`docs/FAQ.md`](docs/FAQ.md)
 
 ## Layout
 
 ```text
 DSH-IDE-Tools/
-  plugins/           # Cordis plugin packages (dsh-*)
-  docs/              # Install & ops notes
-  examples/          # Profile wiring snippets
-  CREDITS.md         # Third-party MIT plugins
-  LICENSE            # MIT (first-party)
+  plugins/                         # Cordis plugin packages (dsh-*)
+  scripts/install-ide-tools.sh     # Wire plugins into stock Harness
+  scripts/sync-to-harness.sh         # ProDesk maintainer sync only
+  deploy/docker-compose.example.yml  # Stock dsh + data volumes + Docker socket
+  docs/                              # Install & FAQ
+  examples/                          # Profile wiring (used by install script)
+  CREDITS.md
+  LICENSE
 ```
 
-Plugin authoring reference: [`plugins/PLUGIN_DEV.md`](plugins/PLUGIN_DEV.md).
+Plugin authoring: [`plugins/PLUGIN_DEV.md`](plugins/PLUGIN_DEV.md).
+
+## Install paths
+
+| Audience | What to use |
+|----------|-------------|
+| **New users / friends** | `install-ide-tools.sh` + `deploy/docker-compose.example.yml` |
+| **ProDesk maintainer** | Git submodule in [`Containers`](https://github.com/1nsaint/Containers) + `sync-to-harness.sh` |
+
+Stock Harness core is unmodified `@deepseek-ai/dsh` — all IDE behaviour comes from plugins + profile config.
 
 ## ProDesk reference install
 
-This repo is a **git submodule** of [`Containers`](https://github.com/1nsaint/Containers) at `DSH-IDE-Tools/`.
-
-Harness bind-mounts plugin sources via:
-
-- Host symlink: `deepseek-harness/data/home/plugins` → `../../../DSH-IDE-Tools/plugins`
-- Docker override: `../DSH-IDE-Tools/plugins:/home/node/.dsh/plugins`
-
-Edit plugins here, commit/push to **this repo**, then in the parent repo bump the submodule pointer:
+This repo is a **git submodule** of `Containers` at `DSH-IDE-Tools/`. ProDesk bind-mounts `plugins/` in `deepseek-harness/docker-compose.yml` instead of copying into `./data`.
 
 ```bash
 cd ~/Containers/DSH-IDE-Tools && git push
 cd ~/Containers && git add DSH-IDE-Tools && git commit -m "chore: bump DSH-IDE-Tools"
 ```
-
-On a fresh clone:
-
-```bash
-git clone --recurse-submodules https://github.com/1nsaint/Containers.git
-# or: git submodule update --init --recursive
-```
-
-The legacy `./scripts/sync-to-harness.sh` is only needed when this repo is **not** checked out as the submodule (e.g. standalone clone elsewhere).
 
 ## License
 

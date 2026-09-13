@@ -1,0 +1,61 @@
+# Stock DeepSeek Harness + DSH IDE Tools (plugins installed into ./data via install script).
+#
+# Quick start:
+#   cp .env.example .env    # set DOCKER_GID
+#   ../scripts/install-ide-tools.sh --dsh-home ./data
+#   docker compose -f docker-compose.example.yml up -d --build
+#   open http://127.0.0.1:3080 → Settings → Models
+#
+# Security: Docker socket mount grants full host Docker control. Remove it if you
+# do not need Containers/Database tabs. Keep agent preset workspace-write.
+
+services:
+  harness:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DSH_VERSION: ${DSH_VERSION:-0.1.1-rc.2}
+    image: dsh-ide-tools-harness:local
+    container_name: dsh-ide-tools
+    restart: unless-stopped
+    ports:
+      - "${DSH_PORT:-3080}:3080"
+    command:
+      - --profile
+      - web
+      - --patch
+      - /opt/dsh-ide-tools/web.cordis.patch.yml
+      - --no-open
+    environment:
+      DSH_TELEMETRY_DISABLED: "1"
+      HOME: /workspace
+      DOCKER_HOST: unix:///var/run/docker.sock
+      # Optional LLM defaults (otherwise use Settings → Models after first boot):
+      # OPENAI_API_BASE_URL: ${OPENAI_API_BASE_URL}
+      # OPENAI_API_KEY: ${OPENAI_API_KEY}
+    group_add:
+      - "${DOCKER_GID:-983}"
+    volumes:
+      - ./data:/home/node/.dsh
+      - ./workspace:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=512m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3080/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      start_period: 45s
+      retries: 5
