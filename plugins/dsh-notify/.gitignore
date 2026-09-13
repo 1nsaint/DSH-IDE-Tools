@@ -1,0 +1,8 @@
+# Dependencies — node_modules here are machine-specific junctions into a local dsh install,
+# never commit them. Recreate on each machine (see README "其他设备能用吗？").
+node_modules/
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.log

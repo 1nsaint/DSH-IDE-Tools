@@ -1,0 +1,50 @@
+{
+
+  "name": "dsh-session-tabs",
+
+  "version": "0.3.0",
+
+  "description": "Deprecated stub — tab chrome lives in dsh-hero-tools.",
+
+  "type": "module",
+
+  "main": "lib/index.js",
+
+  "exports": {
+
+    ".": { "default": "./lib/index.js" },
+
+    "./client": { "default": "./lib/client.js" },
+
+    "./package.json": "./package.json"
+
+  },
+
+  "dsh": {
+
+    "client": {
+
+      "platform": "web",
+
+      "inject": [
+
+        "@deepseek-ai/dsh-client-ui-renderer",
+
+        "@deepseek-ai/dsh-client-ui-slots"
+
+      ]
+
+    }
+
+  },
+
+  "peerDependencies": {
+
+    "@deepseek-ai/cordis": "^4.0.1"
+
+  },
+
+  "license": "MIT"
+
+}
+

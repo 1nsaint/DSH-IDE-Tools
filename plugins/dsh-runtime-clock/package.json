@@ -1,0 +1,16 @@
+{
+  "name": "dsh-runtime-clock",
+  "version": "0.1.0",
+  "description": "Inject current local date/time into agent runtime context (hour-bucketed; not every prompt).",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": { "default": "./lib/index.js" },
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-system-prompt": ">=0.1.1-rc.2 <0.2.0"
+  },
+  "license": "MIT"
+}

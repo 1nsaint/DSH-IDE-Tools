@@ -1,0 +1,37 @@
+# Dependencies / build
+node_modules/
+.pnpm-store/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Secrets & local runtime (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+credentials.json
+secrets.json
+plugins-data/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+*.code-workspace
+
+# Harness runtime data (if copied by mistake)
+data/home/sessions/
+data/home/storages/
+data/home/settings.yaml
+data/certs/
+
+# Plugin-local test artifacts
+*.log
+.npmrc

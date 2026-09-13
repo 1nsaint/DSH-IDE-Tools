@@ -1,0 +1,12 @@
+{
+  "comment": "Add selected entries to profiles/web/package.json dependencies",
+  "dsh-browser": "link:/home/node/.dsh/plugins/dsh-browser",
+  "dsh-code-tab": "link:/home/node/.dsh/plugins/dsh-code-tab",
+  "dsh-containers": "link:/home/node/.dsh/plugins/dsh-containers",
+  "dsh-database": "link:/home/node/.dsh/plugins/dsh-database",
+  "dsh-git": "link:/home/node/.dsh/plugins/dsh-git",
+  "dsh-terminal": "link:/home/node/.dsh/plugins/dsh-terminal",
+  "dsh-files": "link:/home/node/.dsh/plugins/dsh-files",
+  "dsh-sidebar-files": "link:/home/node/.dsh/plugins/dsh-sidebar-files",
+  "dsh-browser-note": "Copy only the plugins you enable; run pnpm install in the profile dir after edits."
+}
