@@ -23,7 +23,15 @@ Plugin authoring reference: [`plugins/PLUGIN_DEV.md`](plugins/PLUGIN_DEV.md).
 
 ## ProDesk reference install
 
-On the maintainer machine, `deepseek-harness/data/home/plugins` is a symlink to this repo’s `plugins/` folder so live edits deploy via the existing Docker bind mount.
+On the maintainer machine, plugin sources are developed in this repo and synced into the live Harness bind mount:
+
+```bash
+./scripts/sync-to-harness.sh
+```
+
+Target default: `../deepseek-harness/data/home/plugins` (override with `HARNESS_PLUGINS_DIR`).
+
+After syncing, recreate `deepseek-harness` + `dsh-https` if host plugins changed, then hard-refresh the browser.
 
 ## License
 

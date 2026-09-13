@@ -29,9 +29,12 @@ Inside Docker, `$DSH_HOME` is usually `/home/node/.dsh` (bind-mounted from your 
 | Feature | Requirement |
 | --- | --- |
 | **Containers** tab | Docker CLI + socket reachable from the Harness process |
-| **Database** tab | Network reachability from Harness to your DB URLs |
-| **Cron / automation** | `dsh-automation` worker container/process |
+| **Database** tab | `npm install --omit=dev` in `plugins/dsh-database` (needs `pg`) |
+| **Automation / Cron** | `pnpm install` in `plugins/dsh-automation` and `plugins/dsh-cron` |
+| **Web search router** | `npm install --omit=dev` in `plugins/dsh-web-search-router` |
 | **Remote Settings** | Auth in front of the public hostname; see `dsh-settings-polish` notes |
+
+After installing plugin dependencies on the host, run `./scripts/sync-to-harness.sh` (node_modules are excluded from git but stay on disk when present).
 
 ## Development notes
 
