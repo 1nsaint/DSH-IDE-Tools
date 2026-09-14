@@ -5,6 +5,12 @@ window.__ModuleLoader__.load({
 	factory: (require) => {
 		const React = require("react");
 		const ReactDOM = require("react-dom");
+		let ReactDOMClient = null;
+		try {
+			ReactDOMClient = require("react-dom/client");
+		} catch {
+			ReactDOMClient = null;
+		}
 		const PLUGIN = "dsh-hero-tools";
 		const OPEN_EVENT = "dsh-hero-open-tool";
 		const CLOSE_EVENT = "dsh-hero-close-tool";
@@ -33,6 +39,7 @@ window.__ModuleLoader__.load({
 			"Terminal",
 			"Browser",
 			"Database",
+			"Scheduled",
 			"Trajectory",
 		];
 
@@ -44,6 +51,7 @@ window.__ModuleLoader__.load({
 			Terminal: "terminal",
 			Browser: "browser",
 			Database: "db",
+			Scheduled: "scheduled",
 			Trajectory: "trajectory",
 		};
 
@@ -58,6 +66,7 @@ window.__ModuleLoader__.load({
 			Containers: lucide(`<path d="M22 7.7c0-.6-.4-1.2-.8-1.5l-6.3-3.9a1.72 1.72 0 0 0-1.7 0l-10.3 6c-.5.2-.9.8-.9 1.4v6.6c0 .5.4 1.2.8 1.5l6.3 3.9a1.72 1.72 0 0 0 1.7 0l10.3-6c.5-.3.9-1 .9-1.5Z"/><path d="M10 21.9V14L2.1 9.1"/><path d="m10 14 11.9-6.9"/><path d="M14 19.8v-8.1"/><path d="M18 17.5V9.4"/>`),
 			Terminal: lucide(`<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>`),
 			Database: lucide(`<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>`),
+			Scheduled: lucide(`<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>`),
 			Trajectory: lucide(`<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>`),
 		};
 
@@ -116,6 +125,11 @@ window.__ModuleLoader__.load({
     width:32px!important;height:32px!important;margin-left:0!important;margin-right:0!important;
   }
   .hHd-Xa_collapsed .hHd-Xa_newSession{margin-bottom:8px!important;align-self:center!important}
+  .hHd-Xa_collapsed .hHd-Xa_regionArea,
+  .hHd-Xa_collapsed .qDHVXG_root{
+    overflow-x:hidden!important;
+    min-width:0!important;
+  }
 }
 .wSkVaW_root[data-dsh-tool-tab="1"] .wSkVaW_composerSeat{display:none!important}
 .wSkVaW_root[data-dsh-tool-tab="1"] .wSkVaW_scrollBody{overflow:hidden!important}
@@ -138,11 +152,17 @@ window.__ModuleLoader__.load({
   font-size:14px;font-weight:500;line-height:20px;color:var(--dsw-alias-label-primary);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
-.dsh-hero-header .dsh-hero-titleBadge{
-  flex:none;font-size:11px;font-weight:500;line-height:16px;padding:1px 6px;border-radius:4px;
+.dsh-ws-locationBadge{
   color:var(--dsw-alias-state-business-primary);
-  border:1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent);
-  background:color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);
+  border:1px solid color-mix(in srgb,var(--dsw-alias-state-business-primary) 42%,var(--dsw-alias-border-l2));
+  background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent);
+}
+.dsh-hero-header .dsh-hero-titleBadge{
+  flex:none;font-size:9px;font-weight:500;line-height:1.25;padding:1px 6px;border-radius:999px;
+  text-transform:uppercase;letter-spacing:.03em;
+}
+.wSkVaW_root [class*="previewBadge"][data-dsh-location-badge="1"]{
+  text-transform:uppercase;letter-spacing:.03em;
 }
 .dsh-hero-header .wSkVaW_headerActions{
   display:inline-flex;align-items:center;gap:6px;flex:none;margin-left:auto;
@@ -161,6 +181,8 @@ window.__ModuleLoader__.load({
   background:var(--dsw-alias-bg-base);position:relative;z-index:1;
 }
 .wSkVaW_root[data-phase=hero][data-dsh-tool-tab="1"] > .dsh-hero-tool-host{display:flex!important}
+/* 0.1.5 nests scrollBody under .wSkVaW_body; hide that whole column for tool tabs */
+.wSkVaW_root[data-phase=hero][data-dsh-tool-tab="1"] > .wSkVaW_body{display:none!important}
 .wSkVaW_root[data-phase=hero][data-dsh-tool-tab="1"] > .wSkVaW_scrollBody{display:none!important}
 .dsh-hero-tool-view{
   flex:1 1 0;min-height:0;min-width:0;height:100%;display:flex;flex-direction:column;overflow:hidden;
@@ -171,9 +193,16 @@ window.__ModuleLoader__.load({
 .dsh-hero-tool-view .dd_root,
 .dsh-hero-tool-view .dte_root,
 .dsh-hero-tool-view .dsh-code-tab-root,
-.dsh-hero-tool-view .dg_root{height:100%;min-height:0}
+.dsh-hero-tool-view .dg_root,
+.dsh-hero-tool-view .dt_root,
+.dsh-hero-tool-view [data-dsh-cron-root]{height:100%;min-height:0}
+.wSkVaW_scrollBody:has([data-dsh-cron-root]){overflow:hidden!important;display:flex;flex-direction:column;min-height:0}
+.wSkVaW_scrollBody:has([data-dsh-cron-root])>.wSkVaW_viewArea,
+.wSkVaW_viewArea:has([data-dsh-cron-root]){flex:1 1 0!important;min-height:0!important;overflow:hidden!important;height:auto!important}
+.wSkVaW_viewArea:has([data-dsh-cron-root])>div{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .dsh-hero-tool-view .db_body{grid-template-rows:minmax(0,1fr)}
 .dsh-hero-tool-view .db_frameWrap{height:100%;min-height:0}
+.dsh-hero-tool-view[hidden]{display:none!important}
 .dsh-hero-missing{padding:24px;color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:1.5;max-width:42em}
 `;
 
@@ -215,7 +244,46 @@ window.__ModuleLoader__.load({
 
 		const RPC = "/hero-tools";
 		let activeConnection = null;
+		/** @type {Map<string, { shell: HTMLElement, root: import('react-dom/client').Root | null }>} */
+		const heroToolPanelCache = new Map();
+		/** @type {HTMLElement | null} */
+		let heroToolMountHost = null;
+		let heroToolRestored = false;
 		let cachedOrder = null;
+
+		function destroyHeroToolPanels() {
+			for (const entry of heroToolPanelCache.values()) {
+				try {
+					entry.root?.unmount?.();
+				} catch {
+					/* ignore */
+				}
+				entry.shell.remove();
+			}
+			heroToolPanelCache.clear();
+			heroToolMountHost = null;
+		}
+
+		function ensureHeroToolShell(toolId, toolHost) {
+			if (heroToolMountHost !== toolHost) {
+				destroyHeroToolPanels();
+				heroToolMountHost = toolHost;
+			}
+			let entry = heroToolPanelCache.get(toolId);
+			if (!entry) {
+				const shell = document.createElement("div");
+				shell.className = "dsh-hero-tool-view";
+				shell.setAttribute("data-dsh-hero-tool", toolId);
+				shell.hidden = true;
+				toolHost.appendChild(shell);
+				const root = ReactDOMClient?.createRoot
+					? ReactDOMClient.createRoot(shell)
+					: null;
+				entry = { shell, root };
+				heroToolPanelCache.set(toolId, entry);
+			}
+			return entry;
+		}
 
 		function getRawLocalOrder() {
 			try {
@@ -322,6 +390,9 @@ window.__ModuleLoader__.load({
 
 		function applyTabOrder(tabsEl, order) {
 			if (!tabsEl) return;
+			// Only reorder our hero tab strip. Session workbench tablists are React-controlled;
+			// moving their DOM nodes desyncs aria-selected from the mounted panel (empty body).
+			if (!tabsEl.closest("[data-dsh-hero-tabs]")) return;
 			const byLabel = new Map();
 			tabsEl.querySelectorAll('[role="tab"]').forEach((btn) => {
 				const label = tabLabel(btn);
@@ -352,6 +423,7 @@ window.__ModuleLoader__.load({
 			const raw = (btn.getAttribute("data-dsh-tab-label") || btn.textContent || "").trim();
 			if (!raw) return;
 			const label = btn.getAttribute("data-dsh-tab-label") || raw.replace(/\s+/g, " ");
+			const inHero = !!btn.closest("[data-dsh-hero-tabs]");
 			if (
 				btn.classList.contains("dsh-tab-enhanced")
 				&& btn.getAttribute("data-dsh-tab-label") === label
@@ -366,7 +438,31 @@ window.__ModuleLoader__.load({
 			btn.setAttribute("title", label);
 			btn.classList.add("dsh-tab-enhanced");
 			btn.removeAttribute("draggable");
+			if (inHero) {
+				btn.innerHTML = `<span class="dsh-tab-icon">${iconFor(label)}</span><span class="dsh-tab-label">${label}</span>`;
+				return;
+			}
+			if (btn.querySelector(".dsh-tab-icon") && btn.querySelector(".dsh-tab-label")) {
+				btn.querySelector(".dsh-tab-label").textContent = label;
+				return;
+			}
 			btn.innerHTML = `<span class="dsh-tab-icon">${iconFor(label)}</span><span class="dsh-tab-label">${label}</span>`;
+		}
+
+		function resyncWorkbenchTab() {
+			document.querySelectorAll(".wSkVaW_root").forEach((root) => {
+				if (root.getAttribute("data-phase") === "hero") {
+					const label = readActiveLabel();
+					openLabel(label || "Chat");
+					return;
+				}
+				const active = root.querySelector('.wSkVaW_tabs [role="tab"][aria-selected="true"]');
+				const label = tabLabel(active);
+				syncComposerVisibility();
+				if (label && label !== "Chat" && active instanceof HTMLElement) {
+					active.click();
+				}
+			});
 		}
 
 		function syncComposerVisibility() {
@@ -389,6 +485,79 @@ window.__ModuleLoader__.load({
 		let press = null;
 		let suppressClick = false;
 
+		function syncHeroToolPanel(toolId) {
+			const root = document.querySelector(".wSkVaW_root[data-phase=hero]");
+			if (!root) return;
+			const { toolHost } = ensureHeroChrome(root);
+			if (!(toolHost instanceof HTMLElement)) return;
+
+			if (!toolId) {
+				for (const entry of heroToolPanelCache.values()) {
+					entry.shell.hidden = true;
+				}
+				return;
+			}
+
+			try {
+				const factory = window.__dshHeroToolRegistry?.get?.(toolId);
+				const body = factory
+					? factory()
+					: React.createElement(
+						"div",
+						{ className: "dsh-hero-missing" },
+						toolId === "terminal"
+							? "Terminal isn’t available on the start screen yet — open a session first."
+							: "Tool unavailable — is the plugin loaded?",
+					);
+				const { shell, root: reactRoot } = ensureHeroToolShell(toolId, toolHost);
+				for (const [id, entry] of heroToolPanelCache) {
+					entry.shell.hidden = id !== toolId;
+				}
+				if (reactRoot?.render) {
+					reactRoot.render(body);
+				} else {
+					ReactDOM.render(body, shell);
+				}
+				if (toolId === "terminal") {
+					requestAnimationFrame(() => {
+						requestAnimationFrame(() => {
+							window.dispatchEvent(new Event("dsh-terminal-refit"));
+						});
+					});
+				}
+			} catch (err) {
+				console.error(`[${PLUGIN}] hero tool render failed`, toolId, err);
+				const entry = heroToolPanelCache.get(toolId);
+				if (entry?.shell) {
+					entry.shell.replaceChildren();
+					const msg = document.createElement("div");
+					msg.className = "dsh-hero-missing";
+					msg.textContent = err instanceof Error ? err.message : String(err);
+					entry.shell.appendChild(msg);
+				}
+			}
+		}
+
+		function maintainHeroChrome() {
+			const root = document.querySelector(".wSkVaW_root[data-phase=hero]");
+			if (!root) return;
+			ensureHeroChrome(root);
+			patchComposerPreviewBadges();
+			if (!heroToolRestored) {
+				heroToolRestored = true;
+				const label = readActiveLabel();
+				requestAnimationFrame(() => openLabel(label || "Chat"));
+			}
+		}
+
+		function clearHeroChromeDom() {
+			syncHeroToolPanel(null);
+			destroyHeroToolPanels();
+			document.querySelectorAll("[data-dsh-hero-header-host], .dsh-hero-tool-host").forEach((el) => el.remove());
+			document.querySelector(".wSkVaW_root[data-phase=hero]")?.removeAttribute("data-dsh-tool-tab");
+			heroToolRestored = false;
+		}
+
 		function enhanceAll(root) {
 			allTablists(root).forEach((tabs) => {
 				tabs.querySelectorAll('[role="tab"]').forEach(enhanceTab);
@@ -402,6 +571,8 @@ window.__ModuleLoader__.load({
 				}
 			}
 			syncComposerVisibility();
+			maintainHeroChrome();
+			patchComposerPreviewBadges();
 		}
 
 		function decorateHeroTabs(tabsEl) {
@@ -444,8 +615,10 @@ window.__ModuleLoader__.load({
 			selectHeroTab(label);
 			if (toolId) {
 				window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { id: toolId } }));
+				syncHeroToolPanel(toolId);
 			} else {
 				window.dispatchEvent(new CustomEvent(CLOSE_EVENT));
+				syncHeroToolPanel(null);
 			}
 		}
 
@@ -549,59 +722,130 @@ window.__ModuleLoader__.load({
 			openLabel(tabLabel(btn) || "Chat");
 		}
 
+		function readLocationBadge() {
+			try {
+				const api = window.__dshWorkspaceChip;
+				if (api && typeof api.labelForCurrent === "function") {
+					const raw = api.labelForCurrent();
+					return typeof api.displayText === "function" ? api.displayText(raw) : chipDisplayTextFallback(raw);
+				}
+			} catch {
+				/* ignore */
+			}
+			return chipDisplayTextFallback(fallbackLocationFromPointer());
+		}
+
+		function fallbackLocationFromPointer() {
+			try {
+				const ws = window.__dshCurrentWorkspace?.get?.();
+				const cwd = String(ws?.cwd || "");
+				if (cwd.startsWith("dssh://")) {
+					return cwd.replace(/^dssh:\/\//, "").split("/")[0] || "remote";
+				}
+			} catch {
+				/* ignore */
+			}
+			return "local";
+		}
+
+		function chipDisplayTextFallback(label) {
+			const s = String(label || "local").trim();
+			return s === "local" ? "local" : s;
+		}
+
 		function readHeroTitle() {
+			const badge = readLocationBadge();
 			try {
 				const row = document.querySelector(ROW_SEL);
 				const wsInput = row?.querySelector("input[readonly], input");
 				const wsBtn = row?.querySelector("button");
 				const ws = (wsInput?.value || wsBtn?.textContent || "").replace(/\s+/g, " ").trim();
 				if (ws && ws.length < 48 && !/^standard|choose/i.test(ws)) {
-					return { title: ws, badge: "Preview" };
+					return { title: ws, badge };
 				}
 				const scroll = document.querySelector(".wSkVaW_root[data-phase=hero] .wSkVaW_scrollBody");
 				const headline = scroll?.querySelector("h1, h2, [class*='heroTitle'], [class*='HeroTitle']");
 				const headlineText = (headline?.textContent || "").replace(/\s+/g, " ").trim();
 				if (headlineText && headlineText.length < 64) {
-					return { title: headlineText, badge: "Preview" };
+					return { title: headlineText, badge };
 				}
 			} catch {
 				/* ignore */
 			}
-			return { title: "Into the Unknown", badge: "Preview" };
+			return { title: "Into the Unknown", badge };
+		}
+
+		function applyLocationBadgeEl(badgeEl, badge) {
+			if (!badgeEl) return;
+			const text = String(badge || "").trim();
+			if (text) {
+				if (badgeEl.textContent !== text) badgeEl.textContent = text;
+				badgeEl.classList.add("dsh-ws-locationBadge");
+				badgeEl.setAttribute("data-dsh-location-badge", "1");
+				const kind = text === "local" ? "local" : "remote";
+				badgeEl.dataset.kind = kind;
+				badgeEl.title = kind === "local" ? "Local workspace" : `Remote workspace · ${text}`;
+				badgeEl.hidden = false;
+				badgeEl.removeAttribute("aria-hidden");
+			} else {
+				badgeEl.hidden = true;
+				badgeEl.textContent = "";
+				badgeEl.classList.remove("dsh-ws-locationBadge");
+				badgeEl.removeAttribute("data-dsh-location-badge");
+				delete badgeEl.dataset.kind;
+				badgeEl.title = "";
+			}
 		}
 
 		function writeHeroTitle(host, info) {
 			const titleEl = host.querySelector("[data-dsh-hero-title]");
 			const badgeEl = host.querySelector("[data-dsh-hero-title-badge]");
 			if (titleEl && titleEl.textContent !== info.title) titleEl.textContent = info.title;
-			if (badgeEl) {
-				const badge = info.badge || "";
-				if (badge) {
-					if (badgeEl.textContent !== badge) badgeEl.textContent = badge;
-					badgeEl.hidden = false;
-				} else {
-					badgeEl.hidden = true;
-					badgeEl.textContent = "";
-				}
-			}
+			applyLocationBadgeEl(badgeEl, info.badge || "");
+		}
+
+		function patchComposerPreviewBadges() {
+			const badge = readLocationBadge();
+			if (!badge) return;
+			document.querySelectorAll('.wSkVaW_root[data-phase=hero] [class*="previewBadge"]').forEach((el) => {
+				applyLocationBadgeEl(el, badge);
+			});
+		}
+
+		function refreshLocationBadges() {
+			document.querySelectorAll("[data-dsh-hero-header-host]").forEach((headerHost) => {
+				writeHeroTitle(headerHost, readHeroTitle());
+			});
+			patchComposerPreviewBadges();
 		}
 
 		function placeChrome(root, headerHost, toolHost) {
-			const scroll = root.querySelector(":scope > .wSkVaW_scrollBody");
+			// 0.1.1: root > scrollBody. 0.1.5+: root > body > scrollBody.
+			// Pin our chrome above the stock body (same band as session header).
+			const body = root.querySelector(":scope > .wSkVaW_body");
+			const scroll =
+				root.querySelector(":scope > .wSkVaW_scrollBody")
+				|| body?.querySelector(":scope > .wSkVaW_scrollBody")
+				|| null;
+			const anchor = body || scroll;
 			const kids = [...root.children];
 			const hi = kids.indexOf(headerHost);
 			const ti = kids.indexOf(toolHost);
-			const si = scroll ? kids.indexOf(scroll) : -1;
-			const ok = hi >= 0 && ti >= 0 && hi < ti && (si < 0 || ti < si);
+			const ai = anchor ? kids.indexOf(anchor) : -1;
+			const ok =
+				hi >= 0
+				&& ti >= 0
+				&& hi < ti
+				&& (ai < 0 || ti < ai);
 			if (ok) return;
 			headerHost.remove();
 			toolHost.remove();
-			if (scroll) {
-				root.insertBefore(headerHost, scroll);
-				root.insertBefore(toolHost, scroll);
+			if (anchor && root.contains(anchor)) {
+				root.insertBefore(headerHost, anchor);
+				root.insertBefore(toolHost, anchor);
 			} else {
-				root.appendChild(headerHost);
-				root.appendChild(toolHost);
+				root.prepend(toolHost);
+				root.prepend(headerHost);
 			}
 		}
 
@@ -644,122 +888,6 @@ window.__ModuleLoader__.load({
 			decorateHeroTabs(headerHost.querySelector("[data-dsh-hero-tabs]"));
 			writeHeroTitle(headerHost, readHeroTitle());
 			return { headerHost, toolHost };
-		}
-
-		function HeroToolView() {
-			const hero = useIsHero();
-			const [toolId, setToolId] = React.useState(null);
-			const [toolHost, setToolHost] = React.useState(null);
-			const restored = React.useRef(false);
-
-			React.useEffect(() => {
-				const onOpen = (e) => {
-					const id = e?.detail?.id;
-					if (id) setToolId(id);
-				};
-				const onClose = () => setToolId(null);
-				window.addEventListener(OPEN_EVENT, onOpen);
-				window.addEventListener(CLOSE_EVENT, onClose);
-				return () => {
-					window.removeEventListener(OPEN_EVENT, onOpen);
-					window.removeEventListener(CLOSE_EVENT, onClose);
-				};
-			}, []);
-
-			React.useEffect(() => {
-				if (!hero) {
-					setToolId(null);
-					setToolHost(null);
-					restored.current = false;
-					return undefined;
-				}
-				const sync = () => {
-					const root = document.querySelector(".wSkVaW_root[data-phase=hero]");
-					if (!root) {
-						setToolHost(null);
-						return;
-					}
-					const { toolHost: host } = ensureHeroChrome(root);
-					setToolHost((prev) => (prev === host ? prev : host));
-					if (!restored.current) {
-						restored.current = true;
-						const label = readActiveLabel();
-						requestAnimationFrame(() => openLabel(label));
-					}
-				};
-				sync();
-				const id = window.setInterval(sync, 1500);
-				return () => {
-					window.clearInterval(id);
-					setToolHost(null);
-				};
-			}, [hero]);
-
-			React.useEffect(() => {
-				if (!toolId) return;
-				const onKey = (e) => {
-					if (e.key === "Escape") openLabel("Chat");
-				};
-				window.addEventListener("keydown", onKey);
-				return () => window.removeEventListener("keydown", onKey);
-			}, [toolId]);
-
-			if (!toolId || !toolHost || !ReactDOM?.createPortal) return null;
-			const factory = window.__dshHeroToolRegistry.get(toolId);
-			const body = factory
-				? factory()
-				: React.createElement(
-					"div",
-					{ className: "dsh-hero-missing" },
-					toolId === "terminal"
-						? "Terminal isn’t available on the start screen yet — open a session first."
-						: "Tool unavailable — is the plugin loaded?",
-				);
-
-			return ReactDOM.createPortal(
-				React.createElement("div", {
-					className: "dsh-hero-tool-view",
-					"data-dsh-hero-tool": toolId,
-				}, body),
-				toolHost,
-			);
-		}
-
-		function HeroChrome() {
-			const hero = useIsHero();
-
-			React.useEffect(() => {
-				ensureStyles();
-			}, []);
-
-			React.useEffect(() => {
-				const onClose = () => selectHeroTab("Chat");
-				window.addEventListener(CLOSE_EVENT, onClose);
-				return () => window.removeEventListener(CLOSE_EVENT, onClose);
-			}, []);
-
-			React.useEffect(() => {
-				if (!hero) {
-					document.querySelectorAll("[data-dsh-hero-header-host], .dsh-hero-tool-host").forEach((el) => el.remove());
-					const root = document.querySelector(".wSkVaW_root");
-					if (root?.getAttribute("data-phase") === "hero") root.removeAttribute("data-dsh-tool-tab");
-					return undefined;
-				}
-				const sync = () => {
-					const root = document.querySelector(".wSkVaW_root[data-phase=hero]");
-					if (!root) return;
-					ensureHeroChrome(root);
-				};
-				sync();
-				const id = window.setInterval(sync, 1500);
-				return () => {
-					window.clearInterval(id);
-					document.querySelectorAll("[data-dsh-hero-header-host], .dsh-hero-tool-host").forEach((el) => el.remove());
-					document.querySelector(".wSkVaW_root[data-phase=hero]")?.removeAttribute("data-dsh-tool-tab");
-				};
-			}, [hero]);
-
-			return React.createElement(HeroToolView);
 		}
 
 		function TrajectoryHeroView() {
@@ -823,6 +951,10 @@ window.__ModuleLoader__.load({
 			};
 		}
 
+		if (typeof window !== "undefined") {
+			window.__dshResyncWorkbenchTab = resyncWorkbenchTab;
+		}
+
 		const inject = ["slots", "connection"];
 
 		function apply(ctx) {
@@ -837,12 +969,47 @@ window.__ModuleLoader__.load({
 
 			ctx.effect(() => startTabChrome(), `${PLUGIN}: shared tab chrome`);
 
-			ctx.effect(() => ctx.slots.inject("conversation.input.dock", () => ctx.slots.register({
-				name: "conversation.input.dock",
-				id: "hero-tools",
-				order: 2,
-				inject: () => ({}),
-			}, HeroChrome)), `${PLUGIN}: hero shell`);
+			ctx.effect(() => {
+				maintainHeroChrome();
+				const id = window.setInterval(maintainHeroChrome, 1500);
+				const onOpen = (e) => {
+					const toolId = e?.detail?.id;
+					if (toolId) syncHeroToolPanel(toolId);
+				};
+				const onClose = () => syncHeroToolPanel(null);
+				const onKey = (e) => {
+					if (e.key !== "Escape") return;
+					if (!document.querySelector(".wSkVaW_root[data-phase=hero]")?.getAttribute("data-dsh-tool-tab")) return;
+					openLabel("Chat");
+				};
+				const onWorkspaceSwitch = () => {
+					requestAnimationFrame(() => {
+						requestAnimationFrame(() => resyncWorkbenchTab());
+					});
+				};
+				window.addEventListener(OPEN_EVENT, onOpen);
+				window.addEventListener(CLOSE_EVENT, onClose);
+				window.addEventListener("keydown", onKey);
+				window.addEventListener("dsh-current-workspace-changed", onWorkspaceSwitch);
+				window.addEventListener("dsh-current-workspace-changed", refreshLocationBadges);
+				return () => {
+					window.clearInterval(id);
+					window.removeEventListener(OPEN_EVENT, onOpen);
+					window.removeEventListener(CLOSE_EVENT, onClose);
+					window.removeEventListener("keydown", onKey);
+					window.removeEventListener("dsh-current-workspace-changed", onWorkspaceSwitch);
+					window.removeEventListener("dsh-current-workspace-changed", refreshLocationBadges);
+					if (!document.querySelector(".wSkVaW_root[data-phase=hero]")) {
+						clearHeroChromeDom();
+					}
+				};
+			}, `${PLUGIN}: hero header shell`);
+
+			ctx.effect(() => {
+				const onClose = () => selectHeroTab("Chat");
+				window.addEventListener(CLOSE_EVENT, onClose);
+				return () => window.removeEventListener(CLOSE_EVENT, onClose);
+			}, `${PLUGIN}: hero close handler`);
 		}
 
 		return { apply, inject };
