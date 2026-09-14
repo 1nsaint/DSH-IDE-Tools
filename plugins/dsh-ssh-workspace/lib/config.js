@@ -21,8 +21,19 @@ export function normalizeHost(raw, fallbackId) {
 	const hostname = String(raw.hostname || raw.host || "").trim();
 	if (!user || !hostname) return null;
 	const identityFile = typeof raw.identityFile === "string" ? raw.identityFile.trim() : "";
+	const privateKey = typeof raw.privateKey === "string" ? raw.privateKey.trim() : "";
 	const port = Number(raw.port) > 0 ? Number(raw.port) : 22;
-	return { id, label, user, hostname, port, identityFile };
+	return { id, label, user, hostname, port, identityFile, privateKey };
+}
+
+export function hostHasKey(host) {
+	return Boolean(host?.privateKey || host?.identityFile);
+}
+
+export function publicHost(host) {
+	if (!host) return null;
+	const { privateKey, ...rest } = host;
+	return { ...rest, hasKey: hostHasKey(host) };
 }
 
 export async function loadConfig() {

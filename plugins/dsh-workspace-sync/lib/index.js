@@ -37,10 +37,14 @@ function isWorkspaceMountRoot(dir, root = ROOT) {
 
 /** Top-level basenames that are plugin library roots, not user workspaces. */
 const NEVER_REGISTER = new Set(
-	String(process.env.DSH_WORKSPACE_SYNC_SKIP || "repos")
-		.split(",")
-		.map((s) => s.trim())
-		.filter(Boolean),
+	[
+		...String(process.env.DSH_WORKSPACE_SYNC_SKIP || "repos")
+			.split(",")
+			.map((s) => s.trim())
+			.filter(Boolean),
+		// Accidental local mirror of dssh:// paths (path.join("/workspace", "dssh://…")).
+		"dssh:",
+	],
 );
 
 /**
@@ -91,7 +95,9 @@ async function pruneStale(registry, root = ROOT) {
 		: [];
 	let removed = 0;
 	for (const entity of entities) {
-		const p = path.resolve(String(entity.path || ""));
+		const rawPath = String(entity.path || "");
+		if (rawPath.startsWith("dssh://")) continue;
+		const p = path.resolve(rawPath);
 		const id = entityId(entity);
 		if (!id || typeof registry.delete !== "function") continue;
 

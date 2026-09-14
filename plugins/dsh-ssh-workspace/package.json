@@ -1,6 +1,6 @@
 {
   "name": "dsh-ssh-workspace",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Cursor-style SSH remote workspaces — saved hosts, remote folder picker, dssh:// paths, sidebar chips, SFTP files, SSH terminal.",
   "type": "module",
   "main": "lib/index.js",

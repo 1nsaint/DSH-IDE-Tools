@@ -11,7 +11,10 @@ import {
 	parseDsshPath,
 	bindingForWorkspace,
 	bindingForPath,
+	publicHost,
+	hostHasKey,
 } from "./config.js";
+import { ensureSshDirs, persistHostKey, removeHostKey, sshKeysDir } from "./keys.js";
 import {
 	testHostConnection,
 	listRemoteDirectory,
@@ -47,6 +50,50 @@ function transportError(error) {
 	};
 }
 
+function workspaceEntityId(entity) {
+	return entity?.id || entity?.workspaceId || null;
+}
+
+/**
+ * Register a remote directory as a Harness workspace (dssh:// virtual path).
+ * Stock workspaceRegistry.create() realpath-validates local dirs only.
+ * @param {any} registry
+ * @param {string} hostId
+ * @param {string} remotePath
+ * @param {string} label
+ */
+async function createRemoteWorkspace(registry, hostId, remotePath, label) {
+	if (!registry || typeof registry.createCanonical !== "function") {
+		throw new Error("workspace registry unavailable");
+	}
+	const st = await remoteStat(hostId, remotePath);
+	if (st.type !== "directory") {
+		throw new Error(`Remote path is not a directory: ${remotePath}`);
+	}
+	const cfg = await loadConfig();
+	const host = cfg.hosts.find((h) => h.id === hostId);
+	const title = label
+		|| remotePath.split("/").filter(Boolean).pop()
+		|| host?.label
+		|| hostId;
+	const dsshPath = makeDsshPath(hostId, remotePath);
+	let entity = await registry.createCanonical(dsshPath, title);
+	if (entity.title !== title && typeof entity.setTitle === "function") {
+		await entity.setTitle(title);
+		entity = registry.get(workspaceEntityId(entity)) || entity;
+	}
+	const workspaceId = workspaceEntityId(entity);
+	if (!workspaceId) throw new Error("workspace creation failed");
+	cfg.bindings = cfg.bindings.filter((b) => b.workspaceId !== workspaceId);
+	cfg.bindings.push({ workspaceId, hostId, remotePath, label: title });
+	await saveConfig(cfg);
+	return {
+		workspaceId,
+		path: dsshPath,
+		title: entity.title || title,
+	};
+}
+
 function registerRpc(ctx) {
 	return ctx.connection.rpc.handle(
 		RPC_CHANNEL,
@@ -54,18 +101,31 @@ function registerRpc(ctx) {
 			try {
 				switch (endpoint) {
 					case "getConfig": {
+						await ensureSshDirs();
 						const cfg = await loadConfig();
-						return ok(cfg);
+						return ok({
+							hosts: cfg.hosts.map((h) => publicHost(h)),
+							bindings: cfg.bindings,
+							sshKeysDir: sshKeysDir(),
+						});
 					}
 					case "saveHost": {
+						await ensureSshDirs();
 						const cfg = await loadConfig();
-						const incoming = normalizeHost(payload?.host, payload?.host?.id || newHostId(payload?.host?.label));
+						let incoming = normalizeHost(payload?.host, payload?.host?.id || newHostId(payload?.host?.label));
 						if (!incoming) throw new Error("Invalid host (need label, user, hostname)");
 						const idx = cfg.hosts.findIndex((h) => h.id === incoming.id);
+						const existing = idx >= 0 ? cfg.hosts[idx] : null;
+						if (!incoming.privateKey && existing?.privateKey) incoming.privateKey = existing.privateKey;
+						if (!incoming.identityFile && existing?.identityFile) incoming.identityFile = existing.identityFile;
+						if (!hostHasKey(incoming)) {
+							throw new Error("Paste the private key for this PC (or set a key file path).");
+						}
+						incoming = await persistHostKey(incoming);
 						if (idx >= 0) cfg.hosts[idx] = incoming;
 						else cfg.hosts.push(incoming);
 						await saveConfig(cfg);
-						return ok({ host: incoming, hosts: cfg.hosts });
+						return ok({ host: publicHost(incoming), hosts: cfg.hosts.map((h) => publicHost(h)), sshKeysDir: sshKeysDir() });
 					}
 					case "removeHost": {
 						const id = String(payload?.id || "").trim();
@@ -74,10 +134,17 @@ function registerRpc(ctx) {
 						cfg.hosts = cfg.hosts.filter((h) => h.id !== id);
 						cfg.bindings = cfg.bindings.filter((b) => b.hostId !== id);
 						await saveConfig(cfg);
+						await removeHostKey(id);
 						return ok({ hosts: cfg.hosts });
 					}
 					case "testHost": {
-						const host = normalizeHost(payload?.host, payload?.host?.id);
+						const cfg = await loadConfig();
+						let host = cfg.hosts.find((h) => h.id === payload?.host?.id) || null;
+						if (host && payload?.host) {
+							host = normalizeHost({ ...host, ...payload.host }, host.id);
+						} else {
+							host = normalizeHost(payload?.host, payload?.host?.id);
+						}
 						if (!host) throw new Error("host required");
 						if (payload?.persist) {
 							const cfg = await loadConfig();
@@ -104,6 +171,19 @@ function registerRpc(ctx) {
 						const remotePath = String(payload?.remotePath || "").trim();
 						if (!hostId || !remotePath) throw new Error("hostId and remotePath required");
 						return ok({ path: makeDsshPath(hostId, remotePath) });
+					}
+					case "createRemoteWorkspace": {
+						const hostId = String(payload?.hostId || "").trim();
+						const remotePath = String(payload?.remotePath || "").trim();
+						const label = String(payload?.label || "").trim();
+						if (!hostId || !remotePath) throw new Error("hostId and remotePath required");
+						const workspace = await createRemoteWorkspace(
+							ctx.workspaceRegistry,
+							hostId,
+							remotePath,
+							label,
+						);
+						return ok(workspace);
 					}
 					case "parsePath": {
 						const parsed = parseDsshPath(payload?.path);
@@ -160,7 +240,7 @@ function registerRpc(ctx) {
 					}
 					case "getBindings": {
 						const cfg = await loadConfig();
-						return ok({ bindings: cfg.bindings, hosts: cfg.hosts });
+						return ok({ bindings: cfg.bindings, hosts: cfg.hosts.map((h) => publicHost(h)) });
 					}
 					case "files.stat": {
 						const resolved = await resolveDsshPath(payload?.path || payload?.root);
@@ -280,7 +360,14 @@ function registerRpc(ctx) {
 
 function apply(ctx) {
 	ctx.inject(["connection"], (connectionCtx) => {
-		connectionCtx.effect(() => registerRpc(connectionCtx), "dsh-ssh-workspace: rpc");
+		connectionCtx.inject(["workspaceRegistry"], (scope) => {
+			scope.effect(() => {
+				ensureSshDirs().catch((err) => {
+					console.warn("[dsh-ssh-workspace] ensure ssh dirs failed:", err instanceof Error ? err.message : err);
+				});
+				return registerRpc(scope);
+			}, "dsh-ssh-workspace: rpc");
+		});
 	});
 }
 

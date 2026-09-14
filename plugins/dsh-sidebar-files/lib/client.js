@@ -422,6 +422,7 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 		}
 
 		function getActiveWorkspace(workspaces, sessions) {
+			const pointer = getCurrentWorkspace();
 			try {
 				const sessSnap = sessions?.list?.getSnapshot?.();
 				const wsSnap = workspaces?.list?.getSnapshot?.();
@@ -435,7 +436,23 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 					}
 				}
 			} catch { /* ignore */ }
-			return getCurrentWorkspace();
+			if (pointer?.key && workspaces?.list?.getSnapshot) {
+				try {
+					const hit = (workspaces.list.getSnapshot()?.items || []).find((w) => workspaceKeyFromItem(w) === pointer.key);
+					if (hit) {
+						const cwd = workspaceCwd(hit) || pointer.cwd;
+						if (cwd) {
+							return {
+								key: pointer.key,
+								label: workspaceLabel(hit) || pointer.label || workspaceLabel({ cwd }),
+								cwd,
+								item: hit,
+							};
+						}
+					}
+				} catch { /* ignore */ }
+			}
+			return pointer;
 		}
 
 		function switchWorkspace(workspaces, sessions, ws) {

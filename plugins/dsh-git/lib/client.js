@@ -115,7 +115,7 @@ window.__ModuleLoader__.load({
 .dg_modeToggle button:hover:not(:disabled):not(.dg_modeOn){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dg_modeToggle button:disabled{opacity:.45;cursor:not-allowed}
 .dg_authOk{color:var(--dsw-alias-state-success-primary)}
-.dg_remoteList{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px;padding-top:4px}
+.dg_remoteList{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:10px 2px 4px}
 .dg_remoteRow{position:relative;display:flex;align-items:center;gap:8px;padding:12px 10px 8px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}
 .dg_remoteRow:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dg_rowLegend{position:absolute;top:-7px;left:10px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;max-width:calc(100% - 20px);pointer-events:none;z-index:1}
