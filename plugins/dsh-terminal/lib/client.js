@@ -1270,6 +1270,7 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 					const id = termIdRef.current;
 					const term = termRef.current;
 					if (!id || !term || closedRef.current) return;
+					if (!active) return;
 					try {
 						const res = await callRpc(connection, "read", { termId: id });
 						if (!alive) return;
@@ -1294,7 +1295,7 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 					alive = false;
 					clearInterval(iv);
 				};
-			}, [connection, sessionId]);
+			}, [connection, sessionId, active]);
 
 			React.useEffect(() => {
 				if (!active) return undefined;

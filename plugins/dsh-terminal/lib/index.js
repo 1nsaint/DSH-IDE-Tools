@@ -212,12 +212,17 @@ function registerRpc(ctx) {
 							entry.cwd = remoteCwd || parsed.remotePath;
 							entry.shell = `ssh:${host?.label || parsed.hostId}`;
 							terms.set(termId, entry);
+							// Collect login banner + cd before client read loop starts.
+							await new Promise((resolve) => setTimeout(resolve, 500));
+							const replay = entry.buf;
+							entry.buf = "";
 							return ok({
 								termId,
 								cwd: remoteCwd || parsed.remotePath,
 								shell: `ssh:${host?.label || parsed.hostId}`,
 								remote: true,
 								hostId: parsed.hostId,
+								replay: replay || undefined,
 							});
 						}
 						const shell = process.env.DSH_TERMINAL_SHELL || process.env.SHELL || "/bin/bash";
