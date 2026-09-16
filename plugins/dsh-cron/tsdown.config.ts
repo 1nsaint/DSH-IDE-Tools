@@ -13,6 +13,8 @@ export default defineConfig([
     fixedExtension: false,
     dts: false,
     clean: false,
+    // DIY shared helper lives outside the package; keep the relative import for runtime mount.
+    external: [/register-rpc-channel\.js$/],
   },
   clientBundle(),
 ])

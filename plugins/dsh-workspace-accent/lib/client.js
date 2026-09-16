@@ -31,13 +31,13 @@ window.__ModuleLoader__.load({
 		];
 
 		const css = `
-.YDXeBa_folder.dsh-ws-accent-folder,
-.YDXeBa_folder.dsh-ws-accent-folder svg,
-.YDXeBa_folder.dsh-ws-accent-folder path{
+[class*="_folder"].dsh-ws-accent-folder,
+[class*="_folder"].dsh-ws-accent-folder svg,
+[class*="_folder"].dsh-ws-accent-folder path{
   color: var(--dsh-ws-folder-color) !important;
   fill: var(--dsh-ws-folder-color) !important;
 }
-.YDXeBa_folder.dsh-ws-accent-folder:not(.YDXeBa_folderActive){opacity:0.92}
+[class*="_folder"].dsh-ws-accent-folder:not([class*="_folderActive"]){opacity:0.92}
 .dwa_form{display:flex;flex-direction:column;gap:14px;max-width:640px}
 .dwa_hint{margin:0;font-size:12px;line-height:1.45;color:var(--dsw-alias-label-tertiary)}
 .dwa_row{display:flex;flex-direction:column;gap:8px;padding:12px 0;border-bottom:1px solid var(--dsw-alias-border-l2)}
@@ -334,13 +334,32 @@ window.__ModuleLoader__.load({
 				const label = workspaceLabel(w);
 				if (label) byLabel.set(label.toLowerCase(), w);
 			}
-			for (const row of document.querySelectorAll(".YDXeBa_projectRow")) {
-				const titleEl = row.querySelector(".YDXeBa_title");
-				const folder = row.querySelector(".YDXeBa_folder");
+			for (const row of document.querySelectorAll('[class*="_projectRow"]')) {
+				// Exact local `title` / `folder` — not titleRow / folderActive-only misses.
+				const titleEl = [...row.querySelectorAll('[class*="_title"]')].find((el) =>
+					[...el.classList].some((c) => c === "title" || c.endsWith("_title"))
+				);
+				const folder = [...row.querySelectorAll('[class*="_folder"]')].find((el) =>
+					[...el.classList].some((c) => c === "folder" || c.endsWith("_folder"))
+				);
 				if (!titleEl || !folder) continue;
-				const title = (titleEl.textContent || "").trim();
+				const title = (titleEl.textContent || "").replace(/\s+/g, " ").trim();
+				// Stock "Ungrouped" is an orphan-session bucket, not a workspace — don't accent it.
+				if (!title || /^ungrouped$/i.test(title) || title === "未分组") {
+					folder.classList.remove("dsh-ws-accent-folder");
+					folder.style.removeProperty("--dsh-ws-folder-color");
+					delete folder.dataset.dshWsAccent;
+					continue;
+				}
 				const hit = byLabel.get(title.toLowerCase());
-				const key = hit ? workspaceKeyFromItem(hit) : title || "default";
+				if (!hit) {
+					// Don't invent colors for rows that aren't registered workspaces.
+					folder.classList.remove("dsh-ws-accent-folder");
+					folder.style.removeProperty("--dsh-ws-folder-color");
+					delete folder.dataset.dshWsAccent;
+					continue;
+				}
+				const key = workspaceKeyFromItem(hit);
 				const accent = pickAccent(key);
 				folder.classList.add("dsh-ws-accent-folder");
 				folder.style.setProperty("--dsh-ws-folder-color", accentColor(accent));
@@ -574,6 +593,13 @@ window.__ModuleLoader__.load({
 					}, AccentSettings)), `${PLUGIN}: settings`);
 				}
 			});
+		}
+
+		if (typeof window !== "undefined") {
+			window.__dshWorkspaceAccent = {
+				keyFromItem: workspaceKeyFromItem,
+				colorForKey: (key) => accentColor(pickAccent(String(key || "default"))),
+			};
 		}
 
 		return { apply, inject };

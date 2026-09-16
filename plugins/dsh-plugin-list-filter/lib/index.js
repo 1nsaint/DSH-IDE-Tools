@@ -5,8 +5,10 @@
  */
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 
 const name = "dsh-plugin-list-filter";
+const inject = ["connection", "webServer"];
 const RPC_CHANNEL = "/plugin-list-filter";
 const DSH_HOME = process.env.DSH_HOME || "/home/node/.dsh";
 const PLUGINS_DIR = path.join(DSH_HOME, "plugins");
@@ -172,9 +174,7 @@ async function collectDescriptions() {
  * @param {any} ctx
  */
 function registerRpc(ctx) {
-	const dispose = ctx.connection.rpc.handle(
-		RPC_CHANNEL,
-		async (endpoint) => {
+	const dispose = registerRpcChannel(ctx, RPC_CHANNEL, async (endpoint) => {
 			try {
 				switch (endpoint) {
 					case "customIds":
@@ -204,9 +204,9 @@ function registerRpc(ctx) {
  * @param {any} ctx
  */
 function apply(ctx) {
-	ctx.inject(["connection"], (connectionCtx) => {
+	ctx.inject(["connection", "webServer"], (connectionCtx) => {
 		connectionCtx.effect(() => registerRpc(connectionCtx), `${name}: rpc`);
 	});
 }
 
-export { apply, name, collectCustomIds, collectDescriptions, moduleShortName };
+export { apply, name, collectCustomIds, collectDescriptions, moduleShortName, inject };

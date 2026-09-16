@@ -52,7 +52,7 @@ window.__ModuleLoader__.load({
 		};
 
 		const css = `
-.hHd-Xa_footerActions{flex-direction:column;align-items:stretch;width:100%}
+[class*="_footerActions"]{flex-direction:column;align-items:stretch;width:100%}
 .dam_layer{width:100%;max-width:100%;box-sizing:border-box}
 .dam_layer.dam_rail{width:36px;align-self:center}
 .dam_tipWrap{position:relative;display:block;width:100%;max-width:100%;box-sizing:border-box}
@@ -714,8 +714,8 @@ window.__ModuleLoader__.load({
 				const root = rootRef.current;
 				if (!root) return;
 				const slotHost = root.parentElement;
-				const footArea = root.closest(".hHd-Xa_footArea");
-				const settings = footArea?.querySelector(".hHd-Xa_settingsArea");
+				const footArea = root.closest('[class*="_footArea"]');
+				const settings = footArea?.querySelector('[class*="_settingsArea"]');
 				if (!slotHost || !footArea || !settings) return;
 				if (settings.nextElementSibling !== slotHost) {
 					footArea.appendChild(slotHost);
@@ -738,7 +738,6 @@ window.__ModuleLoader__.load({
 					console.warn(`[${PLUGIN}] fetch failed:`, err);
 					setError(true);
 					setErrMsg(err?.message || String(err));
-					setSnap(null);
 				} finally {
 					setLoading(false);
 				}
@@ -765,6 +764,11 @@ window.__ModuleLoader__.load({
 			const segments = snap?.segments || [{ key: "free", bytes: 1, color: COLORS.free, label: "Free" }];
 			const freeSeg = segments.find((s) => s.key === "free");
 			const freeBytes = snap?._free ?? freeSeg?.bytes ?? 0;
+			const freeSub = loading && !snap
+				? "· loading…"
+				: error && !snap
+					? "· unreachable"
+					: `·\u00a0${formatBytes(freeBytes)}\u00a0free`;
 			const cpuPercent = snap?.cpuPercent ?? null;
 			const gpuPercent = snap?.gpuPercent ?? null;
 
@@ -826,8 +830,7 @@ window.__ModuleLoader__.load({
 						React.createElement("div", { className: "dam_btnTop" },
 							React.createElement("span", { className: "dam_line" },
 								React.createElement("span", { className: "dam_label" }, cfg.label),
-								React.createElement("span", { className: "dam_sub" },
-									"·\u00a0", formatBytes(freeBytes), "\u00a0free"),
+								React.createElement("span", { className: "dam_sub" }, freeSub),
 							),
 						),
 						React.createElement(LoadBars, {

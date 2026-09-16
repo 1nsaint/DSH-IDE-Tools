@@ -10,10 +10,10 @@ window.__ModuleLoader__.load({
 
 		const css = `
 /* When Containers tab is active, stop the chat scrollBody from growing with the list. */
-.wSkVaW_scrollBody:has(.dc_root){overflow:hidden!important;display:flex;flex-direction:column;min-height:0}
-.wSkVaW_scrollBody:has(.dc_root)>.wSkVaW_viewArea,
-.wSkVaW_viewArea:has(.dc_root){flex:1 1 0!important;min-height:0!important;overflow:hidden!important;position:relative!important;height:auto!important}
-.wSkVaW_viewArea:has(.dc_root)>div{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+[class*="_scrollBody"]:has(.dc_root){overflow:hidden!important;display:flex;flex-direction:column;min-height:0}
+[class*="_scrollBody"]:has(.dc_root)>[class*="_viewArea"],
+[class*="_viewArea"]:has(.dc_root){flex:1 1 0!important;min-height:0!important;overflow:hidden!important;position:relative!important;height:auto!important}
+[class*="_viewArea"]:has(.dc_root)>div{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .dc_root{display:flex;flex-direction:column;flex:1 1 0;height:100%;min-height:0;overflow:hidden;background:var(--dsw-alias-bg-base)}
 .dc_bar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--dsw-alias-border-l2);flex-wrap:wrap;flex-shrink:0}
 .dc_meta{flex:1;font-size:13px;color:var(--dsw-alias-label-secondary);min-width:0}
@@ -23,8 +23,8 @@ window.__ModuleLoader__.load({
 .dc_ports{font-size:11px;color:var(--dsw-alias-label-secondary);font-family:var(--ds-font-family-code);margin-top:2px;line-height:1.35}
 .dc_portsEmpty{color:var(--dsw-alias-label-tertiary);font-family:inherit}
 .dc_tagTest{font-size:10px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:#93c5fd;border:1px solid rgba(59,130,246,.4);background:rgba(59,130,246,.12);border-radius:999px;padding:1px 7px;margin-left:6px;flex:none}
-.dc_body{flex:1 1 0;min-height:0;overflow:hidden;display:grid;grid-template-columns:minmax(280px,1fr) minmax(0,1.2fr);grid-template-rows:minmax(0,1fr)}
-.dc_list{min-height:0;height:100%;overflow:auto;border-right:1px solid var(--dsw-alias-border-l2);padding:8px;-webkit-overflow-scrolling:touch}
+.dc_body{flex:1 1 0;min-height:0;overflow:hidden}
+.dc_list{min-height:0;height:100%;overflow:auto;padding:8px;-webkit-overflow-scrolling:touch}
 .dc_row{padding:8px 10px 8px 12px;border-radius:10px;cursor:pointer;margin-bottom:4px;border:1px solid transparent;border-left-width:3px;border-left-style:solid;border-left-color:transparent}
 .dc_row:hover,.dc_rowActive{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-border-l2)}
 .dc_rowOk,.dc_rowOk:hover,.dc_rowOk.dc_rowActive{border-left-color:#22c55e}
@@ -50,7 +50,7 @@ window.__ModuleLoader__.load({
 .dc_settings{padding:10px 14px;display:flex;gap:8px;align-items:center}
 .dc_input{flex:1;height:30px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);padding:0 10px;font:inherit;font-size:12px}
 .dc_hint{font-size:11px;color:var(--dsw-alias-label-tertiary);padding:8px 14px 0}
-@media (max-width:900px){.dc_body{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,1fr)}.dc_list{border-right:none;border-bottom:1px solid var(--dsw-alias-border-l2)}}
+@media (max-width:900px){.dc_list{border-bottom:1px solid var(--dsw-alias-border-l2)}}
 .dc_btnActive{border-color:var(--dsw-alias-state-business-primary,#3d8bfd);color:var(--dsw-alias-state-business-primary,#3d8bfd)}
 .dc_btnOpen{display:inline-flex;align-items:center;gap:5px}
 .dc_testenvPanel{flex-shrink:0;flex-basis:min(46vh,420px);height:min(46vh,420px);overflow:hidden;border-bottom:1px solid var(--dsw-alias-border-l2);display:flex;flex-direction:column}
@@ -64,6 +64,12 @@ window.__ModuleLoader__.load({
 			t.id = "dsh-containers-css";
 			t.textContent = css;
 			document.head.appendChild(t);
+		}
+
+		function PaneSplit(props) {
+			const Split = typeof window !== "undefined" && window.__dshPaneResizer?.SplitPane;
+			if (Split) return React.createElement(Split, props);
+			return React.createElement("div", { className: props.className }, props.children);
 		}
 
 		/** Extract the host-side port number from a "hostPort→containerPort" entry. */
@@ -143,6 +149,7 @@ window.__ModuleLoader__.load({
 			if (state === "exited" || state === "dead" || state === "removing") {
 				return { tone: "off", label: state === "removing" ? "removing" : "stopped" };
 			}
+			if (state === "down") return { tone: "off", label: "stopped" };
 			return { tone: "muted", label: state || "unknown" };
 		}
 
@@ -336,7 +343,13 @@ window.__ModuleLoader__.load({
 						: React.createElement("div", { className: "dc_hint", style: { padding: 14 } },
 							"Test envs module unavailable — is dsh-testenv loaded?"),
 				),
-				React.createElement("div", { className: "dc_body" },
+				React.createElement(PaneSplit, {
+					className: "dc_body",
+					storageKey: "containers.list-logs",
+					defaultRatio: 0.45,
+					minFirst: 240,
+					minSecond: 280,
+				},
 					React.createElement("div", { className: "dc_list" },
 						items.length === 0 && !busy && React.createElement("div", {
 							style: { padding: 16, fontSize: 13, color: "var(--dsw-alias-label-tertiary)", lineHeight: 1.45 },

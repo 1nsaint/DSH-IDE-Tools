@@ -2,24 +2,18 @@
  * dsh-archive — host half.
  *
  * Upstream Harness can archive sessions but has no unarchive / delete UI.
- * This plugin adds a loopback RPC channel (`/archive`) that:
- *   - lists archived sessions (with titles from the projection cache)
- *   - restores (unarchives) by rewriting workspaceRegistry.archivedSessionIds
- *   - permanently deletes: detach from workspace, remove archive flag, rm session dir
+ * Loopback RPC (`/archive`): list / unarchive / permanent delete.
  *
- * Unarchive uses workspaceRegistry.setState / enqueueOperation (TypeScript-private
- * but present at runtime) so domain/changed still fires host/archived-sessions-changed.
- *
- * Important: nest `connection` then `workspaceRegistry` injects. Waiting on both
- * in one `inject([...])` never fires from this patch-plugin fiber (HTTP 405 from
- * the static frontend). Accessing `ctx.workspaceRegistry` without inject throws.
+ * 0.1.5 lesson: "delete" must wipe disk + projcache BEFORE unarchiving.
+ * Unarchiving alone drops the archive flag and the chat reappears under Ungrouped.
  */
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import { readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir, readFile, rm, writeFile, unlink } from "node:fs/promises";
+import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 
 const name = "dsh-archive";
+const inject = ["connection", "webServer"];
 const RPC_CHANNEL = "/archive";
 
 function ok(value) {
@@ -49,27 +43,66 @@ function dshHome() {
 	return process.env.DSH_HOME || join(homedir(), ".dsh");
 }
 
-async function readTitles() {
-	const path = join(dshHome(), "storages", "session_projcache.json");
+function sessionsRoot() {
+	return join(dshHome(), "sessions");
+}
+
+function projCacheSessionPath(sessionId) {
+	return join(dshHome(), "storages", "session_projcache", "sessions", `${sessionId}.json`);
+}
+
+function projCacheLegacyPath() {
+	return join(dshHome(), "storages", "session_projcache.json");
+}
+
+/** Safe get — Cordis throws if the service wasn't injected on this fiber. */
+function tryGet(ctx, key) {
 	try {
-		const raw = JSON.parse(await readFile(path, "utf8"));
-		const table = raw?.tables?.sessions || {};
-		/** @type {Record<string, string>} */
-		const titles = {};
-		for (const [id, row] of Object.entries(table)) {
-			const title = row?.rows?.title?.val;
-			if (typeof title === "string" && title.trim()) titles[id] = title.trim();
-		}
-		return titles;
+		if (ctx?.[key] !== undefined) return ctx[key];
+		return ctx?.get?.(key);
 	} catch {
-		return {};
+		return undefined;
 	}
 }
 
-/**
- * @param {any} registry
- * @param {string} sessionId
- */
+async function readTitles() {
+	/** @type {Record<string, string>} */
+	const titles = {};
+	try {
+		const dir = join(dshHome(), "storages", "session_projcache", "sessions");
+		const files = await readdir(dir);
+		for (const file of files) {
+			if (!file.endsWith(".json")) continue;
+			try {
+				const raw = JSON.parse(await readFile(join(dir, file), "utf8"));
+				const id = file.replace(/\.json$/, "");
+				const title = raw?.record?.rows?.title?.val;
+				const cwd = raw?.record?.identity?.cwd;
+				if (typeof title === "string" && title.trim()) titles[id] = title.trim();
+				else if (typeof cwd === "string" && cwd.trim()) {
+					const base = cwd.replace(/\/+$/, "").split("/").pop();
+					if (base) titles[id] = base;
+				}
+			} catch {
+				/* skip */
+			}
+		}
+	} catch {
+		/* no per-session dir */
+	}
+	try {
+		const raw = JSON.parse(await readFile(projCacheLegacyPath(), "utf8"));
+		for (const [id, row] of Object.entries(raw?.tables?.sessions || {})) {
+			if (titles[id]) continue;
+			const title = row?.rows?.title?.val;
+			if (typeof title === "string" && title.trim()) titles[id] = title.trim();
+		}
+	} catch {
+		/* ignore */
+	}
+	return titles;
+}
+
 async function unarchiveSession(registry, sessionId) {
 	await registry.enqueueOperation(async () => {
 		const state = registry.requireState();
@@ -81,10 +114,6 @@ async function unarchiveSession(registry, sessionId) {
 	});
 }
 
-/**
- * @param {any} registry
- * @param {string} sessionId
- */
 async function detachEverywhere(registry, sessionId) {
 	for (const workspace of registry.list()) {
 		if (workspace.sessionIds?.includes(sessionId)) {
@@ -93,13 +122,78 @@ async function detachEverywhere(registry, sessionId) {
 	}
 }
 
-/**
- * @param {any} ctx
- * @param {string} sessionId
- */
-async function removeSessionFiles(ctx, sessionId, registry) {
-	const persistence = ctx.get?.("sessionPersistence");
-	if (!persistence) return { removed: false, path: null };
+function forgetHeader(registry, sessionId) {
+	try {
+		registry.headers?.delete?.(sessionId);
+	} catch {
+		/* best-effort */
+	}
+	try {
+		registry.invalidSessionPaths?.delete?.(sessionId);
+	} catch {
+		/* best-effort */
+	}
+}
+
+function disposeLiveSession(ctx, sessionId) {
+	try {
+		const sessions = tryGet(ctx, "sessions");
+		const session = sessions?.get?.(sessionId);
+		if (!session) return false;
+		if (typeof session.dispose === "function") {
+			session.dispose();
+			return true;
+		}
+		const entry = sessions?.store?.get?.(sessionId);
+		if (typeof entry?.detach === "function") {
+			entry.detach();
+			return true;
+		}
+		return false;
+	} catch {
+		return false;
+	}
+}
+
+/** Remove any ~/.dsh/sessions/<bucket>/<sessionId> and empty parent buckets. */
+async function wipeSessionDirs(sessionId) {
+	const root = sessionsRoot();
+	/** @type {string[]} */
+	const paths = [];
+	let buckets;
+	try {
+		buckets = await readdir(root, { withFileTypes: true });
+	} catch {
+		return { removed: false, paths };
+	}
+	for (const bucket of buckets) {
+		if (!bucket.isDirectory()) continue;
+		const bucketPath = join(root, bucket.name);
+		const candidate = join(bucketPath, sessionId);
+		try {
+			await rm(candidate, { recursive: true, force: true });
+			paths.push(candidate);
+		} catch {
+			/* absent */
+		}
+		try {
+			const left = await readdir(bucketPath);
+			if (left.length === 0) {
+				await rm(bucketPath, { recursive: true, force: true });
+				paths.push(bucketPath);
+			}
+		} catch {
+			/* ignore */
+		}
+	}
+	return { removed: paths.length > 0, paths };
+}
+
+async function removeViaPersistence(ctx, sessionId, registry) {
+	const persistence = tryGet(ctx, "sessionPersistence");
+	if (!persistence) return { removed: false, paths: [] };
+	/** @type {string[]} */
+	const paths = [];
 
 	let header = null;
 	try {
@@ -110,51 +204,41 @@ async function removeSessionFiles(ctx, sessionId, registry) {
 		header = null;
 	}
 
-	if (!header && typeof persistence.loadStored === "function") {
+	const tryRmLocate = async (meta) => {
+		if (!meta || typeof persistence.locate !== "function") return;
 		try {
-			const stored = await persistence.loadStored(sessionId);
-			header = stored?.meta ?? stored?.header ?? null;
+			const loc = persistence.locate(meta);
+			if (!loc?.path) return;
+			const dir = dirname(loc.path);
+			await rm(dir, { recursive: true, force: true });
+			paths.push(dir);
 		} catch {
-			header = null;
+			/* ignore */
 		}
-	}
+	};
 
-	if (!header && registry) {
+	if (header) await tryRmLocate(header);
+	else if (registry) {
 		for (const workspace of registry.list()) {
-			try {
-				const loc = persistence.locate({
-					id: sessionId,
-					cwd: workspace.path,
-					version: 1,
-					createdAt: 0,
-				});
-				if (loc?.path) {
-					await rm(dirname(loc.path), { recursive: true, force: true });
-					return { removed: true, path: dirname(loc.path) };
-				}
-			} catch {
-				/* try next workspace */
-			}
+			await tryRmLocate({
+				id: sessionId,
+				cwd: workspace.path,
+				version: 1,
+				createdAt: 0,
+			});
 		}
-		return { removed: false, path: null };
 	}
-
-	if (!header) return { removed: false, path: null };
-
-	const loc = persistence.locate(header);
-	if (!loc?.path) return { removed: false, path: null };
-	const dir = dirname(loc.path);
-	await rm(dir, { recursive: true, force: true });
-	return { removed: true, path: dir };
+	return { removed: paths.length > 0, paths };
 }
 
-/**
- * Drop title cache entry so search/UI don't keep a ghost name.
- * @param {string} sessionId
- */
 async function scrubProjCache(sessionId) {
-	const path = join(dshHome(), "storages", "session_projcache.json");
 	try {
+		await unlink(projCacheSessionPath(sessionId));
+	} catch {
+		/* missing ok */
+	}
+	try {
+		const path = projCacheLegacyPath();
 		const raw = JSON.parse(await readFile(path, "utf8"));
 		if (!raw?.tables?.sessions?.[sessionId]) return;
 		delete raw.tables.sessions[sessionId];
@@ -165,79 +249,92 @@ async function scrubProjCache(sessionId) {
 }
 
 /**
- * @param {any} ctx — fiber that already injected connection + workspaceRegistry
+ * @param {() => any} getCtx — latest fiber (may gain sessionPersistence/sessions later)
  */
-function registerArchiveRpc(ctx) {
-	const register = ctx.connection.rpc.handle;
-	const registry = ctx.workspaceRegistry;
-	const dispose = register(
-		RPC_CHANNEL,
-		async (endpoint, payload) => {
-			try {
-				switch (endpoint) {
-					case "list": {
-						const ids = [...registry.archivedSessionIds];
-						const titles = await readTitles();
-						const workspaces = registry.list();
-						const items = ids.map((sessionId) => {
-							const workspace = workspaces.find((w) =>
-								w.sessionIds?.includes(sessionId)
-							);
-							return {
-								sessionId,
-								title: titles[sessionId] || sessionId.replace(/^session-/, "").slice(0, 8),
-								workspaceTitle: workspace?.title || null,
-								workspacePath: workspace?.path || null,
-							};
-						});
-						return ok({ items, generatedAt: Date.now() });
-					}
-					case "unarchive": {
-						const sessionId = payloadId(payload);
-						await unarchiveSession(registry, sessionId);
-						return ok({
+function registerArchiveRpc(getCtx) {
+	const bootstrap = getCtx();
+	const dispose = registerRpcChannel(bootstrap, RPC_CHANNEL, async (endpoint, payload) => {
+		const ctx = getCtx();
+		const registry = ctx.workspaceRegistry || tryGet(ctx, "workspaceRegistry");
+		if (!registry) return transportError(new Error("workspaceRegistry unavailable"));
+		try {
+			switch (endpoint) {
+				case "list": {
+					const ids = [...registry.archivedSessionIds];
+					const titles = await readTitles();
+					const workspaces = registry.list();
+					const items = ids.map((sessionId) => {
+						const workspace = workspaces.find((w) => w.sessionIds?.includes(sessionId));
+						return {
 							sessionId,
-							archivedSessionIds: [...registry.archivedSessionIds],
-						});
-					}
-					case "delete": {
-						const sessionId = payloadId(payload);
-						await detachEverywhere(registry, sessionId);
-						const files = await removeSessionFiles(ctx, sessionId, registry);
-						await unarchiveSession(registry, sessionId);
-						await scrubProjCache(sessionId);
-						return ok({
-							sessionId,
-							filesRemoved: files.removed,
-							path: files.path,
-							archivedSessionIds: [...registry.archivedSessionIds],
-						});
-					}
-					default:
-						return transportError(new Error(`dsh-archive RPC unknown endpoint: ${endpoint}`));
+							title: titles[sessionId] || sessionId.replace(/^session-/, "").slice(0, 8),
+							workspaceTitle: workspace?.title || null,
+							workspacePath: workspace?.path || null,
+						};
+					});
+					return ok({ items, generatedAt: Date.now() });
 				}
-			} catch (error) {
-				return transportError(error);
+				case "unarchive": {
+					const sessionId = payloadId(payload);
+					await unarchiveSession(registry, sessionId);
+					return ok({
+						sessionId,
+						archivedSessionIds: [...registry.archivedSessionIds],
+					});
+				}
+				case "delete": {
+					const sessionId = payloadId(payload);
+					await detachEverywhere(registry, sessionId);
+					const liveDisposed = disposeLiveSession(ctx, sessionId);
+					const viaPersist = await removeViaPersistence(ctx, sessionId, registry);
+					const scanned = await wipeSessionDirs(sessionId);
+					await scrubProjCache(sessionId);
+					forgetHeader(registry, sessionId);
+					// Unarchive only after wipe — otherwise chats bounce back to Ungrouped.
+					await unarchiveSession(registry, sessionId);
+					const paths = [...(viaPersist.paths || []), ...(scanned.paths || [])];
+					return ok({
+						sessionId,
+						filesRemoved: viaPersist.removed || scanned.removed,
+						liveDisposed,
+						path: paths[0] || null,
+						paths,
+						archivedSessionIds: [...registry.archivedSessionIds],
+					});
+				}
+				default:
+					return transportError(new Error(`dsh-archive RPC unknown endpoint: ${endpoint}`));
 			}
-		},
-		{ authority: "loopback" }
-	);
+		} catch (error) {
+			return transportError(error);
+		}
+	});
 	return () => {
 		dispose();
 	};
 }
 
 /**
- * Nest injects: waiting on both at once never fires from this patch fiber;
- * connection alone mounts the route, then workspaceRegistry binds the handler.
+ * One RPC registration; optional injects only widen the fiber used by getCtx().
  * @param {any} ctx
  */
 function apply(ctx) {
-	ctx.inject(["connection"], (connectionCtx) => {
-		connectionCtx.inject(["workspaceRegistry"], (scope) => {
-			scope.effect(() => registerArchiveRpc(scope), "dsh-archive: rpc");
+	ctx.inject(["connection", "webServer"], (connectionCtx) => {
+		connectionCtx.inject(["workspaceRegistry"], (registryCtx) => {
+			/** @type {any} */
+			let activeCtx = registryCtx;
+			registryCtx.inject(["sessionPersistence"], (persistCtx) => {
+				activeCtx = persistCtx;
+				persistCtx.inject(["sessions"], (sessionsCtx) => {
+					activeCtx = sessionsCtx;
+				});
+			});
+			registryCtx.effect(
+				() => registerArchiveRpc(() => activeCtx),
+				"dsh-archive: rpc",
+			);
 		});
 	});
 }
 
-export { apply, name };
+export { apply, name, inject };

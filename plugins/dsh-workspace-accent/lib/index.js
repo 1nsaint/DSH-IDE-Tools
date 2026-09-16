@@ -6,8 +6,10 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 
 const name = "dsh-workspace-accent";
+const inject = ["connection", "webServer"];
 const RPC_CHANNEL = "/workspace-accent";
 
 function configPath() {
@@ -50,7 +52,7 @@ async function saveStore(overrides) {
 }
 
 function registerRpc(ctx) {
-	return ctx.connection.rpc.handle(
+	return registerRpcChannel(ctx, 
 		RPC_CHANNEL,
 		async (endpoint, payload) => {
 			try {
@@ -81,15 +83,13 @@ function registerRpc(ctx) {
 			} catch (error) {
 				return transportError(error);
 			}
-		},
-		{ authority: "loopback" }
-	);
+		});
 }
 
 function apply(ctx) {
-	ctx.inject(["connection"], (scope) => {
+	ctx.inject(["connection", "webServer"], (scope) => {
 		scope.effect(() => registerRpc(scope), `${name}: rpc`);
 	});
 }
 
-export { apply, name };
+export { apply, name, inject };

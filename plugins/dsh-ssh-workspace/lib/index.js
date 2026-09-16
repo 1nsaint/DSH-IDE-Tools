@@ -2,7 +2,9 @@
  * dsh-ssh-workspace — host: SSH hosts, remote browse, workspace bindings, SFTP file ops, SSH shells.
  */
 import { randomUUID } from "node:crypto";
+import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 import {
+	configPath,
 	loadConfig,
 	saveConfig,
 	normalizeHost,
@@ -17,6 +19,7 @@ import {
 import { ensureSshDirs, persistHostKey, removeHostKey, sshKeysDir } from "./keys.js";
 import {
 	testHostConnection,
+	warmHostById,
 	listRemoteDirectory,
 	resolveDsshPath,
 	isDsshPath,
@@ -29,6 +32,7 @@ import {
 } from "./ssh.js";
 
 const name = "dsh-ssh-workspace";
+const inject = ["connection", "webServer"];
 const RPC_CHANNEL = "/ssh-workspace";
 
 /** @type {Map<string, { stream: any, buf: string, closed: boolean }>} */
@@ -95,9 +99,7 @@ async function createRemoteWorkspace(registry, hostId, remotePath, label) {
 }
 
 function registerRpc(ctx) {
-	return ctx.connection.rpc.handle(
-		RPC_CHANNEL,
-		async (endpoint, payload) => {
+	return registerRpcChannel(ctx, RPC_CHANNEL, async (endpoint, payload) => {
 			try {
 				switch (endpoint) {
 					case "getConfig": {
@@ -107,6 +109,44 @@ function registerRpc(ctx) {
 							hosts: cfg.hosts.map((h) => publicHost(h)),
 							bindings: cfg.bindings,
 							sshKeysDir: sshKeysDir(),
+							configPath: configPath(),
+						});
+					}
+					case "saveRawConfig": {
+						await ensureSshDirs();
+						const text = String(payload?.text ?? "");
+						let raw;
+						try {
+							raw = JSON.parse(text);
+						} catch (err) {
+							throw new Error(`Invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
+						}
+						if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+							throw new Error("Config must be a JSON object with hosts and bindings arrays");
+						}
+						const existing = await loadConfig();
+						const hosts = Array.isArray(raw.hosts)
+							? raw.hosts.map((h, i) => {
+								const normalized = normalizeHost(h, `host-${i}`);
+								if (!normalized) return null;
+								const prev = existing.hosts.find((x) => x.id === normalized.id);
+								if (prev?.privateKey && !normalized.privateKey) normalized.privateKey = prev.privateKey;
+								return normalized;
+							}).filter(Boolean)
+							: [];
+						const bindings = Array.isArray(raw.bindings)
+							? raw.bindings.map((b) => ({
+								workspaceId: String(b.workspaceId || "").trim(),
+								hostId: String(b.hostId || "").trim(),
+								remotePath: String(b.remotePath || "").trim(),
+								label: String(b.label || "").trim(),
+							})).filter((b) => b.workspaceId && b.hostId && b.remotePath)
+							: [];
+						await saveConfig({ hosts, bindings });
+						return ok({
+							configPath: configPath(),
+							hosts: hosts.map((h) => publicHost(h)),
+							bindings,
 						});
 					}
 					case "saveHost": {
@@ -155,6 +195,16 @@ function registerRpc(ctx) {
 						}
 						try {
 							const result = await testHostConnection(host);
+							return ok(result);
+						} catch (err) {
+							return ok({ ok: false, detail: err instanceof Error ? err.message : String(err) });
+						}
+					}
+					case "warmHost": {
+						const hostId = String(payload?.hostId || "").trim();
+						if (!hostId) throw new Error("hostId required");
+						try {
+							const result = await warmHostById(hostId);
 							return ok(result);
 						} catch (err) {
 							return ok({ ok: false, detail: err instanceof Error ? err.message : String(err) });
@@ -293,17 +343,20 @@ function registerRpc(ctx) {
 						const remotePath = binding?.remotePath || payload?.remotePath || "/";
 						const cols = Math.min(Math.max(Number(payload?.cols) || 80, 20), 300);
 						const rows = Math.min(Math.max(Number(payload?.rows) || 24, 5), 120);
-						const { stream, cwd } = await openSshShell(hostId, remotePath, cols, rows);
 						const termId = randomUUID();
-						const entry = { stream, buf: "", closed: false };
-						stream.on("data", (data) => {
+						const entry = { stream: null, buf: "", closed: false };
+						const appendBuf = (data) => {
 							entry.buf += data.toString("utf8");
 							if (entry.buf.length > MAX_BUF) entry.buf = entry.buf.slice(-MAX_BUF);
+						};
+						const { stream, cwd } = await openSshShell(hostId, remotePath, cols, rows, {
+							onData: appendBuf,
+							onClose: () => {
+								entry.closed = true;
+								entry.buf += "\r\n[ssh session closed]\r\n";
+							},
 						});
-						stream.on("close", () => {
-							entry.closed = true;
-							entry.buf += "\r\n[ssh session closed]\r\n";
-						});
+						entry.stream = stream;
 						sshTerms.set(termId, entry);
 						return ok({ termId, cwd, remote: true, hostId });
 					}
@@ -359,7 +412,7 @@ function registerRpc(ctx) {
 }
 
 function apply(ctx) {
-	ctx.inject(["connection"], (connectionCtx) => {
+	ctx.inject(["connection", "webServer"], (connectionCtx) => {
 		connectionCtx.inject(["workspaceRegistry"], (scope) => {
 			scope.effect(() => {
 				ensureSshDirs().catch((err) => {
@@ -371,4 +424,4 @@ function apply(ctx) {
 	});
 }
 
-export { apply, name, isDsshPath, resolveDsshPath, makeDsshPath, parseDsshPath };
+export { apply, name, isDsshPath, resolveDsshPath, makeDsshPath, parseDsshPath, inject };

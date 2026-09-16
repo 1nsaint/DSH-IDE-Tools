@@ -15,6 +15,8 @@ window.__ModuleLoader__.load({
 
 		const css = `
 #${HOST_ID}{position:fixed;inset:0;z-index:12000;display:flex;align-items:center;justify-content:center;padding:24px}
+#${HOST_ID}.dsw-underSettings{z-index:0;pointer-events:none}
+#${HOST_ID}.dsw-underSettings .dsw-backdrop{background:rgba(0,0,0,.25)}
 .dsw-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55)}
 .dsw-dialog{position:relative;z-index:2;width:min(560px,96vw);max-height:min(75vh,720px);display:flex;flex-direction:column;border-radius:16px;overflow:hidden;background:var(--dsw-alias-bg-layer-1,#1b1d21);border:1px solid var(--dsw-alias-border-l2,#333);box-shadow:0 18px 48px rgba(0,0,0,.45)}
 .dsw-head{padding:14px 16px 10px;border-bottom:1px solid var(--dsw-alias-border-l2,#333)}
@@ -50,10 +52,10 @@ window.__ModuleLoader__.load({
   border:1px solid var(--dsw-alias-border-l2,#444);color:var(--dsw-alias-label-tertiary,#888);
   background:var(--dsw-alias-bg-layer-1,#1b1d21);line-height:1.25;text-transform:uppercase;letter-spacing:.03em;
 }
-.YDXeBa_projectRow.dsh-ws-pillRow{position:relative;margin-top:8px}
-.qDHVXG_treeBody,.qDHVXG_list{padding-top:4px}
+[class*="_projectRow"].dsh-ws-pillRow{position:relative;margin-top:8px}
+[class*="_treeBody"],[class*="_list"]{padding-top:4px}
 .dsh-ws-rowLegend{position:absolute;top:-7px;left:10px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;max-width:calc(100% - 20px);pointer-events:none;z-index:1}
-.YDXeBa_projectRow:hover .dsh-ws-rowLegend .${CHIP_CLASS}{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}
+[class*="_projectRow"]:hover .dsh-ws-rowLegend .${CHIP_CLASS}{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}
 .dsw-addWorkspaceBtn{
   width:28px;height:28px;padding:0;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,#444);
   background:var(--dsw-alias-bg-layer-2,#222);color:inherit;font:inherit;font-size:16px;line-height:1;cursor:pointer;
@@ -61,6 +63,9 @@ window.__ModuleLoader__.load({
 .dsw-addWorkspaceBtn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}
 .dsw-loading{padding:16px;font-size:12px;color:var(--dsw-alias-label-tertiary)}
 .dsw-settings{max-width:720px;display:flex;flex-direction:column;gap:14px}
+.dsw-settingsHead{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
+.dsw-settingsHeadPath{font-size:11px;color:var(--dsw-alias-label-tertiary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.dsw-settingsHeadActions{display:flex;gap:8px;flex:none}
 .dsw-section{border:1px solid var(--dsw-alias-border-l2,#333);border-radius:10px;background:var(--dsw-alias-bg-layer-1,#1b1d21);padding:12px 14px;display:flex;flex-direction:column;gap:10px}
 .dsw-sectionTitle{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary)}
 .dsw-hostList{display:flex;flex-direction:column;gap:8px}
@@ -71,6 +76,10 @@ window.__ModuleLoader__.load({
 .dsw-hostMeta code{opacity:.85}
 .dsw-hostActions{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
 .dsw-input{height:32px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,#444);background:var(--dsw-alias-bg-layer-2,#222);color:inherit;padding:0 10px;font:inherit;font-size:12px;min-width:0;box-sizing:border-box}
+.dsw-hostPicker{display:flex;gap:8px;align-items:center;padding:8px 16px;min-width:0}
+.dsw-hostPicker .dsw-input{flex:1;min-width:0}
+.dsw-hostPickerBtn{height:32px;padding:0 12px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,#444);background:var(--dsw-alias-bg-layer-2,#222);color:inherit;font:inherit;font-size:12px;white-space:nowrap;cursor:pointer;flex:none}
+.dsw-hostPickerBtn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}
 .dsw-formRow .dsw-input{flex:1 1 140px}
 .dsw-formRow--grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;width:100%}
 @media (max-width:640px){.dsw-formRow--grid{grid-template-columns:1fr}}
@@ -96,6 +105,54 @@ window.__ModuleLoader__.load({
 		let activeConnection = null;
 		let bindingsCache = { bindings: [], hosts: [] };
 		let reactRoot = null;
+		let settingsLayerMo = null;
+
+		function settingsPanelOpen() {
+			return !!document.querySelector('.VOzbGW_panel[role="dialog"], [class*="_panel"][role="dialog"]');
+		}
+
+		function setPickerUnderSettings(under) {
+			const host = document.getElementById(HOST_ID);
+			if (host) host.classList.toggle("dsw-underSettings", under);
+		}
+
+		function stopSettingsLayerWatch() {
+			settingsLayerMo?.disconnect();
+			settingsLayerMo = null;
+			setPickerUnderSettings(false);
+		}
+
+		function watchSettingsAbovePicker() {
+			settingsLayerMo?.disconnect();
+			settingsLayerMo = null;
+
+			let seenOpen = false;
+			const finish = () => {
+				settingsLayerMo?.disconnect();
+				settingsLayerMo = null;
+				setPickerUnderSettings(false);
+			};
+			const sync = () => {
+				const open = settingsPanelOpen();
+				if (open) {
+					seenOpen = true;
+					setPickerUnderSettings(true);
+					return;
+				}
+				if (seenOpen) finish();
+			};
+			sync();
+			const root = document.getElementById("root") || document.body;
+			settingsLayerMo = new MutationObserver(sync);
+			settingsLayerMo.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["role", "class"] });
+			let tries = 0;
+			const poll = () => {
+				sync();
+				if (seenOpen || tries++ > 45) return;
+				requestAnimationFrame(poll);
+			};
+			requestAnimationFrame(poll);
+		}
 
 		async function callRpc(connection, endpoint, payload) {
 			const res = await connection.rpc.call(RPC, endpoint, payload || {});
@@ -103,12 +160,53 @@ window.__ModuleLoader__.load({
 			return res?.value ?? res;
 		}
 
+		function openConfigInCodeTab(path) {
+			if (typeof path !== "string" || !path) return;
+			window.dispatchEvent(new CustomEvent("dsh-open-code-file", { detail: { path } }));
+			const tabs = document.querySelectorAll('[role="tab"]');
+			for (const tab of tabs) {
+				if ((tab.textContent || "").trim() === "Code") {
+					tab.click();
+					return;
+				}
+			}
+		}
+
+		function registerConfigSaveDelegate(connection, path) {
+			if (typeof path !== "string" || !path || !connection?.rpc?.call) return;
+			window.__dshCodeSaveDelegates = window.__dshCodeSaveDelegates || new Map();
+			window.__dshCodeSaveDelegates.set(path, async (text) => {
+				await callRpc(connection, "saveRawConfig", { text });
+			});
+		}
+
+		async function ensureConfigSaveDelegate(connection) {
+			try {
+				const cfg = await callRpc(connection, "getConfig", {});
+				if (cfg?.configPath) registerConfigSaveDelegate(connection, cfg.configPath);
+			} catch { /* ignore */ }
+		}
+
 		function closePicker() {
+			stopSettingsLayerWatch();
 			const host = document.getElementById(HOST_ID);
 			if (reactRoot?.unmount) reactRoot.unmount();
 			else if (host) ReactDOM.unmountComponentAtNode?.(host);
 			reactRoot = null;
 			host?.remove();
+		}
+
+		function openSshSettingsFromPicker() {
+			openSshSettings();
+			watchSettingsAbovePicker();
+		}
+
+		function openSshSettings() {
+			if (typeof window.__dshOpenSettings === "function") {
+				window.__dshOpenSettings("ssh-workspace");
+				return;
+			}
+			window.dispatchEvent(new CustomEvent("dsh:open-settings", { detail: { section: "ssh-workspace" } }));
 		}
 
 		function AddWorkspaceDialog({ workspaces, connection, onClose }) {
@@ -197,12 +295,31 @@ window.__ModuleLoader__.load({
 				}
 			};
 
-			React.useEffect(() => {
+			const reloadHosts = React.useCallback(() => {
 				callRpc(connection, "getConfig", {}).then((cfg) => {
-					setHosts(cfg?.hosts || []);
-					if (cfg?.hosts?.[0]) setHostId(cfg.hosts[0].id);
+					const list = cfg?.hosts || [];
+					setHosts(list);
+					setHostId((prev) => {
+						if (prev && list.some((h) => h.id === prev)) return prev;
+						return list[0]?.id || "";
+					});
 				}).catch(() => {});
 			}, [connection]);
+
+			React.useEffect(() => {
+				reloadHosts();
+			}, [reloadHosts]);
+
+			React.useEffect(() => {
+				if (mode !== "ssh") return;
+				const refresh = () => reloadHosts();
+				window.addEventListener("focus", refresh);
+				document.addEventListener("visibilitychange", refresh);
+				return () => {
+					window.removeEventListener("focus", refresh);
+					document.removeEventListener("visibilitychange", refresh);
+				};
+			}, [mode, reloadHosts]);
 
 			React.useEffect(() => {
 				if (defaultedTab.current || !hosts.length) return;
@@ -270,7 +387,9 @@ window.__ModuleLoader__.load({
 						}
 						await callRpc(connection, "unbindWorkspace", { workspaceId: id });
 					}
-					if (id && workspaces.startSession) workspaces.startSession(id);
+					if (id && typeof window.__dshNavigateToWorkspace === "function") {
+						await window.__dshNavigateToWorkspace(id);
+					}
 					onClose();
 				} catch (err) {
 					setError(err?.message || String(err));
@@ -295,7 +414,9 @@ window.__ModuleLoader__.load({
 						label: title,
 					});
 					const id = ws?.workspaceId || ws?.id;
-					if (id && workspaces.startSession) workspaces.startSession(id);
+					if (id && typeof window.__dshNavigateToWorkspace === "function") {
+						await window.__dshNavigateToWorkspace(id);
+					}
 					await refreshBindings(connection);
 					onClose();
 				} catch (err) {
@@ -342,13 +463,24 @@ window.__ModuleLoader__.load({
 					mode === "local"
 						? "Browse or create a folder under /workspace, name it, then Add workspace."
 						: "Browse the remote PC, name the workspace, then Add workspace."),
-				mode === "ssh" && React.createElement("div", { style: { padding: "8px 16px" } },
+				mode === "ssh" && React.createElement("div", { className: "dsw-hostPicker" },
 					React.createElement("select", {
 						className: "dsw-input",
 						value: hostId,
 						onChange: (e) => { setHostId(e.target.value); setRemotePath("/"); },
+						"aria-label": "SSH host",
 					}, hosts.length ? hosts.map((h) => React.createElement("option", { key: h.id, value: h.id }, h.label))
-						: React.createElement("option", { value: "" }, "Add SSH hosts in Settings first")),
+						: React.createElement("option", { value: "" }, "No saved PCs")),
+					React.createElement("button", {
+						type: "button",
+						className: "dsw-hostPickerBtn",
+						title: "Open Settings → SSH to add a PC",
+						onClick: (e) => {
+							e.preventDefault();
+							e.stopPropagation();
+							openSshSettingsFromPicker();
+						},
+					}, "+ Add PC"),
 				),
 				mode === "ssh" && React.createElement("div", { className: "dsw-path" },
 					sshCrumbs.map((c, i) => React.createElement(React.Fragment, { key: c.path || "root" },
@@ -375,7 +507,7 @@ window.__ModuleLoader__.load({
 							},
 						}, React.createElement("span", null, e.type === "directory" ? "📁" : "📄"), " ", e.name))
 							: !sshLoading && React.createElement("div", { className: "dsw-status" },
-								!hosts.length ? "Configure SSH hosts under Settings → SSH." : "Empty"),
+								!hosts.length ? "No saved PCs — use + Add PC to open Settings → SSH." : "Empty"),
 					)
 					: React.createElement("div", { className: loading ? "dsw-list dsw-listBusy" : "dsw-list" },
 						React.createElement("div", { className: "dsw-path", style: { padding: "0 8px 8px" } },
@@ -480,6 +612,7 @@ window.__ModuleLoader__.load({
 		function SshSettingsPanel({ connection }) {
 			const [hosts, setHosts] = React.useState([]);
 			const [sshKeysDirPath, setSshKeysDirPath] = React.useState("/home/node/.dsh/ssh");
+			const [configFilePath, setConfigFilePath] = React.useState("");
 			const [msg, setMsg] = React.useState("");
 			const [editingId, setEditingId] = React.useState(null);
 			const [draft, setDraft] = React.useState(emptyDraft());
@@ -488,6 +621,10 @@ window.__ModuleLoader__.load({
 				const cfg = await callRpc(connection, "getConfig", {});
 				setHosts(cfg?.hosts || []);
 				if (cfg?.sshKeysDir) setSshKeysDirPath(cfg.sshKeysDir);
+				if (cfg?.configPath) {
+					setConfigFilePath(cfg.configPath);
+					registerConfigSaveDelegate(connection, cfg.configPath);
+				}
 			}, [connection]);
 
 			React.useEffect(() => { reload().catch(() => {}); }, [reload]);
@@ -558,6 +695,22 @@ window.__ModuleLoader__.load({
 			};
 
 			return React.createElement("div", { className: "dsw-settings" },
+				React.createElement("div", { className: "dsw-settingsHead" },
+					configFilePath
+						? React.createElement("code", { className: "dsw-settingsHeadPath", title: configFilePath }, configFilePath)
+						: React.createElement("span", { className: "dsw-settingsHeadPath" }, "SSH configuration"),
+					React.createElement("div", { className: "dsw-settingsHeadActions" },
+						React.createElement("button", {
+							type: "button",
+							className: "dsw-btn",
+							disabled: !configFilePath,
+							onClick: () => {
+								openConfigInCodeTab(configFilePath);
+								setMsg("Opened in Code tab — edit JSON, then Save. Return here and refresh if host list looks stale.");
+							},
+						}, "Open configuration file"),
+					),
+				),
 				React.createElement("p", { className: "dsw-help" },
 					"Saved PCs live in your Harness data folder and survive container rebuilds. ",
 					"Pasted private keys are written to ",
@@ -649,6 +802,42 @@ window.__ModuleLoader__.load({
 			return "local";
 		}
 
+		function workspaceKeyFromItem(w) {
+			return w?.workspaceId || w?.id || w?.path || w?.name || w?.title || "default";
+		}
+
+		function resolveCurrentWorkspaceItem() {
+			const items = window.__dshWorkspacesSnapshot?.items || [];
+			const ws = typeof window !== "undefined" && window.__dshCurrentWorkspace?.get?.();
+			if (ws?.key) {
+				const hit = items.find((w) => workspaceKeyFromItem(w) === ws.key);
+				if (hit) return hit;
+			}
+			if (ws?.cwd) {
+				const hit = items.find((w) => String(w?.path || "") === ws.cwd);
+				if (hit) return hit;
+			}
+			return null;
+		}
+
+		function labelForCurrentWorkspace() {
+			const hit = resolveCurrentWorkspaceItem();
+			if (hit) return chipLabelForWorkspace(hit);
+			const ws = typeof window !== "undefined" && window.__dshCurrentWorkspace?.get?.();
+			const cwd = String(ws?.cwd || "");
+			if (cwd.startsWith("dssh://")) {
+				const remoteHostId = cwd.replace(/^dssh:\/\//, "").split("/")[0];
+				const hosts = bindingsCache.hosts || [];
+				const host = hosts.find((h) => h.id === remoteHostId);
+				return host?.label || remoteHostId;
+			}
+			return "local";
+		}
+
+		function chipDisplayText(label) {
+			return label === "local" ? "local" : String(label || "local");
+		}
+
 		function findWorkspaceForRow(title, items, rowIndex) {
 			const byTitle = items.find((w) => {
 				const t = String(w?.title || w?.name || "").trim();
@@ -682,8 +871,11 @@ window.__ModuleLoader__.load({
 
 		function decorateWorkspaceChips() {
 			const items = window.__dshWorkspacesSnapshot?.items || [];
-			document.querySelectorAll(".YDXeBa_projectRow").forEach((row, rowIndex) => {
-				const titleEl = row.querySelector(".YDXeBa_title");
+			document.querySelectorAll('[class*="_projectRow"]').forEach((row, rowIndex) => {
+				// Prefer exact local class `*_title` (not `*_titleRow` / `*_titleCluster`).
+				const titleEl = [...row.querySelectorAll('[class*="_title"]')].find((el) =>
+					[...el.classList].some((c) => c === "title" || c.endsWith("_title"))
+				);
 				if (!titleEl) return;
 				titleEl.querySelectorAll(`.${CHIP_CLASS}`).forEach((node) => node.remove());
 
@@ -693,7 +885,12 @@ window.__ModuleLoader__.load({
 					row.querySelector(".dsh-ws-rowLegend")?.remove();
 					return;
 				}
-				const hit = findWorkspaceForRow(title, items, rowIndex);
+				let hit = findWorkspaceForRow(title, items, rowIndex);
+				// Fallback: sidebar-files stamps cwd on the row during paint.
+				if (!hit) {
+					const cwd = row.dataset?.dshSfCwd;
+					if (cwd) hit = { path: cwd, title, workspaceId: row.querySelector(".dsh-sf-wsZone")?.dataset?.wsKey };
+				}
 				if (!hit) {
 					row.classList.remove("dsh-ws-pillRow");
 					row.querySelector(".dsh-ws-rowLegend")?.remove();
@@ -741,11 +938,11 @@ window.__ModuleLoader__.load({
 		}
 
 		function ensureAddWorkspaceButton() {
-			document.querySelectorAll(".qDHVXG_sectionHeader").forEach((header) => {
-				const label = header.querySelector(".qDHVXG_sectionLabel");
+			document.querySelectorAll('[class*="_sectionHeader"]').forEach((header) => {
+				const label = header.querySelector('[class*="_sectionLabel"]');
 				if (!label || !/workspaces/i.test(label.textContent || "")) return;
 				if (header.querySelector('button[aria-label="Add workspace"]') || header.querySelector(".dsw-addWorkspaceBtn")) return;
-				const actions = header.querySelector(".qDHVXG_headerActions") || header;
+				const actions = header.querySelector('[class*="_headerActions"]') || header;
 				const btn = document.createElement("button");
 				btn.type = "button";
 				btn.className = "dsw-addWorkspaceBtn";
@@ -789,11 +986,14 @@ window.__ModuleLoader__.load({
 			ctx.inject(["connection", "workspaces"], (scope) => {
 				const conn = scope.connection || scope.get("connection");
 				const workspaces = scope.workspaces || scope.get("workspaces");
-				if (!conn?.rpc?.call || !workspaces?.create) {
-					console.warn(`[${PLUGIN}] connection/workspaces unavailable`);
+				// Chips only need list; create is for the Add-workspace picker.
+				if (!conn?.rpc?.call || !workspaces?.list) {
+					console.warn(`[${PLUGIN}] connection/workspaces.list unavailable`);
 					return;
 				}
 				activeConnection = conn;
+
+				void ensureConfigSaveDelegate(conn);
 
 				scope.effect(() => {
 					refreshBindings(conn);
@@ -802,18 +1002,49 @@ window.__ModuleLoader__.load({
 				}, `${PLUGIN}: bindings`);
 
 				scope.effect(() => {
+					const publish = (s) => {
+						if (s && Array.isArray(s.items)) window.__dshWorkspacesSnapshot = s;
+						scheduleDecorateChips();
+					};
 					const snap = workspaces?.list?.getSnapshot?.();
-					if (snap?.items) window.__dshWorkspacesSnapshot = snap;
-					const unsub = workspaces?.list?.subscribe?.((s) => {
-						window.__dshWorkspacesSnapshot = s;
-						void refreshBindings(conn).finally(() => scheduleDecorateChips());
-					});
+					publish(snap);
+					const unsub = workspaces?.list?.subscribe?.(publish);
 					void refreshBindings(conn).finally(() => scheduleDecorateChips());
-					scheduleDecorateChips();
-					return () => { unsub?.(); };
+					const iv = setInterval(() => {
+						publish(workspaces?.list?.getSnapshot?.());
+					}, 5000);
+					const onSnap = () => scheduleDecorateChips();
+					window.addEventListener("dsh-workspaces-snapshot", onSnap);
+					return () => {
+						unsub?.();
+						clearInterval(iv);
+						window.removeEventListener("dsh-workspaces-snapshot", onSnap);
+					};
 				}, `${PLUGIN}: chips`);
 
 				scope.effect(() => {
+					const onWarm = (e) => {
+						const hostId = e?.detail?.hostId;
+						if (!hostId || !conn?.rpc?.call) return;
+						void callRpc(conn, "warmHost", { hostId }).catch(() => {});
+					};
+					window.addEventListener("dsh-ssh-warm-host", onWarm);
+					const onWs = (e) => {
+						const cwd = e?.detail?.cwd;
+						const hostId = typeof cwd === "string" && cwd.startsWith("dssh://")
+							? cwd.replace(/^dssh:\/\//, "").split("/")[0]
+							: null;
+						if (hostId) void callRpc(conn, "warmHost", { hostId }).catch(() => {});
+					};
+					window.addEventListener("dsh-current-workspace-changed", onWs);
+					return () => {
+						window.removeEventListener("dsh-ssh-warm-host", onWarm);
+						window.removeEventListener("dsh-current-workspace-changed", onWs);
+					};
+				}, `${PLUGIN}: ssh warm`);
+
+				scope.effect(() => {
+					if (typeof workspaces.create !== "function") return undefined;
 					ensureAddWorkspaceButton();
 					const iv = setInterval(ensureAddWorkspaceButton, 2000);
 					const onClick = (e) => {
@@ -832,6 +1063,12 @@ window.__ModuleLoader__.load({
 		}
 
 		window.__dshSshWorkspaceRpc = (connection, endpoint, payload) => callRpc(connection || activeConnection, endpoint, payload);
+
+		window.__dshWorkspaceChip = {
+			labelForWorkspace: (item) => chipLabelForWorkspace(item),
+			labelForCurrent: () => labelForCurrentWorkspace(),
+			displayText: (label) => chipDisplayText(label),
+		};
 
 		return { apply, inject };
 	},

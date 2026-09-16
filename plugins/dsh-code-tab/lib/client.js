@@ -6,9 +6,15 @@ window.__ModuleLoader__.load({
 
 		const PLUGIN = "dsh-code-tab";
 		const OPEN_EVENT = "dsh-open-code-file";
+		const FILES_CHANGED_EVENT = "dsh-sf-files-changed";
 
 		/** Survives CodeView unmount while another conversation.view tab is active. */
 		const pending = { path: null, listeners: new Set() };
+
+		function notifySidebarFilesChanged(path, root) {
+			if (typeof path !== "string" || !path) return;
+			window.dispatchEvent(new CustomEvent(FILES_CHANGED_EVENT, { detail: { path, root } }));
+		}
 
 		function setPendingPath(path) {
 			if (typeof path !== "string" || !path) return;
@@ -338,6 +344,7 @@ window.__ModuleLoader__.load({
 		function openFileInWorkbench(path) {
 			setPendingPath(path);
 			window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { path } }));
+			notifySidebarFilesChanged(path);
 			switchToCodeTab();
 		}
 
@@ -379,14 +386,19 @@ window.__ModuleLoader__.load({
 .dsh-code-tab-empty,.dsh-code-tab-error,.dsh-code-tab-loading{color:var(--dsw-alias-label-tertiary);font-size:14px;line-height:1.5;padding:16px}
 .dsh-code-tab-error{color:var(--dsw-alias-state-error-primary)}
 
-/* Nudge: switch Workspaces → Files when Code tab has nothing loaded (sessions mode only) */
-html[data-dsh-code-empty="1"] .qDHVXG_sectionHeader,
-html[data-dsh-code-empty="1"] .qDHVXG_sectionHeader .qDHVXG_headerActions{
+/* Nudge: switch Workspaces → Files when Code tab has nothing loaded (sessions mode only).
+   Ancestors often clip with overflow:hidden (esp. collapsed rail) — open the chain so the ring can paint over the row above. */
+html[data-dsh-code-empty="1"] [class*="_regionArea"],
+html[data-dsh-code-empty="1"] [class*="_collapsed"] [class*="_regionArea"],
+html[data-dsh-code-empty="1"] [class*="_root"],
+html[data-dsh-code-empty="1"] [class*="_root"][class*="_rail"],
+html[data-dsh-code-empty="1"] [class*="_sectionHeader"],
+html[data-dsh-code-empty="1"] [class*="_sectionHeader"] [class*="_headerActions"]{
   overflow:visible !important;
 }
 html[data-dsh-code-empty="1"] .dsh-sf-headerToggle:not([aria-pressed="true"]){
   position:relative;
-  z-index:3;
+  z-index:6;
   overflow:visible;
 }
 html[data-dsh-code-empty="1"] .dsh-sf-headerToggle:not([aria-pressed="true"])::after{
@@ -394,13 +406,14 @@ html[data-dsh-code-empty="1"] .dsh-sf-headerToggle:not([aria-pressed="true"])::a
   position:absolute;
   left:50%;
   top:50%;
-  width:34px;
-  height:34px;
-  margin:-17px 0 0 -17px;
+  width:38px;
+  height:38px;
+  margin:-19px 0 0 -19px;
   box-sizing:border-box;
   border-radius:50%;
   border:2px solid var(--dsw-alias-state-business-primary);
   pointer-events:none;
+  z-index:7;
   animation:dsh-code-sf-pulse 2.2s ease-in-out infinite;
 }
 @keyframes dsh-code-sf-pulse{
@@ -425,6 +438,21 @@ html[data-dsh-code-empty="1"] .dsh-sf-headerToggle:not([aria-pressed="true"])::a
 				if (on) document.documentElement.dataset.dshCodeEmpty = "1";
 				else delete document.documentElement.dataset.dshCodeEmpty;
 			} catch { /* ignore */ }
+		}
+
+		function isCodeViewVisible(el) {
+			if (!el || !el.isConnected) return false;
+			if (el.closest("[hidden]")) return false;
+			const hero = el.closest(".dsh-hero-tool-view");
+			if (hero && hero.hidden) return false;
+			try {
+				const style = window.getComputedStyle(el);
+				if (style.display === "none" || style.visibility === "hidden") return false;
+			} catch {
+				return false;
+			}
+			const rect = el.getBoundingClientRect();
+			return rect.width > 8 && rect.height > 8;
 		}
 
 		function escapeRegExp(s) {
@@ -507,6 +535,7 @@ html[data-dsh-code-empty="1"] .dsh-sf-headerToggle:not([aria-pressed="true"])::a
 						setPendingPath(next);
 						setPath(next);
 						setEditing(false);
+						notifySidebarFilesChanged(next);
 					}
 				};
 				window.addEventListener(OPEN_EVENT, onOpen);
@@ -518,8 +547,28 @@ html[data-dsh-code-empty="1"] .dsh-sf-headerToggle:not([aria-pressed="true"])::a
 			}, []);
 
 			React.useEffect(() => {
-				setCodeEmptyHint(!path && !loading);
-				return () => setCodeEmptyHint(false);
+				const sync = () => {
+					const root = bodyRef.current;
+					setCodeEmptyHint(!path && !loading && isCodeViewVisible(root));
+				};
+				sync();
+				const onVis = () => requestAnimationFrame(sync);
+				window.addEventListener("dsh-hero-open-tool", onVis);
+				window.addEventListener("dsh-hero-close-tool", onVis);
+				window.addEventListener("dsh-tabs-order-changed", onVis);
+				const mo = new MutationObserver(onVis);
+				mo.observe(document.body, {
+					attributes: true,
+					subtree: true,
+					attributeFilter: ["hidden", "aria-selected", "data-dsh-tool-tab", "data-phase"],
+				});
+				return () => {
+					mo.disconnect();
+					window.removeEventListener("dsh-hero-open-tool", onVis);
+					window.removeEventListener("dsh-hero-close-tool", onVis);
+					window.removeEventListener("dsh-tabs-order-changed", onVis);
+					setCodeEmptyHint(false);
+				};
 			}, [path, loading]);
 
 			React.useEffect(() => {
@@ -564,6 +613,14 @@ html[data-dsh-code-empty="1"] .dsh-sf-headerToggle:not([aria-pressed="true"])::a
 						setRoot(parts.length > 2 ? parts.slice(0, 2).join("/") || "/" : "/");
 					}
 					if (relocatedFrom) setStatus(`Opened ${basenameOf(path)}`);
+					const openPath = resolvedPath || path;
+					const fileRoot = typeof rootRes?.root === "string" && rootRes.root
+						? rootRes.root
+						: (openPath.startsWith("/") ? (() => {
+							const parts = openPath.split("/");
+							return parts.length > 2 ? parts.slice(0, 2).join("/") || "/" : "/";
+						})() : undefined);
+					notifySidebarFilesChanged(openPath, fileRoot);
 				}).catch((err) => {
 					if (!alive) return;
 					setError(err?.message || String(err));
@@ -588,10 +645,19 @@ html[data-dsh-code-empty="1"] .dsh-sf-headerToggle:not([aria-pressed="true"])::a
 			};
 
 			const onSave = async () => {
-				if (!path || !root || typeof draft !== "string") return;
+				if (!path || typeof draft !== "string") return;
 				setSaving(true);
 				setStatus("");
 				try {
+					const delegate = window.__dshCodeSaveDelegates?.get(path);
+					if (delegate) {
+						await delegate(draft);
+						setContent(draft);
+						setEditing(false);
+						setStatus("Saved");
+						return;
+					}
+					if (!root) return;
 					const res = await callRemote("file.write", {
 						path,
 						root,
@@ -605,6 +671,7 @@ html[data-dsh-code-empty="1"] .dsh-sf-headerToggle:not([aria-pressed="true"])::a
 					setVersion(res?.version ?? version);
 					setEditing(false);
 					setStatus("Saved");
+					notifySidebarFilesChanged(path, root);
 				} catch (err) {
 					setStatus(err?.message || String(err));
 				} finally {

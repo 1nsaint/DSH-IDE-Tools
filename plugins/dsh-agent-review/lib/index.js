@@ -5,6 +5,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 
 const name = "dsh-agent-review";
 const RPC_CHANNEL = "/agent-review";
@@ -235,8 +236,8 @@ async function restoreFile(entry) {
 }
 
 function registerRpc(ctx) {
-	const register = ctx.connection.rpc.handle;
-	return register(
+	return registerRpcChannel(
+		ctx,
 		RPC_CHANNEL,
 		async (endpoint, payload) => {
 			try {
@@ -326,14 +327,13 @@ function registerRpc(ctx) {
 				return transportError(error);
 			}
 		},
-		{ authority: "loopback" },
 	);
 }
 
-const inject = ["tools", "connection", "sessions"];
+const inject = ["tools", "connection", "sessions", "webServer"];
 
 function apply(ctx) {
-	ctx.inject(["tools", "connection", "sessions"], (scope) => {
+	ctx.inject(["tools", "connection", "sessions", "webServer"], (scope) => {
 		scope.effect(() => {
 			const offTool = scope.on("tools/execute", async (exec, next) => {
 				const result = await next();

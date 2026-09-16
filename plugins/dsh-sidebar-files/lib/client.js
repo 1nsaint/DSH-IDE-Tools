@@ -12,13 +12,35 @@ window.__ModuleLoader__.load({
 			ReactDOMClient = null;
 		}
 		const PLUGIN = "dsh-sidebar-files";
+		/** Upgrade-safe: match CSS-module locals regardless of hash prefix (see _shared/css-modules.js). */
+		function hasLocalCss(el, local) {
+			if (!el || !el.classList) return false;
+			const name = String(local || "").replace(/^_+/, "");
+			for (const c of el.classList) {
+				if (c === name || c.endsWith("_" + name)) return true;
+			}
+			return false;
+		}
+		function cssLocal(local) {
+			return '[class*="_' + String(local).replace(/^_+/, "") + '"]';
+		}
+		function qsExactLocal(root, local) {
+			if (!root || !root.querySelectorAll) return null;
+			const name = String(local || "").replace(/^_+/, "");
+			for (const el of root.querySelectorAll(cssLocal(name))) {
+				if (hasLocalCss(el, name)) return el;
+			}
+			return null;
+		}
 		const STORE_KEY = "dsh-sidebar-files.view.v2";
 		const DOT_KEY = "dsh-sidebar-files.dot.v1";
 		const EXPAND_KEY = "dsh-sidebar-files.expand.v1";
 		const MODE_EVENT = "dsh-sidebar-files-mode";
 		const PREFS_EVENT = "dsh-sidebar-files-prefs";
 		const CURRENT_WS_KEY = "dsh-sidebar-files.currentWorkspace.v1";
+		const CURRENT_WS_FORCE_UNTIL_KEY = "dsh-sidebar-files.currentWorkspace.forceUntil.v1";
 		const CURRENT_WS_EVENT = "dsh-current-workspace-changed";
+		const POINTER_FORCE_MS = 8000;
 		const WS_SWITCH_ICON = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg>';
 		// Single outline chat bubble shown in place of the workspace folder icon while in Sessions (chat) mode.
 		const CHAT_BUBBLE_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
@@ -36,39 +58,48 @@ window.__ModuleLoader__.load({
 .dsh-sf-chatIcon svg{display:block;width:15px;height:15px}
 /* Sessions mode: keep stock folder node intact for React, hide it visually,
    and show our own bubble sibling instead (never mutate folder.innerHTML). */
-.qDHVXG_groupSection[data-dsh-sf-mode="sessions"] > .YDXeBa_projectRow > .dsh-sf-chatIcon{
+[class*="_groupSection"][data-dsh-sf-mode="sessions"] > [class*="_projectRow"] > .dsh-sf-chatIcon{
   display:inline-flex;
 }
-.qDHVXG_groupSection[data-dsh-sf-mode="sessions"] > .YDXeBa_projectRow > .YDXeBa_folder{
+[class*="_groupSection"][data-dsh-sf-mode="sessions"] > [class*="_projectRow"] > [class*="_folder"]{
   width:0 !important;min-width:0 !important;max-width:0 !important;
   height:0 !important;margin:0 !important;padding:0 !important;
   overflow:hidden !important;opacity:0 !important;
   pointer-events:none !important;border:0 !important;
 }
-.qDHVXG_groupSection[data-dsh-sf-mode="files"] .YDXeBa_sessionRow,
-.qDHVXG_groupSection[data-dsh-sf-mode="files"] .qDHVXG_sessionOverflowButton{
+[class*="_groupSection"][data-dsh-sf-mode="files"] [class*="_sessionRow"],
+[class*="_groupSection"][data-dsh-sf-mode="files"] [class*="_sessionOverflowButton"]{
   display:none !important;
 }
 /* If stock session-search ever wins, keep it out of the way in Files mode. */
-html[data-dsh-sf-view="files"] .qDHVXG_searchTree,
-html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchStatus,
-html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
+html[data-dsh-sf-view="files"] [class*="_searchTree"],
+html[data-dsh-sf-view="files"] [class*="_list"] [class*="_searchStatus"],
+html[data-dsh-sf-view="files"] [class*="_list"] [class*="_searchWarning"]{
   display:none !important;
 }
-.qDHVXG_groupSection[data-dsh-sf-mode="files"] > .dsh-sf-tree{
+[class*="_groupSection"][data-dsh-sf-mode="files"] > .dsh-sf-tree{
   display:block;
 }
-.qDHVXG_groupSection[data-dsh-sf-mode="files"][data-dsh-sf-collapsed="1"] > .dsh-sf-tree{
+[class*="_groupSection"][data-dsh-sf-mode="files"][data-dsh-sf-collapsed="1"] > .dsh-sf-tree{
   display:none !important;
 }
-.qDHVXG_groupSection[data-dsh-sf-mode="files"] > .YDXeBa_projectRow,
-.qDHVXG_groupSection[data-dsh-sf-mode="files"] .YDXeBa_projectRow{
+[class*="_groupSection"][data-dsh-sf-mode="files"] > [class*="_projectRow"],
+[class*="_groupSection"][data-dsh-sf-mode="files"] [class*="_projectRow"]{
   cursor:pointer;
 }
-.qDHVXG_groupSection[data-dsh-sf-redundant="1"]{
+[class*="_groupSection"][data-dsh-sf-redundant="1"]{
   display:none !important;
 }
-/* No position/display override on .YDXeBa_projectRow itself — forcing
+/* Stock "Ungrouped" bucket = orphan chats with no workspace. Not a real cwd —
+   hide in Files mode; in Sessions keep it but don't dress it as a workspace. */
+[class*="_groupSection"][data-dsh-sf-ungrouped="1"] .dsh-sf-wsZone,
+[class*="_groupSection"][data-dsh-sf-ungrouped="1"] .dsh-sf-chatIcon{
+  display:none !important;
+}
+html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1"]{
+  display:none !important;
+}
+/* No position/display override on [class*="_projectRow"] itself — forcing
    position:relative previously broke an existing absolutely-positioned
    native element inside the row (it started filling the whole row and
    swallowed our clicks). The zone below is a plain in-flow element that
@@ -78,45 +109,57 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
   display:inline-flex;align-items:center;justify-content:center;
   align-self:stretch;
   flex:0 0 auto;
-  width:0;min-width:0;margin:0;padding:0;
+  /* Rest: invisible, no layout — only appear on row hover (pre-upgrade UX).
+     Keep pointer-events:none at rest so the zone never steals row clicks.
+     On row:hover we expand + re-enable hits (do NOT leave an always-on 22px chrome). */
+  width:0;min-width:0;max-width:0;margin:0;padding:0;
   border-radius:6px;
   cursor:pointer;
   background:transparent;
   color:var(--dsw-alias-state-business-primary,#5b9dff);
   overflow:hidden;
-  transition:width .12s ease, margin .12s ease, background .12s ease, color .12s ease;
+  opacity:0;
+  pointer-events:none;
+  transition:width .12s ease, margin .12s ease, opacity .12s ease, max-width .12s ease;
 }
 .dsh-sf-wsZone svg{
   width:13px;height:13px;flex:none;display:block;
-  opacity:0;
+  opacity:.85;
   pointer-events:none;
-  transition:opacity .12s ease;
+  transition:opacity .12s ease, filter .12s ease, transform .12s ease;
 }
-/* Split only appears while hovering the row — at rest the row is 100% unchanged. */
-.YDXeBa_projectRow:hover .dsh-sf-wsZone,
-.YDXeBa_projectRow:focus-within .dsh-sf-wsZone{
-  width:20%;min-width:22px;max-width:36px;margin-right:6px;
+/* Reveal switch only while the workspace row is hovered / focused. */
+[class*="_projectRow"]:hover .dsh-sf-wsZone,
+[class*="_projectRow"]:focus-within .dsh-sf-wsZone{
+  width:22px;min-width:22px;max-width:36px;margin-right:6px;
+  opacity:1;overflow:visible;pointer-events:auto;
 }
-.YDXeBa_projectRow:hover .dsh-sf-wsZone svg,
-.YDXeBa_projectRow:focus-within .dsh-sf-wsZone svg{
-  opacity:.8;
+[class*="_projectRow"]:hover .dsh-sf-wsZone svg,
+[class*="_projectRow"]:focus-within .dsh-sf-wsZone svg{
+  opacity:.82;
 }
-.dsh-sf-wsZone:hover{
-  background:color-mix(in srgb,var(--dsw-alias-state-business-primary,#5b9dff) 24%,transparent);
+.dsh-sf-wsZone:hover,
+.dsh-sf-wsZone:focus-visible{
+  background:transparent;
 }
-.dsh-sf-wsZone:hover svg{
+.dsh-sf-wsZone:hover svg,
+.dsh-sf-wsZone:focus-visible svg{
   opacity:1;
+  filter:drop-shadow(0 0 2px currentColor) drop-shadow(0 0 6px color-mix(in srgb,currentColor 72%,transparent));
+  transform:scale(1.06);
 }
 .dsh-sf-wsZone:focus-visible{
-  outline:2px solid var(--dsw-alias-state-business-primary,#5b9dff);
-  outline-offset:1px;
+  outline:none;
+  /* Keyboard: keep visible even if not hovering the row. */
+  width:22px;min-width:22px;max-width:36px;margin-right:6px;
+  opacity:1;overflow:visible;pointer-events:auto;
 }
 /* Persistent "current workspace" indicator: a subtle left accent line only —
    no box, no width change, so it never looks like a big highlighted button. */
-.YDXeBa_projectRow[data-dsh-sf-current="1"]{
+[class*="_projectRow"][data-dsh-sf-current="1"]{
   box-shadow:inset 3px 0 0 0 var(--dsw-alias-state-business-primary,#5b9dff);
 }
-.qDHVXG_sectionHeader .qDHVXG_headerActions{
+[class*="_sectionHeader"] [class*="_headerActions"]{
   /* Stock caps at ~60px (two icons). Our Files toggle lives here too. */
   width:auto !important;
   max-width:none !important;
@@ -125,29 +168,140 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
   align-items:center;
   gap:0;
 }
-.qDHVXG_sectionHeader .dsh-sf-headerToggle,
-.qDHVXG_sectionHeader .dsh-sf-headerDot{
+[class*="_sectionHeader"] .dsh-sf-headerToggle,
+[class*="_sectionHeader"] .dsh-sf-headerDot{
   height:28px;width:28px;padding:0;margin:0;border:none;border-radius:6px;
   background:transparent;color:var(--dsw-alias-label-tertiary,#999);
   display:inline-flex;align-items:center;justify-content:center;flex:none;flex-shrink:0;
   cursor:pointer;position:relative;z-index:2;
 }
-.qDHVXG_sectionHeader .dsh-sf-headerToggle:hover,
-.qDHVXG_sectionHeader .dsh-sf-headerDot:hover{
+[class*="_sectionHeader"] .dsh-sf-headerToggle:hover,
+[class*="_sectionHeader"] .dsh-sf-headerDot:hover{
   color:var(--dsw-alias-label-primary,#fff);
   background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06));
 }
-.qDHVXG_sectionHeader .dsh-sf-headerToggle{
+[class*="_sectionHeader"] .dsh-sf-headerToggle{
   color:var(--dsw-alias-state-business-primary,#3d8bfd);
 }
-.qDHVXG_sectionHeader .dsh-sf-headerDot[aria-pressed="true"]{
+[class*="_sectionHeader"] .dsh-sf-headerDot[aria-pressed="true"]{
   color:var(--dsw-alias-state-business-primary,#3d8bfd);
 }
-.qDHVXG_sectionHeader .dsh-sf-headerToggle svg,
-.qDHVXG_sectionHeader .dsh-sf-headerDot svg{width:18px;height:18px;display:block}
+[class*="_sectionHeader"] .dsh-sf-headerToggle svg,
+[class*="_sectionHeader"] .dsh-sf-headerDot svg{width:18px;height:18px;display:block}
 /* Eye only in Files mode — no reserved gap in Sessions; toggle stays left of Add */
-.qDHVXG_sectionHeader .dsh-sf-headerDot{display:none}
-.qDHVXG_sectionHeader[data-dsh-sf-files="1"] .dsh-sf-headerDot{display:inline-flex}
+[class*="_sectionHeader"] .dsh-sf-headerDot{display:none}
+[class*="_sectionHeader"][data-dsh-sf-files="1"] .dsh-sf-headerDot{display:inline-flex}
+.dsh-sf-treeModeLabel{
+  display:flex;align-items:center;gap:6px;
+  padding:4px 12px 2px 4px;
+  margin:0;
+  font-size:11px;font-weight:600;letter-spacing:.03em;
+  text-transform:uppercase;
+  color:var(--dsw-alias-label-tertiary,#8b919a);
+  user-select:none;
+}
+.dsh-sf-treeModeLabel svg{
+  flex:none;width:14px;height:14px;display:block;
+  color:var(--dsw-alias-state-business-primary,#5b9dff);
+}
+/* Expanded: light rule under Workspaces header */
+[class*="_root"]:not([class*="_collapsed"]) [class*="_sectionHeader"][data-dsh-sf-files],
+[class*="_root"]:not([class*="_rail"]) [class*="_sectionHeader"][data-dsh-sf-files]{
+  border-bottom:1px solid var(--dsw-alias-border-l2,#333);
+  margin-bottom:6px;
+  padding-bottom:8px;
+  box-sizing:border-box;
+}
+/* Collapsed sidebar rail (~40px): icon-only chrome */
+[class*="_collapsed"] .dsh-sf-treeModeLabel,
+[class*="_root"][class*="_rail"] .dsh-sf-treeModeLabel{
+  display:none!important;
+}
+[class*="_collapsed"] [class*="_sectionHeader"],
+[class*="_root"][class*="_rail"] [class*="_sectionHeader"]{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:flex-start!important;
+  gap:8px!important;
+  padding:0!important;
+  margin:0 0 8px!important;
+  border:none!important;
+  min-width:0!important;
+  width:100%!important;
+  box-sizing:border-box!important;
+  overflow:visible!important;
+}
+[class*="_collapsed"] [class*="_sectionLabel"],
+[class*="_root"][class*="_rail"] [class*="_sectionLabel"]{
+  display:none!important;
+}
+[class*="_collapsed"] [class*="_headerActions"],
+[class*="_root"][class*="_rail"] [class*="_headerActions"]{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:flex-start!important;
+  gap:8px!important;
+  width:100%!important;
+  max-width:none!important;
+  flex:none!important;
+  margin:0!important;
+  padding:0!important;
+  overflow:visible!important;
+}
+/* Keep Sessions↔Files + Search; hide secondary chrome that can't fit */
+[class*="_collapsed"] [class*="_sectionHeader"] .dsh-sf-headerDot,
+[class*="_root"][class*="_rail"] [class*="_sectionHeader"] .dsh-sf-headerDot,
+[class*="_collapsed"] [class*="_sectionHeader"] button[aria-label="Add workspace"],
+[class*="_root"][class*="_rail"] [class*="_sectionHeader"] button[aria-label="Add workspace"],
+[class*="_collapsed"] [class*="_searchInput"],
+[class*="_root"][class*="_rail"] [class*="_searchInput"],
+[class*="_collapsed"] [class*="_searchTree"],
+[class*="_root"][class*="_rail"] [class*="_searchTree"]{
+  display:none!important;
+}
+[class*="_collapsed"] [class*="_sectionHeader"] .dsh-sf-headerToggle,
+[class*="_root"][class*="_rail"] [class*="_sectionHeader"] .dsh-sf-headerToggle,
+[class*="_collapsed"] [class*="_searchButton"],
+[class*="_root"][class*="_rail"] [class*="_searchButton"]{
+  width:32px!important;
+  height:32px!important;
+  min-width:32px!important;
+  max-width:32px!important;
+  margin:0!important;
+  padding:0!important;
+  flex:none!important;
+  align-self:center!important;
+  border-radius:8px!important;
+  box-sizing:border-box!important;
+}
+[class*="_collapsed"] [class*="_sectionHeader"] .dsh-sf-headerToggle svg,
+[class*="_root"][class*="_rail"] [class*="_sectionHeader"] .dsh-sf-headerToggle svg,
+[class*="_collapsed"] [class*="_searchButton"] svg,
+[class*="_root"][class*="_rail"] [class*="_searchButton"] svg{
+  width:18px!important;
+  height:18px!important;
+  display:block!important;
+}
+[class*="_collapsed"] .dsh-sf-tree,
+[class*="_root"][class*="_rail"] .dsh-sf-tree,
+[class*="_collapsed"] .dsh-sf-wsZone,
+[class*="_root"][class*="_rail"] .dsh-sf-wsZone,
+[class*="_collapsed"] .dsh-ws-rowLegend,
+[class*="_root"][class*="_rail"] .dsh-ws-rowLegend,
+[class*="_collapsed"] [class*="_sessionRow"],
+[class*="_root"][class*="_rail"] [class*="_sessionRow"],
+[class*="_collapsed"] [class*="_sessionOverflowButton"],
+[class*="_root"][class*="_rail"] [class*="_sessionOverflowButton"],
+[class*="_collapsed"] [class*="_projectRow"],
+[class*="_root"][class*="_rail"] [class*="_projectRow"],
+[class*="_collapsed"] [class*="_list"],
+[class*="_root"][class*="_rail"] [class*="_list"],
+[class*="_collapsed"] [class*="_listArea"],
+[class*="_root"][class*="_rail"] [class*="_listArea"]{
+  display:none!important;
+}
 .dsh-sf-tree{
   margin:2px 0 4px;padding:2px 0 4px 4px;
   max-height:min(42vh, 320px);overflow:auto;
@@ -190,7 +344,7 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
   position:relative;
 }
 .dsh-sf-row:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.dsh-sf-rowAdd,.dsh-sf-rowRen,.dsh-sf-rowDel,.dsh-sf-rowLive{
+.dsh-sf-rowAdd,.dsh-sf-rowMore,.dsh-sf-rowLive{
   flex:none;width:18px;height:18px;padding:0;border:none;border-radius:4px;
   background:transparent;color:var(--dsw-alias-label-tertiary,#888);
   font:inherit;font-size:14px;line-height:16px;cursor:pointer;
@@ -198,15 +352,27 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 }
 .dsh-sf-rowActs{
   flex:none;margin-left:auto;display:inline-flex;align-items:center;gap:1px;
+  position:relative;
 }
-.dsh-sf-row:hover .dsh-sf-rowAdd,.dsh-sf-row:hover .dsh-sf-rowRen,.dsh-sf-row:hover .dsh-sf-rowDel,.dsh-sf-row:hover .dsh-sf-rowLive,
-.dsh-sf-rowAdd:focus,.dsh-sf-rowRen:focus,.dsh-sf-rowDel:focus,.dsh-sf-rowDel.confirm,.dsh-sf-rowLive:focus{opacity:1}
+.dsh-sf-row:hover .dsh-sf-rowAdd,.dsh-sf-row:hover .dsh-sf-rowMore,.dsh-sf-row:hover .dsh-sf-rowLive,
+.dsh-sf-rowAdd:focus,.dsh-sf-rowMore:focus,.dsh-sf-rowMore.open,.dsh-sf-rowLive:focus{opacity:1}
 .dsh-sf-rowAdd:hover{color:var(--dsw-alias-label-primary,#fff);background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08))}
-.dsh-sf-rowRen{font-size:12px}
-.dsh-sf-rowRen:hover{color:var(--dsw-alias-label-primary,#fff);background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08))}
-.dsh-sf-rowLive{font-size:11px;color:var(--dsw-alias-state-business-primary,#3fb950)}
-.dsh-sf-rowLive:hover{color:var(--dsw-alias-state-business-primary,#3fb950);background:color-mix(in srgb,var(--dsw-alias-state-business-primary,#3fb950) 16%,transparent)}
-.dsh-sf-rowDel:hover{color:var(--dsw-alias-state-error-primary,#f07178);background:rgba(240,113,120,.12)}
+.dsh-sf-rowMore{font-size:16px;letter-spacing:.02em}
+.dsh-sf-rowMore:hover,.dsh-sf-rowMore.open{color:var(--dsw-alias-label-primary,#fff);background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08))}
+.dsh-sf-rowMenu{
+  position:fixed;z-index:12001;min-width:132px;
+  padding:4px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,#444);
+  background:var(--dsw-alias-bg-layer-1,#1b1d21);box-shadow:0 8px 24px rgba(0,0,0,.35);
+}
+.dsh-sf-rowMenuItem{
+  display:block;width:100%;text-align:left;border:none;border-radius:6px;
+  background:transparent;color:var(--dsw-alias-label-primary,#eee);
+  font:inherit;font-size:12px;line-height:1.3;padding:7px 10px;cursor:pointer;
+}
+.dsh-sf-rowMenuItem:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08))}
+.dsh-sf-rowMenuItem:disabled{opacity:.45;cursor:not-allowed}
+.dsh-sf-rowMenuItem.danger{color:var(--dsw-alias-state-error-primary,#f07178)}
+.dsh-sf-rowMenuItem.danger:hover{background:rgba(240,113,120,.12)}
 .dsh-sf-renameRow{display:flex;align-items:center;gap:4px;padding:2px 4px 4px;width:100%;box-sizing:border-box}
 .dsh-sf-renameInput{
   flex:1;min-width:0;height:22px;border-radius:6px;border:1px solid var(--dsw-alias-border-l2,#444);
@@ -217,6 +383,9 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
   background:rgba(240,113,120,.18);
   font-weight:600;
 }
+.dsh-sf-rowLive{font-size:11px;color:var(--dsw-alias-state-business-primary,#3fb950)}
+.dsh-sf-rowLive:hover{color:var(--dsw-alias-state-business-primary,#3fb950);background:color-mix(in srgb,var(--dsw-alias-state-business-primary,#3fb950) 16%,transparent)}
+.dsh-sf-row:focus-visible{outline:1px solid var(--dsw-alias-state-business-primary,#5b9dff);outline-offset:-1px}
 .dsh-sf-caret{
   width:12px;height:12px;flex:none;display:inline-flex;align-items:center;justify-content:center;
   color:var(--dsw-alias-label-caption);transition:transform .12s ease;
@@ -229,6 +398,7 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
   padding:8px 10px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)
 }
 .dsh-sf-status.err{color:var(--dsw-alias-state-error-primary)}
+.dsh-sf-status.warn{color:var(--dsw-alias-state-warn-primary,#e8a33d)}
 .dsh-sf-row[draggable="true"]{cursor:grab}
 .dsh-sf-composerDrop{outline:2px dashed var(--dsw-alias-state-business-primary)!important;outline-offset:2px}
 .dsh-sf-row.dsh-sf-dragging{opacity:.4}
@@ -241,11 +411,11 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
   outline:1px dashed color-mix(in srgb,var(--dsw-alias-state-business-primary,#3d8bfd) 60%,transparent);
   outline-offset:-1px;
 }
-.YDXeBa_projectRow.dsh-sf-dropHoverWs{
+[class*="_projectRow"].dsh-sf-dropHoverWs{
   outline:1px dashed var(--dsw-alias-state-business-primary,#3d8bfd);outline-offset:-2px;border-radius:6px;
 }
 /* Files mode: stock + means new folder */
-.qDHVXG_groupSection[data-dsh-sf-mode="files"] button[aria-label^="New session in "]{
+[class*="_groupSection"][data-dsh-sf-mode="files"] button[aria-label^="New session in "]{
   /* keep hover visibility as stock */
 }
 `;
@@ -322,7 +492,7 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 		/** Keep the stock (controlled) search input showing our file query without flipping to session SearchResults. */
 		function syncFileSearchInput() {
 			if (getView() !== "files") return;
-			const input = document.querySelector("input.qDHVXG_searchInput");
+			const input = document.querySelector(`input${cssLocal("searchInput")}`);
 			if (!(input instanceof HTMLInputElement)) return;
 			const want = getFileQuery();
 			if (input.value === want) return;
@@ -337,12 +507,12 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 
 		/** Collapse stock session search so WorkspaceBrowser keeps rendering SessionTree (our file hosts). */
 		function clearStockSessionSearch() {
-			const clearBtn = document.querySelector(".qDHVXG_sectionHeader .qDHVXG_clearButton");
+			const clearBtn = document.querySelector(`${cssLocal("sectionHeader")} ${cssLocal("clearButton")}`);
 			if (clearBtn instanceof HTMLElement) {
 				clearBtn.click();
 				return;
 			}
-			const input = document.querySelector("input.qDHVXG_searchInput");
+			const input = document.querySelector(`input${cssLocal("searchInput")}`);
 			if (input instanceof HTMLInputElement) {
 				input.dispatchEvent(new KeyboardEvent("keydown", {
 					key: "Escape", code: "Escape", keyCode: 27, which: 27, bubbles: true, cancelable: true,
@@ -388,12 +558,26 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 			return null;
 		}
 
-		function setCurrentWorkspace(ws) {
+		function setCurrentWorkspace(ws, { force = false } = {}) {
 			try {
 				if (ws && ws.cwd) localStorage.setItem(CURRENT_WS_KEY, JSON.stringify(ws));
 				else localStorage.removeItem(CURRENT_WS_KEY);
+				if (force && ws && ws.cwd) {
+					localStorage.setItem(CURRENT_WS_FORCE_UNTIL_KEY, String(Date.now() + POINTER_FORCE_MS));
+				} else if (!ws) {
+					localStorage.removeItem(CURRENT_WS_FORCE_UNTIL_KEY);
+				}
 			} catch { /* ignore */ }
 			window.dispatchEvent(new CustomEvent(CURRENT_WS_EVENT, { detail: ws || null }));
+		}
+
+		function pointerForceActive() {
+			try {
+				const until = Number(localStorage.getItem(CURRENT_WS_FORCE_UNTIL_KEY) || 0);
+				return Number.isFinite(until) && Date.now() < until;
+			} catch {
+				return false;
+			}
 		}
 
 		function workspaceKeyFromItem(w) {
@@ -409,30 +593,115 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 			return typeof p === "string" && p ? p : null;
 		}
 
+		function isRemotePath(p) {
+			return typeof p === "string" && p.startsWith("dssh://");
+		}
+
+		function normalizeWsCwd(cwd) {
+			const s = String(cwd || "").trim();
+			if (!s) return "";
+			if (isRemotePath(s)) return s.replace(/\/+$/, "") || s;
+			return s.replace(/\/+$/, "") || s;
+		}
+
+		function sessionHeaderCwd(sessSnap, sessionId) {
+			const row = sessSnap?.byId?.[sessionId];
+			if (!row) return null;
+			const h = row.header ?? row;
+			return typeof h?.cwd === "string" ? h.cwd : null;
+		}
+
+		function cwdMatchesWorkspace(sessionCwd, wsCwd) {
+			const a = normalizeWsCwd(sessionCwd);
+			const b = normalizeWsCwd(wsCwd);
+			if (!b) return true;
+			if (!a) return false;
+			return a === b;
+		}
+
+		function dsshHostId(cwd) {
+			if (!isRemotePath(cwd)) return null;
+			return String(cwd).replace(/^dssh:\/\//, "").split("/")[0] || null;
+		}
+
 		function resolveWorkspace(workspaces, row) {
-			const titleEl = row.querySelector(".YDXeBa_title");
-			const title = (titleEl?.textContent || "").trim();
-			if (!title) return null;
+			const titleEl = qsExactLocal(row, "title");
+			const title = (titleEl?.textContent || "").replace(/\s+/g, " ").trim();
 			const items = workspaces?.list?.getSnapshot?.()?.items || [];
-			const hit = items.find((w) => workspaceLabel(w).toLowerCase() === title.toLowerCase());
-			if (!hit) return null;
-			const cwd = workspaceCwd(hit);
+			let hit = title
+				? items.find((w) => workspaceLabel(w).toLowerCase() === title.toLowerCase())
+				: null;
+			if (!hit) {
+				const cwd = row?.dataset?.dshSfCwd;
+				if (cwd) hit = items.find((w) => workspaceCwd(w) === cwd) || null;
+			}
+			if (!hit) {
+				// Last resort: use stamped row metadata from a previous paint.
+				const cwd = row?.dataset?.dshSfCwd;
+				const key = row?.querySelector?.(":scope > .dsh-sf-wsZone")?.dataset?.wsKey;
+				if (cwd && key) {
+					return { key, label: title || cwd, cwd, item: { path: cwd, title, workspaceId: key } };
+				}
+				return null;
+			}
+			const cwd = workspaceCwd(hit) || row?.dataset?.dshSfCwd;
 			if (!cwd) return null;
 			return { key: workspaceKeyFromItem(hit), label: workspaceLabel(hit) || title, cwd, item: hit };
 		}
 
 		function getActiveWorkspace(workspaces, sessions) {
 			const pointer = getCurrentWorkspace();
+			const forcePointer = pointerForceActive();
 			try {
 				const sessSnap = sessions?.list?.getSnapshot?.();
 				const wsSnap = workspaces?.list?.getSnapshot?.();
 				const current = sessSnap?.current;
 				const items = wsSnap?.items || [];
+				if (pointer?.cwd && isRemotePath(pointer.cwd) && items.length > 0) {
+					const pinned = items.find((w) => workspaceKeyFromItem(w) === pointer.key)
+						|| items.find((w) => cwdMatchesWorkspace(workspaceCwd(w), pointer.cwd));
+					if (pinned || pointer.cwd) {
+						const pinnedCwd = workspaceCwd(pinned) || pointer.cwd;
+						if (current && pinned) {
+							const live = items.find((w) => Array.isArray(w.sessionIds) && w.sessionIds.includes(current));
+							const liveCwd = live ? workspaceCwd(live) : null;
+							if (liveCwd && !cwdMatchesWorkspace(liveCwd, pinnedCwd)) {
+								return {
+									key: pointer.key || workspaceKeyFromItem(pinned),
+									label: workspaceLabel(pinned) || pointer.label,
+									cwd: pinnedCwd,
+									item: pinned,
+									fromPointer: true,
+								};
+							}
+						}
+					}
+				}
 				if (current && items.length > 0) {
 					const hit = items.find((w) => Array.isArray(w.sessionIds) && w.sessionIds.includes(current));
 					if (hit) {
 						const cwd = workspaceCwd(hit);
-						if (cwd) return { key: workspaceKeyFromItem(hit), label: workspaceLabel(hit), cwd, item: hit };
+						const hitKey = workspaceKeyFromItem(hit);
+						// After an explicit switch-zone click, trust the pointer until
+						// startSession/open lands (or the short force window ends).
+						if (forcePointer && pointer?.key && pointer.key !== hitKey) {
+							const pinned = items.find((w) => workspaceKeyFromItem(w) === pointer.key);
+							if (pinned) {
+								const pinnedCwd = workspaceCwd(pinned) || pointer.cwd;
+								if (pinnedCwd) {
+									return {
+										key: pointer.key,
+										label: workspaceLabel(pinned) || pointer.label,
+										cwd: pinnedCwd,
+										item: pinned,
+										fromPointer: true,
+									};
+								}
+							} else if (pointer.cwd) {
+								return { ...pointer, fromPointer: true };
+							}
+						}
+						if (cwd) return { key: hitKey, label: workspaceLabel(hit), cwd, item: hit };
 					}
 				}
 			} catch { /* ignore */ }
@@ -455,43 +724,94 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 			return pointer;
 		}
 
-		function switchWorkspace(workspaces, sessions, ws) {
+		function resolveWorkspaceId(ws, wsSnap) {
+			const fromItem = ws?.item?.workspaceId || ws?.item?.id;
+			if (fromItem && wsSnap?.items?.some((w) => w.workspaceId === fromItem)) return fromItem;
+			const live = (wsSnap?.items || []).find(
+				(w) => workspaceKeyFromItem(w) === ws.key || cwdMatchesWorkspace(workspaceCwd(w), ws.cwd),
+			);
+			return live?.workspaceId || null;
+		}
+
+		/** Mirror stock uiWorkspace.openWorkspace / connectWorkspace (domain workspaces has no startSession). */
+		async function navigateToWorkspace(workspaces, sessions, layout, workspaceId) {
+			const wsSnap = workspaces?.list?.getSnapshot?.();
+			const workspace = wsSnap?.items?.find((w) => w.workspaceId === workspaceId);
+			if (!workspace) {
+				throw new Error(`unknown workspace ${workspaceId}`);
+			}
+			const archived = new Set(wsSnap?.archivedSessionIds || []);
+			const sessSnap = sessions?.list?.getSnapshot?.();
+			for (const id of sessSnap?.ids || []) {
+				const summary = sessSnap?.byId?.[id];
+				if (
+					summary?.blank
+					&& summary.cwd === workspace.path
+					&& Array.isArray(workspace.sessionIds)
+					&& workspace.sessionIds.includes(summary.id)
+					&& !archived.has(summary.id)
+				) {
+					sessions.open(summary.id);
+					try {
+						layout?.selectPanel?.(null);
+					} catch {
+						/* ignore */
+					}
+					return summary.id;
+				}
+			}
+			if (typeof sessions?.create !== "function") {
+				throw new Error("sessions.create unavailable");
+			}
+			const sessionId = await sessions.create({ workspaceId });
+			sessions.open(sessionId);
+			try {
+				layout?.selectPanel?.(null);
+			} catch {
+				/* ignore */
+			}
+			return sessionId;
+		}
+
+		function switchWorkspace(workspaces, sessions, layout, ws) {
 			if (!ws) return;
 			// 1. Record as active pointer in localStorage & dispatch custom event
-			setCurrentWorkspace({ key: ws.key, cwd: ws.cwd, label: ws.label });
+			setCurrentWorkspace({ key: ws.key, cwd: ws.cwd, label: ws.label }, { force: true });
+
+			const warmHostId = dsshHostId(ws.cwd);
+			if (warmHostId) {
+				window.dispatchEvent(new CustomEvent("dsh-ssh-warm-host", { detail: { hostId: warmHostId } }));
+			}
 
 			// 2. Actually switch the body view in Harness to this workspace
 			try {
-				const wsItem = ws.item;
-				const wsId = wsItem?.workspaceId || ws.key;
-				const sessSnap = sessions?.list?.getSnapshot?.();
 				const wsSnap = workspaces?.list?.getSnapshot?.();
-				const archived = new Set(wsSnap?.archivedSessionIds || []);
-
-				let candidateIds = Array.isArray(wsItem?.sessionIds) ? wsItem.sessionIds : [];
-				candidateIds = candidateIds.filter((id) => !archived.has(id));
-
-				let targetSessionId = null;
-				if (candidateIds.length > 0 && sessSnap?.byId) {
-					const valid = candidateIds.filter((id) => sessSnap.byId[id] !== undefined);
-					if (valid.length > 0) {
-						valid.sort((a, b) => {
-							const tA = Number(sessSnap.byId[a]?.updatedAt) || 0;
-							const tB = Number(sessSnap.byId[b]?.updatedAt) || 0;
-							return tB - tA;
-						});
-						targetSessionId = valid[0];
-					}
+				const wsId = resolveWorkspaceId(ws, wsSnap);
+				if (!wsId) {
+					console.warn("[dsh-sidebar-files] switch: no workspaceId for", ws.key, ws.cwd);
+					return;
 				}
 
-				if (targetSessionId && sessions && typeof sessions.open === "function") {
-					sessions.open(targetSessionId);
-				} else if (wsId && workspaces && typeof workspaces.startSession === "function") {
-					workspaces.startSession(wsId);
-				}
+				void navigateToWorkspace(workspaces, sessions, layout, wsId)
+					.then(() => {
+						const hostId = dsshHostId(ws.cwd);
+						if (hostId) {
+							window.dispatchEvent(new CustomEvent("dsh-ssh-warm-host", { detail: { hostId } }));
+						}
+						if (typeof window.__dshResyncWorkbenchTab === "function") {
+							requestAnimationFrame(() => window.__dshResyncWorkbenchTab());
+						}
+					})
+					.catch((err) => {
+						console.warn("[dsh-sidebar-files] navigateToWorkspace failed:", err);
+					});
 			} catch (err) {
 				console.warn("[dsh-sidebar-files] failed to switch workspace session:", err);
 			}
+			// Re-paint so the accent/pressed state follows the pointer immediately.
+			try {
+				window.dispatchEvent(new CustomEvent(MODE_EVENT, { detail: { view: getView() } }));
+			} catch { /* ignore */ }
 		}
 
 		async function callRemote(method, args) {
@@ -535,11 +855,53 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 
 		const DRAG_MIME = "application/x-dsh-sidebar-file";
 		const MOVE_EVENT = "dsh-sf-move";
+		const COPY_EVENT = "dsh-sf-copy";
+		const FILES_CHANGED_EVENT = "dsh-sf-files-changed";
+		const CLIPBOARD_KEY = "dsh-sf-clipboard/v1";
+		const CLIPBOARD_EVENT = "dsh-sf-clipboard";
+
+		function getFileClipboard() {
+			try {
+				const raw = sessionStorage.getItem(CLIPBOARD_KEY);
+				if (!raw) return null;
+				const item = JSON.parse(raw);
+				if (item && item.path && item.root && item.name) return item;
+			} catch { /* ignore */ }
+			return null;
+		}
+
+		function setFileClipboard(item) {
+			sessionStorage.setItem(CLIPBOARD_KEY, JSON.stringify(item));
+			window.dispatchEvent(new CustomEvent(CLIPBOARD_EVENT));
+		}
+
+		function splitEntryName(name) {
+			const s = String(name || "");
+			const i = s.lastIndexOf(".");
+			if (i <= 0) return { base: s, ext: "" };
+			return { base: s.slice(0, i), ext: s.slice(i) };
+		}
+
+		function nextCopyName(originalName, attempt) {
+			const { base, ext } = splitEntryName(originalName);
+			if (attempt <= 1) return `${base} copy${ext}`;
+			return `${base} copy ${attempt - 1}${ext}`;
+		}
 
 		function dragHasSidebarFile(dt) {
 			if (!dt || !dt.types) return false;
 			const types = [...dt.types];
 			return types.includes(DRAG_MIME) || types.includes("application/x-dsh-sidebar-file");
+		}
+
+		function clearDropHoverHighlights() {
+			if (typeof document === "undefined") return;
+			for (const el of document.querySelectorAll(".dsh-sf-dropHoverRoot")) {
+				el.classList.remove("dsh-sf-dropHoverRoot");
+			}
+			for (const el of document.querySelectorAll(".dsh-sf-dropHoverWs")) {
+				el.classList.remove("dsh-sf-dropHoverWs");
+			}
 		}
 
 		function readDragPayload(ev) {
@@ -581,9 +943,20 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 			return callRemote("file.move", args);
 		}
 
+		async function performCopy(args) {
+			return callRemote("file.copy", args);
+		}
+
+		function noteCopyResult(res, setErr, setWarn) {
+			setErr(null);
+			setWarn(null);
+			if (res?.warning) setWarn(res.warning);
+		}
+
 		function openInCodeTab(path) {
 			if (typeof path !== "string" || !path) return;
 			window.dispatchEvent(new CustomEvent("dsh-open-code-file", { detail: { path } }));
+			notifyFilesChanged(path);
 			const tabs = document.querySelectorAll('[role="tab"]');
 			for (const tab of tabs) {
 				if ((tab.textContent || "").trim() === "Code") {
@@ -614,10 +987,30 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 			}));
 		}
 
-		function isHtmlEntry(entry) {
+		function entrySupportsLiveServer(entry, dirCache) {
 			if (!entry) return false;
-			if (entry.type === "directory") return true;
-			return /\.html?$/i.test(String(entry.name || entry.path || ""));
+			if (entry.type === "file") {
+				return /\.html?$/i.test(String(entry.name || ""));
+			}
+			if (entry.type !== "directory") return false;
+			const listing = dirCache?.[entry.path];
+			if (!listing || listing.state !== "ready") return false;
+			return (listing.entries || []).some((child) =>
+				child?.type === "file" && /^index\.html?$/i.test(String(child.name || "")),
+			);
+		}
+
+		function rowMenuStyle(anchor) {
+			const width = 132;
+			const estHeight = 136;
+			const gap = 4;
+			let top = anchor.bottom + gap;
+			if (top + estHeight > window.innerHeight - 8) {
+				top = Math.max(8, anchor.top - estHeight - gap);
+			}
+			let left = anchor.right - width;
+			left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+			return { position: "fixed", top, left, width, zIndex: 12001 };
 		}
 
 		function joinPath(parent, name) {
@@ -709,6 +1102,39 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 			return s.slice(0, i);
 		}
 
+		function pathInRoot(p, root) {
+			if (!p || !root) return false;
+			if (p === root) return true;
+			const prefix = root.endsWith("/") ? root : `${root}/`;
+			return p.startsWith(prefix);
+		}
+
+		function refreshTreePaths(root, targetPath, loadPath, setExpanded) {
+			if (targetPath && !pathInRoot(targetPath, root)) {
+				const parent = parentOf(targetPath, root);
+				if (!parent || !pathInRoot(parent, root)) return;
+			}
+			let p = targetPath ? parentOf(targetPath, root) || root : root;
+			const chain = [];
+			while (p) {
+				chain.push(p);
+				if (p === root) break;
+				const up = parentOf(p, root);
+				if (!up || up === p) break;
+				p = up;
+			}
+			for (const dir of chain) loadPath(dir, true);
+			setExpanded((ex) => {
+				const next = { ...ex };
+				for (const dir of chain) next[dir] = true;
+				return next;
+			});
+		}
+
+		function notifyFilesChanged(path, root) {
+			window.dispatchEvent(new CustomEvent(FILES_CHANGED_EVENT, { detail: { path, root } }));
+		}
+
 		const NEW_ENTRY_EVENT = "dsh-sf-new-folder"; // legacy event name; creates file or folder
 
 		function SideTree({ root, workspaces }) {
@@ -722,6 +1148,7 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 			const [newName, setNewName] = React.useState("");
 			const [creating, setCreating] = React.useState(false);
 			const [createErr, setCreateErr] = React.useState(null);
+			const [createWarn, setCreateWarn] = React.useState(null);
 			const [searchHits, setSearchHits] = React.useState(null);
 			const [searching, setSearching] = React.useState(false);
 			const [deleting, setDeleting] = React.useState(null);
@@ -731,6 +1158,58 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 			const [renaming, setRenaming] = React.useState(false);
 			const [dragOverPath, setDragOverPath] = React.useState(null);
 			const [draggingPath, setDraggingPath] = React.useState(null);
+			const [menuAt, setMenuAt] = React.useState(null);
+			const [menuEntry, setMenuEntry] = React.useState(null);
+			const [menuAnchor, setMenuAnchor] = React.useState(null);
+			const [clipTick, setClipTick] = React.useState(0);
+
+			const closeRowMenu = React.useCallback(() => {
+				setMenuAt(null);
+				setMenuEntry(null);
+				setMenuAnchor(null);
+			}, []);
+
+			const openRowMenu = React.useCallback((entry, anchorEl) => {
+				if (!entry?.path || !(anchorEl instanceof Element)) return;
+				setPendingDelete((prev) => (prev && prev !== entry.path ? null : prev));
+				const rect = anchorEl.getBoundingClientRect();
+				setMenuAt(entry.path);
+				setMenuEntry(entry);
+				setMenuAnchor({
+					top: rect.top,
+					right: rect.right,
+					bottom: rect.bottom,
+					left: rect.left,
+				});
+			}, []);
+
+			React.useEffect(() => {
+				const onClip = () => setClipTick((n) => n + 1);
+				window.addEventListener(CLIPBOARD_EVENT, onClip);
+				return () => window.removeEventListener(CLIPBOARD_EVENT, onClip);
+			}, []);
+
+			React.useEffect(() => {
+				if (!menuAt) return;
+				const close = (e) => {
+					const t = e.target;
+					if (t instanceof Element && t.closest(".dsh-sf-rowMenu, .dsh-sf-rowMore")) return;
+					closeRowMenu();
+				};
+				const closeOnMove = () => closeRowMenu();
+				document.addEventListener("pointerdown", close, true);
+				window.addEventListener("resize", closeOnMove);
+				document.querySelectorAll(".dsh-sf-tree").forEach((el) => {
+					el.addEventListener("scroll", closeOnMove, { passive: true });
+				});
+				return () => {
+					document.removeEventListener("pointerdown", close, true);
+					window.removeEventListener("resize", closeOnMove);
+					document.querySelectorAll(".dsh-sf-tree").forEach((el) => {
+						el.removeEventListener("scroll", closeOnMove);
+					});
+				};
+			}, [menuAt, closeRowMenu]);
 
 			React.useEffect(() => {
 				const onPrefs = () => {
@@ -876,7 +1355,7 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 			const toggleDir = (path) => {
 				const next = !expanded[path];
 				setExpanded((e) => ({ ...e, [path]: next }));
-				if (next) loadPath(path);
+				if (next) loadPath(path, true);
 			};
 
 			const beginNewEntry = (parentPath, kind) => {
@@ -917,6 +1396,16 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 						setNewName("");
 						loadPath(parent, true);
 						openInCodeTab(path);
+					} else if (isRemotePath(parent) || isRemotePath(root)) {
+						const path = joinPath(parent, name);
+						const res = await callRemote("file.mkdir", { path, root });
+						if (!res || !res.ok) {
+							setCreateErr((res && (res.message || res.error)) || "create folder failed");
+							return;
+						}
+						setNewAt(null);
+						setNewName("");
+						loadPath(parent, true);
 					} else {
 						if (typeof workspaces?.createDirectory !== "function") {
 							setCreateErr("createDirectory unavailable");
@@ -976,6 +1465,58 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 					return;
 				}
 				setPendingDelete(entry.path);
+			};
+
+			const copyEntry = (entry) => {
+				if (!entry?.path) return;
+				setFileClipboard({
+					path: entry.path,
+					root,
+					name: entry.name,
+					type: entry.type || "file",
+				});
+				closeRowMenu();
+				setCreateErr(null);
+			};
+
+			const resolvePasteName = async (destDir, originalName) => {
+				for (let attempt = 0; attempt < 50; attempt++) {
+					const name = attempt === 0 ? originalName : nextCopyName(originalName, attempt);
+					const target = joinPath(destDir, name);
+					const res = await callRemote("file.stat", { path: target, root: destDir }).catch(() => null);
+					if (!res?.ok) return name;
+				}
+				throw new Error("could not find an available paste name");
+			};
+
+			const pasteInto = async (destDir) => {
+				const clip = getFileClipboard();
+				if (!clip?.path || !destDir) return;
+				closeRowMenu();
+				setCreateErr(null);
+				setCreateWarn(null);
+				try {
+					const name = await resolvePasteName(destDir, clip.name);
+					const res = await performCopy({
+						path: clip.path,
+						root: clip.root,
+						destDir,
+						destRoot: root,
+						newName: name,
+					});
+					if (!res?.ok) {
+						setCreateErr((res && (res.message || res.error)) || "paste failed");
+						return;
+					}
+					noteCopyResult(res, setCreateErr, setCreateWarn);
+					setExpanded((ex) => ({ ...ex, [destDir]: true }));
+					loadPath(destDir, true);
+					window.dispatchEvent(new CustomEvent(COPY_EVENT, {
+						detail: { destDir, destRoot: root, path: res.path },
+					}));
+				} catch (err) {
+					setCreateErr(err?.message || String(err));
+				}
 			};
 
 			const beginRename = (entry) => {
@@ -1041,7 +1582,28 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 				const destRoot = destRootArg || root;
 				if (payload.path === destDir) return;
 				setCreateErr(null);
+				setCreateWarn(null);
+				const copyMode = ev.ctrlKey || ev.metaKey || ev.altKey;
 				try {
+					if (copyMode) {
+						const name = await resolvePasteName(destDir, payload.name || payload.path.split("/").pop());
+						const res = await performCopy({
+							path: payload.path,
+							root: payload.root,
+							destDir,
+							destRoot,
+							newName: name,
+						});
+						if (!res || !res.ok) {
+							setCreateErr((res && (res.message || res.error)) || "copy failed");
+							return;
+						}
+						noteCopyResult(res, setCreateErr, setCreateWarn);
+						window.dispatchEvent(new CustomEvent(COPY_EVENT, {
+							detail: { srcPath: payload.path, srcRoot: payload.root, destDir, destRoot, path: res.path },
+						}));
+						return;
+					}
 					const res = await performMove({
 						path: payload.path,
 						root: payload.root,
@@ -1077,18 +1639,71 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 				return () => window.removeEventListener(MOVE_EVENT, onMove);
 			}, [root, loadPath]);
 
+			React.useEffect(() => {
+				const onCopy = (e) => {
+					const d = e?.detail || {};
+					if (d.destRoot === root) {
+						loadPath(d.destDir || root, true);
+						setExpanded((ex) => ({ ...ex, [d.destDir || root]: true }));
+					}
+				};
+				window.addEventListener(COPY_EVENT, onCopy);
+				return () => window.removeEventListener(COPY_EVENT, onCopy);
+			}, [root, loadPath]);
+
+			React.useEffect(() => {
+				const onExternalChange = (e) => {
+					const d = e?.detail || {};
+					if (d.root && d.root !== root) return;
+					refreshTreePaths(root, d.path || root, loadPath, setExpanded);
+				};
+				const onOpenCode = (e) => {
+					const p = e?.detail?.path;
+					if (typeof p !== "string") return;
+					refreshTreePaths(root, p, loadPath, setExpanded);
+				};
+				const onFilesView = () => {
+					if (getView() !== "files") return;
+					loadPath(root, true);
+					for (const [dir, isOpen] of Object.entries(expanded)) {
+						if (isOpen && dir) loadPath(dir, true);
+					}
+				};
+				window.addEventListener(FILES_CHANGED_EVENT, onExternalChange);
+				window.addEventListener("dsh-open-code-file", onOpenCode);
+				window.addEventListener(MODE_EVENT, onFilesView);
+				return () => {
+					window.removeEventListener(FILES_CHANGED_EVENT, onExternalChange);
+					window.removeEventListener("dsh-open-code-file", onOpenCode);
+					window.removeEventListener(MODE_EVENT, onFilesView);
+				};
+			}, [root, loadPath, expanded]);
+
+			const menuItem = (label, onClick, extraClass, disabled) => React.createElement("button", {
+				key: label,
+				type: "button",
+				className: "dsh-sf-rowMenuItem" + (extraClass ? ` ${extraClass}` : ""),
+				role: "menuitem",
+				disabled: !!disabled,
+				onClick: (ev) => {
+					ev.preventDefault();
+					ev.stopPropagation();
+					if (!disabled) onClick();
+				},
+			}, label);
+
 			const rowActions = (entry, opts) => {
 				const isDir = entry.type === "directory";
 				const kids = [];
-				const confirming = pendingDelete === entry.path;
-				if (isHtmlEntry(entry)) {
+				const menuOpen = menuAt === entry.path;
+				if (entrySupportsLiveServer(entry, dirs)) {
 					kids.push(React.createElement("span", {
 						key: "live",
 						className: "dsh-sf-rowLive",
 						role: "button",
 						tabIndex: 0,
-						title: isDir
-							? "Open with Live Server (index.html in Browser)"
+						title: entry.type === "directory"
+							? "Open index.html with Live Server in Browser"
 							: "Open with Live Server in Browser",
 						"aria-label": "Live Server " + entry.name,
 						onClick: (ev) => {
@@ -1132,55 +1747,29 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 					}, "+"));
 				}
 				kids.push(React.createElement("span", {
-					key: "ren",
-					className: "dsh-sf-rowRen",
+					key: "more",
+					className: "dsh-sf-rowMore" + (menuOpen ? " open" : ""),
 					role: "button",
 					tabIndex: 0,
-					title: "Rename",
-					"aria-label": "Rename " + entry.name,
+					title: "File actions (Copy, Paste, Rename, Delete)",
+					"aria-label": "File actions for " + entry.name,
+					"aria-expanded": menuOpen ? "true" : "false",
+					"aria-haspopup": "menu",
 					onClick: (ev) => {
 						ev.preventDefault();
 						ev.stopPropagation();
-						beginRename(entry);
+						if (menuOpen) closeRowMenu();
+						else openRowMenu(entry, ev.currentTarget);
 					},
 					onKeyDown: (ev) => {
 						if (ev.key === "Enter" || ev.key === " ") {
 							ev.preventDefault();
 							ev.stopPropagation();
-							beginRename(entry);
-						}
-				},
-			}, "✎"));
-				kids.push(React.createElement("span", {
-					key: "del",
-					className: "dsh-sf-rowDel" + (confirming ? " confirm" : ""),
-					role: "button",
-					tabIndex: 0,
-					"data-path": entry.path,
-					title: confirming
-						? (isDir ? "Click again to delete folder" : "Click again to delete file")
-						: (isDir ? "Delete folder" : "Delete file"),
-					"aria-label": confirming
-						? "Confirm delete " + entry.name
-						: ((isDir ? "Delete folder " : "Delete file ") + entry.name),
-					onClick: (ev) => {
-						ev.preventDefault();
-						ev.stopPropagation();
-						requestDelete(entry);
-					},
-					onKeyDown: (ev) => {
-						if (ev.key === "Enter" || ev.key === " ") {
-							ev.preventDefault();
-							ev.stopPropagation();
-							requestDelete(entry);
-						}
-						if (ev.key === "Escape") {
-							ev.preventDefault();
-							ev.stopPropagation();
-							setPendingDelete(null);
+							if (menuOpen) closeRowMenu();
+							else openRowMenu(entry, ev.currentTarget);
 						}
 					},
-				}, deleting === entry.path ? "…" : (confirming ? "?" : "×")));
+				}, "⋯"));
 				return React.createElement("span", { className: "dsh-sf-rowActs" }, ...kids);
 			};
 
@@ -1307,12 +1896,27 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 							+ (dragOverPath === e.path ? " dsh-sf-dropHover" : "")
 							+ (draggingPath === e.path ? " dsh-sf-dragging" : ""),
 						style: { paddingLeft: 4 + depth * 12 },
-						title: e.path,
+						title: e.path + (isDir ? " — Ctrl+V paste" : " — Ctrl+C copy"),
+						tabIndex: 0,
 						draggable: true,
 						onClick: (ev) => {
 							ev.stopPropagation();
 							if (isDir) toggleDir(e.path);
 							else openInCodeTab(e.path);
+						},
+						onKeyDown: (ev) => {
+							if (!(ev.ctrlKey || ev.metaKey)) return;
+							const key = ev.key.toLowerCase();
+							if (key === "c") {
+								ev.preventDefault();
+								ev.stopPropagation();
+								copyEntry(e);
+							}
+							if (key === "v" && isDir) {
+								ev.preventDefault();
+								ev.stopPropagation();
+								pasteInto(e.path);
+							}
 						},
 						onDragStart: (ev) => {
 							ev.stopPropagation();
@@ -1330,11 +1934,13 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 						onDragEnd: (ev) => {
 							ev.stopPropagation();
 							setDraggingPath(null);
+							setDragOverPath(null);
+							clearDropHoverHighlights();
 						},
 						onDragOver: !isDir ? undefined : (ev) => {
 							ev.preventDefault();
 							ev.stopPropagation();
-							ev.dataTransfer.dropEffect = "move";
+							ev.dataTransfer.dropEffect = (ev.ctrlKey || ev.metaKey || ev.altKey) ? "copy" : "move";
 							if (dragOverPath !== e.path) setDragOverPath(e.path);
 						},
 						onDragLeave: !isDir ? undefined : (ev) => {
@@ -1417,7 +2023,34 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 
 			return React.createElement(React.Fragment, null,
 				createErr && React.createElement("div", { className: "dsh-sf-status err" }, createErr),
+				createWarn && React.createElement("div", { className: "dsh-sf-status warn" }, createWarn),
 				body,
+				menuAt && menuEntry && menuAnchor && typeof document !== "undefined"
+					? ReactDOM.createPortal((() => {
+						const isDir = menuEntry.type === "directory";
+						const confirming = pendingDelete === menuEntry.path;
+						const clip = clipTick >= 0 ? getFileClipboard() : null;
+						return React.createElement("div", {
+							className: "dsh-sf-rowMenu",
+							role: "menu",
+							style: rowMenuStyle(menuAnchor),
+							onClick: (ev) => ev.stopPropagation(),
+							onPointerDown: (ev) => ev.stopPropagation(),
+						},
+							menuItem("Copy", () => copyEntry(menuEntry)),
+							isDir ? menuItem("Paste", () => pasteInto(menuEntry.path), null, !clip) : null,
+							menuItem("Rename", () => { closeRowMenu(); beginRename(menuEntry); }),
+							menuItem(confirming ? "Confirm delete" : "Delete", () => {
+								if (confirming) {
+									closeRowMenu();
+									deleteEntry(menuEntry);
+									return;
+								}
+								setPendingDelete(menuEntry.path);
+							}, "danger"),
+						);
+					})(), document.body)
+					: null,
 			);
 		}
 
@@ -1486,7 +2119,7 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 				host.className = "dsh-sf-tree";
 				host.setAttribute("data-dsh-sf-key", key);
 				wireTreeRootDrop(host);
-				const row = group.querySelector(".YDXeBa_projectRow");
+				const row = group.querySelector('[class*="_projectRow"]');
 				let anchor = row;
 				while (anchor && anchor.parentElement && anchor.parentElement !== group) {
 					anchor = anchor.parentElement;
@@ -1572,7 +2205,7 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 		}
 
 		function findGroup(row) {
-			return row.closest(".qDHVXG_groupSection") || row.parentElement;
+			return row.closest('[class*="_groupSection"]') || row.parentElement;
 		}
 
 		function normalizePath(p) {
@@ -1593,30 +2226,46 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 			return all.some((other) => other.key !== ws.key && isAncestorPath(ws.cwd, other.cwd));
 		}
 
+		function createOutlineIconSvg(svgNs, icon, width, height) {
+			const svg = document.createElementNS(svgNs, "svg");
+			svg.setAttribute("viewBox", "0 0 24 24");
+			svg.setAttribute("width", String(width));
+			svg.setAttribute("height", String(height));
+			svg.setAttribute("fill", "none");
+			svg.setAttribute("stroke", "currentColor");
+			svg.setAttribute("stroke-width", "1.75");
+			svg.setAttribute("stroke-linecap", "round");
+			svg.setAttribute("stroke-linejoin", "round");
+			svg.setAttribute("aria-hidden", "true");
+			const path = document.createElementNS(svgNs, "path");
+			path.setAttribute(
+				"d",
+				icon === "folder"
+					? "M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+					: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
+			);
+			svg.appendChild(path);
+			return svg;
+		}
+
 		function setHeaderBtnIcon(btn, kind) {
 			btn.replaceChildren();
 			const svgNs = "http://www.w3.org/2000/svg";
+			if (kind === "files") {
+				btn.appendChild(createOutlineIconSvg(svgNs, "folder", 18, 18));
+				return;
+			}
+			if (kind === "sessions") {
+				btn.appendChild(createOutlineIconSvg(svgNs, "chat", 18, 18));
+				return;
+			}
 			const svg = document.createElementNS(svgNs, "svg");
 			svg.setAttribute("viewBox", "0 0 16 16");
 			svg.setAttribute("width", "18");
 			svg.setAttribute("height", "18");
 			svg.setAttribute("fill", "currentColor");
 			svg.setAttribute("aria-hidden", "true");
-			if (kind === "sessions") {
-				// Three list rows — filled bars, same weight as stock icons
-				const mk = (y, w) => {
-					const r = document.createElementNS(svgNs, "rect");
-					r.setAttribute("x", "1.5");
-					r.setAttribute("y", String(y));
-					r.setAttribute("width", String(w));
-					r.setAttribute("height", "2");
-					r.setAttribute("rx", "0.75");
-					svg.appendChild(r);
-				};
-				mk(3.25, 13);
-				mk(7, 13);
-				mk(10.75, 9.5);
-			} else if (kind === "eye") {
+			if (kind === "eye") {
 				const path = document.createElementNS(svgNs, "path");
 				path.setAttribute("d", "M8 3.25C3.9 3.25 1.2 7.1 1.05 7.35a.75.75 0 0 0 0 .8C1.2 8.4 3.9 12.25 8 12.25s6.8-3.85 6.95-4.1a.75.75 0 0 0 0-.8C14.8 7.1 12.1 3.25 8 3.25zm0 7a2.75 2.75 0 1 1 0-5.5 2.75 2.75 0 0 1 0 5.5z");
 				svg.appendChild(path);
@@ -1630,27 +2279,65 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 				const path = document.createElementNS(svgNs, "path");
 				path.setAttribute("d", "M2.22 2.22a.75.75 0 0 0-1.06 1.06l1.2 1.2C1.4 5.3.7 6.55.55 6.8a.75.75 0 0 0 0 .9C.85 8.2 3.7 12.75 8 12.75c1.35 0 2.5-.35 3.45-.85l2.33 2.33a.75.75 0 1 0 1.06-1.06L2.22 2.22zM8 4.75c.4 0 .78.07 1.13.2l-1.1 1.1A2.25 2.25 0 0 0 6.05 8.3L4.9 9.45A3.75 3.75 0 0 1 8 4.75zm6.8 2.05c.12.18.2.35.2.45a.75.75 0 0 1-.1.35c-.25.4-1.05 1.45-2.2 2.3l-1.15-1.15A3.74 3.74 0 0 0 11.95 5.7c.9.5 1.55 1.1 1.95 1.5.35.35.55.6.65.7z");
 				svg.appendChild(path);
-			} else {
-				// Folder — filled, fills most of the 16×16 canvas
-				const path = document.createElementNS(svgNs, "path");
-				path.setAttribute("d", "M1.25 3.5A1.25 1.25 0 0 1 2.5 2.25h3.2l1.35 1.5H13.5A1.25 1.25 0 0 1 14.75 5v7.25A1.25 1.25 0 0 1 13.5 13.5H2.5A1.25 1.25 0 0 1 1.25 12.25V3.5z");
-				svg.appendChild(path);
 			}
 			btn.appendChild(svg);
 		}
 
+		function setModeLabelIcon(host, kind) {
+			let target = host.querySelector(".dsh-sf-treeModeLabelIcon");
+			if (!target) {
+				target = document.createElement("span");
+				target.className = "dsh-sf-treeModeLabelIcon";
+				target.setAttribute("aria-hidden", "true");
+				host.insertBefore(target, host.firstChild);
+			}
+			target.replaceChildren();
+			const svgNs = "http://www.w3.org/2000/svg";
+			target.appendChild(
+				createOutlineIconSvg(svgNs, kind === "chat" ? "chat" : "folder", 14, 14),
+			);
+		}
+
+		function paintTreeModeLabel() {
+			const headers = document.querySelectorAll('[class*="_sectionHeader"]');
+			const files = getView() === "files";
+			for (const header of headers) {
+				const sectionLabel = header.querySelector('[class*="_sectionLabel"]');
+				if (!sectionLabel || !/workspaces/i.test(sectionLabel.textContent || "")) continue;
+				const root = header.closest('[class*="_root"]') || header.parentElement;
+				if (!root) continue;
+				let row = root.querySelector(".dsh-sf-treeModeLabel");
+				if (!row) {
+					row = document.createElement("div");
+					row.className = "dsh-sf-treeModeLabel";
+					const listArea = root.querySelector('[class*="_listArea"]');
+					if (listArea) root.insertBefore(row, listArea);
+					else header.insertAdjacentElement("afterend", row);
+				}
+				row.dataset.dshSfMode = files ? "files" : "sessions";
+				setModeLabelIcon(row, files ? "files" : "chat");
+				let textEl = row.querySelector(".dsh-sf-treeModeLabelText");
+				if (!textEl) {
+					textEl = document.createElement("span");
+					textEl.className = "dsh-sf-treeModeLabelText";
+					row.appendChild(textEl);
+				}
+				textEl.textContent = files ? "Files" : "Chats";
+			}
+		}
+
 		function paintHeaderControls() {
-			const headers = document.querySelectorAll(".qDHVXG_sectionHeader");
+			const headers = document.querySelectorAll('[class*="_sectionHeader"]');
 			const files = getView() === "files";
 			const showDot = getShowDot();
 			for (const header of headers) {
-				const label = header.querySelector(".qDHVXG_sectionLabel");
+				const label = header.querySelector('[class*="_sectionLabel"]');
 				if (!label || !/workspaces/i.test(label.textContent || "")) continue;
 
 				header.dataset.dshSfFiles = files ? "1" : "0";
 
 				const stockAdd = header.querySelector('button[aria-label="Add workspace"]');
-				const actions = stockAdd?.parentElement || header.querySelector(".qDHVXG_headerActions");
+				const actions = stockAdd?.parentElement || header.querySelector('[class*="_headerActions"]');
 
 				let btn = header.querySelector(".dsh-sf-headerToggle");
 				if (!btn) {
@@ -1717,8 +2404,8 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 				dot.setAttribute("aria-hidden", files ? "false" : "true");
 
 				// Search field: sessions vs files
-				const searchBtn = header.querySelector(".qDHVXG_searchButton");
-				const searchInput = header.querySelector(".qDHVXG_searchInput");
+				const searchBtn = header.querySelector('[class*="_searchButton"]');
+				const searchInput = header.querySelector('[class*="_searchInput"]');
 				if (searchBtn) {
 					searchBtn.setAttribute("aria-label", files ? "Search files" : "Search sessions");
 					searchBtn.title = files ? "Search files" : "Search sessions";
@@ -1729,12 +2416,13 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 					searchInput.dataset.dshSfSearch = files ? "files" : "sessions";
 				}
 			}
+			paintTreeModeLabel();
 		}
 
 		function paint(workspaces, sessions) {
 			ensureStyles();
 			document.querySelectorAll(".dsh-sf-toggle").forEach((n) => n.remove());
-			document.querySelectorAll(".YDXeBa_projectRow[data-dsh-sf-mode]").forEach((row) => {
+			document.querySelectorAll(`${cssLocal("projectRow")}[data-dsh-sf-mode]`).forEach((row) => {
 				row.removeAttribute("data-dsh-sf-mode");
 				row.removeAttribute("data-dsh-sf-key");
 			});
@@ -1749,19 +2437,59 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 			const fileQueryActive = view === "files" && !!String(getFileQuery() || "").trim();
 			syncFileSearchInput();
 			const resolved = [];
-			for (const row of document.querySelectorAll(".YDXeBa_projectRow")) {
-				const ws = resolveWorkspace(workspaces, row);
-				if (!ws) continue;
+			const unresolvedGroups = [];
+			for (const row of document.querySelectorAll('[class*="_projectRow"]')) {
 				const group = findGroup(row);
 				if (!group) continue;
+				const ws = resolveWorkspace(workspaces, row);
+				if (!ws) {
+					unresolvedGroups.push({ row, group });
+					continue;
+				}
 				resolved.push({ ws, row, group });
 			}
 			const allWs = resolved.map((r) => r.ws);
+
+			// Mark stock Ungrouped / orphan buckets — not real workspaces.
+			for (const { row, group } of unresolvedGroups) {
+				const titleEl = qsExactLocal(row, "title");
+				const title = (titleEl?.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+				const isUngrouped = !title || title === "ungrouped" || title === "未分组";
+				group.removeAttribute("data-dsh-sf-mode");
+				group.removeAttribute("data-dsh-sf-key");
+				group.removeAttribute("data-dsh-sf-collapsed");
+				row.removeAttribute("data-dsh-sf-current");
+				row.removeAttribute("data-dsh-sf-cwd");
+				row.querySelectorAll(":scope > .dsh-sf-wsZone, :scope > .dsh-sf-chatIcon").forEach((n) => n.remove());
+				if (isUngrouped) {
+					group.dataset.dshSfUngrouped = "1";
+					// Files mode: no cwd → hide entirely (CSS). Sessions: leave orphan chats reachable.
+					if (view === "files") group.dataset.dshSfRedundant = "1";
+					else group.removeAttribute("data-dsh-sf-redundant");
+				} else {
+					group.removeAttribute("data-dsh-sf-ungrouped");
+					group.removeAttribute("data-dsh-sf-redundant");
+				}
+			}
+
+			// Publish for chips / other plugins (ssh-workspace local/remote pills).
+			try {
+				const snap = workspaces?.list?.getSnapshot?.();
+				if (snap && Array.isArray(snap.items)) {
+					window.__dshWorkspacesSnapshot = snap;
+				} else if (allWs.length) {
+					window.__dshWorkspacesSnapshot = {
+						items: allWs.map((w) => w.item || { path: w.cwd, title: w.label, workspaceId: w.key }),
+					};
+				}
+				window.dispatchEvent(new CustomEvent("dsh-workspaces-snapshot", { detail: window.__dshWorkspacesSnapshot }));
+			} catch { /* ignore */ }
 
 			const currentWs = getActiveWorkspace(workspaces, sessions);
 			const seen = new Set();
 			for (const { ws, row, group } of resolved) {
 				seen.add(ws.key);
+				group.removeAttribute("data-dsh-sf-ungrouped");
 				const isCurrent = !!currentWs && currentWs.key === ws.key;
 				row.dataset.dshSfCurrent = isCurrent ? "1" : "0";
 				row.dataset.dshSfCwd = ws.cwd;
@@ -1778,11 +2506,11 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 				} else if (!zone.firstElementChild) {
 					zone.innerHTML = WS_SWITCH_ICON;
 				}
-				// NEVER mutate .YDXeBa_folder.innerHTML — React owns that node. Old bubble
+				// NEVER mutate [class*="_folder"].innerHTML — React owns that node. Old bubble
 				// hack corrupted expand/collapse and wiped the whole sidebar. Undo once,
 				// then use a sibling .dsh-sf-chatIcon + CSS hide for Sessions mode.
 				try {
-					const folderEl = row.querySelector(":scope > .YDXeBa_folder");
+					const folderEl = row.querySelector(':scope > [class*="_folder"]');
 					if (folderEl && folderEl.dataset.dshSfBubble === "1") {
 						folderEl.innerHTML = folderEl.dataset.dshSfOriginalHtml || "";
 						delete folderEl.dataset.dshSfBubble;
@@ -1798,7 +2526,7 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 					chatIcon.className = "dsh-sf-chatIcon";
 					chatIcon.setAttribute("aria-hidden", "true");
 					chatIcon.innerHTML = CHAT_BUBBLE_ICON;
-					const folderEl = row.querySelector(":scope > .YDXeBa_folder");
+					const folderEl = row.querySelector(':scope > [class*="_folder"]');
 					if (folderEl) row.insertBefore(chatIcon, folderEl);
 					else if (zone.nextSibling) row.insertBefore(chatIcon, zone.nextSibling);
 					else row.appendChild(chatIcon);
@@ -1869,7 +2597,7 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 			}
 		}
 
-		const inject = ["workspaces", "sessions", "conversation", "inputTriggers"];
+		const inject = ["workspaces", "sessions", "layout", "conversation", "inputTriggers"];
 		const REF_SOURCE = "sidebar-file";
 
 		function getActiveSessionId(sessions) {
@@ -1926,37 +2654,44 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 		function isComposerDropTarget(el) {
 			if (!(el instanceof Element)) return false;
 			return Boolean(
-				el.closest?.(".uV2eYG_card")
-				|| el.closest?.(".uV2eYG_root")
-				|| el.closest?.(".wSkVaW_composerSeat")
+				el.closest?.('[class*="_card"]')
+				|| el.closest?.('[class*="_root"]')
+				|| el.closest?.('[class*="_composerSeat"]')
 				|| el.closest?.("[data-composer-seat]")
 				|| el.closest?.("[data-composer-card]")
-				|| el.closest?.("textarea.uV2eYG_input"),
+				|| el.closest?.(null),
 			);
 		}
 
 		function composerHighlightEl(el) {
 			if (!(el instanceof Element)) return null;
-			return el.closest(".uV2eYG_card")
-				|| el.closest(".wSkVaW_composerSeat")
+			return el.closest('[class*="_card"]')
+				|| el.closest('[class*="_composerSeat"]')
 				|| el.closest("[data-composer-seat]");
 		}
 
 		function apply(ctx) {
 			ensureStyles();
 			try {
-				document.documentElement.setAttribute("data-dsh-sidebar-files", "0.3.21");
+				document.documentElement.setAttribute("data-dsh-sidebar-files", "0.3.27");
 			} catch { /* ignore */ }
+			if (typeof window !== "undefined" && !window.__dshSfDropCleanup) {
+				window.__dshSfDropCleanup = true;
+				window.addEventListener("dragend", clearDropHoverHighlights);
+			}
 
-			ctx.inject(["workspaces", "sessions", "conversation", "inputTriggers"], (scope) => {
+			ctx.inject(["workspaces", "sessions", "layout", "conversation", "inputTriggers"], (scope) => {
 				const workspaces = scope.workspaces || scope.get("workspaces") || ctx.workspaces || ctx.get?.("workspaces");
 				const sessions = scope.sessions || scope.get("sessions") || ctx.sessions || ctx.get?.("sessions");
+				const layout = scope.layout || scope.get("layout") || ctx.layout || ctx.get?.("layout");
 				const conversation = scope.get("conversation") || ctx.get?.("conversation");
 				const inputTriggers = scope.get("inputTriggers") || ctx.get?.("inputTriggers");
 				if (!workspaces?.list) {
 					console.warn(`[${PLUGIN}] missing workspaces`);
 					return;
 				}
+				window.__dshNavigateToWorkspace = (workspaceId) =>
+					navigateToWorkspace(workspaces, sessions, layout, workspaceId);
 
 				if (inputTriggers?.registerSource) {
 					scope.effect(() => inputTriggers.registerSource({
@@ -1997,7 +2732,7 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 					ev.stopPropagation();
 					insertPathIntoComposer(conversation, sessions, droppedPath);
 					try {
-						document.querySelector("textarea.uV2eYG_input")?.focus?.();
+						document.querySelector('textarea[class*="_input"]')?.focus?.();
 					} catch { /* ignore */ }
 				};
 
@@ -2044,9 +2779,19 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 					}
 				};
 
+				const expandSidebarIfCollapsed = () => {
+					const root = document.querySelector('[class*="_root"]');
+					if (!root || !hasLocalCss(root, "collapsed")) return;
+					const btn =
+						document.querySelector('button[class*="_toggle"]')
+						|| document.querySelector('[class*="_toggle"]');
+					if (btn instanceof HTMLElement) btn.click();
+				};
+
 				const toggleView = () => {
 					setView(getView() === "files" ? "sessions" : "files");
 					if (getView() === "sessions") setFileQuery("");
+					expandSidebarIfCollapsed();
 					runPaintNow();
 				};
 
@@ -2091,17 +2836,17 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 							return;
 						}
 						// Only our explicit switch-zone switches workspace. Do NOT steal
-						// .YDXeBa_chevron / .YDXeBa_arrow — those are stock expand/collapse
+						// [class*="_chevron"] / [class*="_arrow"] — those are stock expand/collapse
 						// for the chat list under the row (and may overlay most of the row).
 						const wsZone = t.closest(".dsh-sf-wsZone");
 						if (wsZone) {
-							const row = wsZone.closest(".YDXeBa_projectRow");
+							const row = wsZone.closest('[class*="_projectRow"]');
 							const ws = row && resolveWorkspace(workspaces, row);
 							if (ws) {
 								e.preventDefault();
 								e.stopPropagation();
 								if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
-								switchWorkspace(workspaces, sessions, ws);
+								switchWorkspace(workspaces, sessions, layout, ws);
 								runPaintNow();
 							}
 							return;
@@ -2109,8 +2854,8 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 						// Files mode: stock workspace row "+" creates a folder
 						if (getView() === "files") {
 							const plus = t.closest('button[data-dsh-sf-newfolder="1"], button[aria-label^="New folder in "], button[aria-label^="New session in "]');
-							if (plus && plus.closest(".YDXeBa_projectRow")) {
-								const row = plus.closest(".YDXeBa_projectRow");
+							if (plus && plus.closest('[class*="_projectRow"]')) {
+								const row = plus.closest('[class*="_projectRow"]');
 								const ws = resolveWorkspace(workspaces, row);
 								if (ws) {
 									e.preventDefault();
@@ -2125,7 +2870,7 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 								return;
 							}
 							// Click workspace row → expand/collapse file tree
-							const row = t.closest(".YDXeBa_projectRow");
+							const row = t.closest('[class*="_projectRow"]');
 							if (row && !t.closest("button, a, input, .dsh-sf-tree")) {
 								const ws = resolveWorkspace(workspaces, row);
 								if (ws) {
@@ -2148,12 +2893,12 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 						// Match click handler: only our switch-zone, never stock chevron/arrow.
 						const wsZone = t && t.closest(".dsh-sf-wsZone");
 						if (!wsZone) return;
-						const row = wsZone.closest(".YDXeBa_projectRow");
+						const row = wsZone.closest('[class*="_projectRow"]');
 						const ws = row && resolveWorkspace(workspaces, row);
 						if (!ws) return;
 						e.preventDefault();
 						e.stopPropagation();
-						switchWorkspace(workspaces, sessions, ws);
+						switchWorkspace(workspaces, sessions, layout, ws);
 						runPaintNow();
 					};
 					document.addEventListener("keydown", onWsZoneKeydown, true);
@@ -2161,7 +2906,7 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 					const onSearchInput = (e) => {
 						const input = e.target;
 						if (!(input instanceof HTMLInputElement)) return;
-						if (!input.classList.contains("qDHVXG_searchInput")) return;
+						if (!hasLocalCss(input, "searchInput")) return;
 						if (getView() !== "files") return;
 						// Block stock WorkspaceBrowser setQuery → SearchResults (which unmounts our trees).
 						e.stopImmediatePropagation();
@@ -2170,7 +2915,7 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 					const onSearchKeyDown = (e) => {
 						const input = e.target;
 						if (!(input instanceof HTMLInputElement)) return;
-						if (!input.classList.contains("qDHVXG_searchInput")) return;
+						if (!hasLocalCss(input, "searchInput")) return;
 						if (getView() !== "files") return;
 						if (e.key === "Escape") {
 							setFileQuery("");
@@ -2181,7 +2926,7 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 					const onSearchClearClick = (e) => {
 						if (getView() !== "files") return;
 						const t = e.target instanceof Element ? e.target : null;
-						if (!t?.closest?.(".qDHVXG_clearButton")) return;
+						if (!t?.closest?.('[class*="_clearButton"]')) return;
 						setFileQuery("");
 					};
 					document.addEventListener("input", onSearchInput, true);
@@ -2189,7 +2934,7 @@ html[data-dsh-sf-view="files"] .qDHVXG_list .qDHVXG_searchWarning{
 					document.addEventListener("click", onSearchClearClick, true);
 
 					schedulePaint();
-					const listRoot = document.querySelector(".qDHVXG_root") || document.getElementById("root") || document.body;
+					const listRoot = document.querySelector('[class*="_root"]') || document.getElementById("root") || document.body;
 					const mo = new MutationObserver((records) => {
 						if (painting) return;
 						const relevant = records.some((r) => {

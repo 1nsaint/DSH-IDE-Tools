@@ -5,28 +5,15 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { registerRpcChannel, ok, transportError } from "../../_shared/register-rpc-channel.js";
 
 const name = "dsh-hero-tools";
+const inject = ["connection", "webServer"];
 const RPC_CHANNEL = "/hero-tools";
 
 function configPath() {
 	const home = process.env.DSH_HOME || join(homedir(), ".dsh");
 	return join(home, "plugins-data", "dsh-hero-tools.json");
-}
-
-function ok(value) {
-	return { ok: true, value };
-}
-
-function transportError(error) {
-	return {
-		ok: false,
-		error: {
-			code: "internal",
-			message: error instanceof Error ? error.message : String(error),
-			details: {},
-		},
-	};
 }
 
 async function loadStore() {
@@ -48,10 +35,9 @@ async function saveStore(order) {
 	return clean;
 }
 
-function registerRpc(ctx) {
-	return ctx.connection.rpc.handle(
-		RPC_CHANNEL,
-		async (endpoint, payload) => {
+function apply(ctx) {
+	ctx.effect(() => {
+		return registerRpcChannel(ctx, RPC_CHANNEL, async (endpoint, payload) => {
 			try {
 				if (endpoint === "loadOrder") {
 					const store = await loadStore();
@@ -74,15 +60,9 @@ function registerRpc(ctx) {
 			} catch (error) {
 				return transportError(error);
 			}
-		},
-		{ authority: "loopback" }
-	);
+		});
+	}, `${name}: rpc`);
 }
 
-function apply(ctx) {
-	ctx.inject(["connection"], (scope) => {
-		scope.effect(() => registerRpc(scope), `${name}: rpc`);
-	});
-}
-
-export { apply, name };
+export { apply, name, inject };
+export default { name, inject, apply };

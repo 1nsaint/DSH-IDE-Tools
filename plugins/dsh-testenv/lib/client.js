@@ -10,10 +10,10 @@ window.__ModuleLoader__.load({
 		const viewCache = { selectedSlug: "", codePath: "", dbUrl: "" };
 
 		const css = `
-.wSkVaW_scrollBody:has(.dte_root){overflow:hidden!important;display:flex;flex-direction:column;min-height:0}
-.wSkVaW_scrollBody:has(.dte_root)>.wSkVaW_viewArea,
-.wSkVaW_viewArea:has(.dte_root){flex:1 1 0!important;min-height:0!important;overflow:hidden!important;position:relative!important;height:auto!important}
-.wSkVaW_viewArea:has(.dte_root)>div{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+[class*="_scrollBody"]:has(.dte_root){overflow:hidden!important;display:flex;flex-direction:column;min-height:0}
+[class*="_scrollBody"]:has(.dte_root)>[class*="_viewArea"],
+[class*="_viewArea"]:has(.dte_root){flex:1 1 0!important;min-height:0!important;overflow:hidden!important;position:relative!important;height:auto!important}
+[class*="_viewArea"]:has(.dte_root)>div{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .dte_root{display:flex;flex-direction:column;flex:1 1 0;height:100%;min-height:0;overflow:hidden;background:var(--dsw-alias-bg-base)}
 .dte_bar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--dsw-alias-border-l2);flex-wrap:wrap;flex-shrink:0}
 .dte_meta{flex:1;font-size:13px;color:var(--dsw-alias-label-secondary);min-width:0}

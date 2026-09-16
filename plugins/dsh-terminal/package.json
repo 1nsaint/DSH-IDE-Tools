@@ -1,6 +1,6 @@
 {
   "name": "dsh-terminal",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Interactive PTY terminal with multi-tab sessions (workspace cwd) — xterm.js + ANSI theme.",
   "type": "module",
   "main": "lib/index.js",

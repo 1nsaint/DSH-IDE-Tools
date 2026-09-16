@@ -9,8 +9,12 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDsshPath, openSshShell } from "../../dsh-ssh-workspace/lib/ssh.js";
 import { parseDsshPath } from "../../dsh-ssh-workspace/lib/config.js";
+import { buildLocalMotd, localMotdEnabled } from "./local-motd.js";
+import { buildLocalPtyEnv, geminiCliInstalled, resolveGeminiEnv } from "./terminal-env.js";
+import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 
 const name = "dsh-terminal";
+const inject = ["connection", "webServer"];
 const RPC_CHANNEL = "/terminal";
 const require = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -54,25 +58,33 @@ function transportError(error) {
 }
 
 function resolveTerminalCwd(ctx, sessionId, workspaceCwd) {
+	let sessionCwd = "";
 	if (typeof sessionId === "string" && sessionId.trim()) {
 		try {
 			const sessions = ctx.get?.("sessions");
 			const session = sessions?.get?.(sessionId.trim());
-			const cwd = session?.header?.cwd;
-			if (typeof cwd === "string" && cwd.trim()) {
-				const trimmed = cwd.trim();
-				if (isDsshPath(trimmed)) return trimmed;
-				const target = resolve(trimmed);
-				if (existsSync(target)) return target;
+			if (typeof session?.header?.cwd === "string" && session.header.cwd.trim()) {
+				sessionCwd = session.header.cwd.trim();
 			}
 		} catch {
 			/* ignore */
 		}
 	}
-	if (typeof workspaceCwd === "string" && workspaceCwd.trim()) {
-		const trimmed = workspaceCwd.trim();
-		if (isDsshPath(trimmed)) return trimmed;
-		const target = resolve(trimmed);
+	const wsCwd = typeof workspaceCwd === "string" ? workspaceCwd.trim() : "";
+	// During SSH workspace switches the sidebar pointer updates before session.header.cwd;
+	// never open a local PTY when the UI scope is already dssh://.
+	if (isDsshPath(wsCwd)) {
+		if (isDsshPath(sessionCwd)) return sessionCwd;
+		return wsCwd;
+	}
+	if (isDsshPath(sessionCwd)) return sessionCwd;
+	if (sessionCwd) {
+		const target = resolve(sessionCwd);
+		if (existsSync(target)) return target;
+	}
+	if (wsCwd) {
+		if (isDsshPath(wsCwd)) return wsCwd;
+		const target = resolve(wsCwd);
 		if (existsSync(target)) return target;
 	}
 	const fallback = resolve(process.env.HOME || "/workspace");
@@ -82,11 +94,68 @@ function resolveTerminalCwd(ctx, sessionId, workspaceCwd) {
 /** @type {Map<string, { pty?: any, stream?: any, buf: string, sessionId: string, closed: boolean, remote?: boolean }>} */
 const terms = new Map();
 
+const MAX_TERMS = 32;
+
+function closeTermEntry(termId, entry) {
+	if (!entry) return;
+	try {
+		if (entry.stream) entry.stream.close();
+		else entry.pty?.kill?.();
+	} catch {
+		/* ignore */
+	}
+	terms.delete(termId);
+}
+
+/** Drop oldest PTY when at cap (workspace/tab churn can leave orphans until client closes). */
+function evictOldestTerm() {
+	while (terms.size >= MAX_TERMS) {
+		const oldest = terms.keys().next().value;
+		if (!oldest) break;
+		closeTermEntry(oldest, terms.get(oldest));
+	}
+}
+
+function closeAllTerms() {
+	for (const [id, entry] of terms) {
+		closeTermEntry(id, entry);
+	}
+}
+
+function enqueueSpawn(fn) {
+	const run = spawnQueue.then(fn, fn);
+	spawnQueue = run.catch(() => {});
+	return run;
+}
+
+let spawnQueue = Promise.resolve();
+
+function spawnLocalPty(pty, shell, cols, rows, cwd, ctx) {
+	return enqueueSpawn(async () => {
+		if (terms.size >= MAX_TERMS) {
+			evictOldestTerm();
+		}
+		if (terms.size >= MAX_TERMS) {
+			throw new Error(
+				`too many terminal sessions (${MAX_TERMS} max) — close a terminal tab or restart the harness`,
+			);
+		}
+		const env = await buildLocalPtyEnv(ctx);
+		return pty.spawn(shell, ["-l"], {
+			name: "xterm-256color",
+			cols,
+			rows,
+			cwd,
+			env,
+		});
+	});
+}
+
 const MAX_BUF = 512 * 1024;
 
 function registerRpc(ctx) {
 	const pty = loadPty();
-	return ctx.connection.rpc.handle(
+	return registerRpcChannel(ctx, 
 		RPC_CHANNEL,
 		async (endpoint, payload) => {
 			try {
@@ -105,27 +174,43 @@ function registerRpc(ctx) {
 						const cwd = resolveTerminalCwd(ctx, sessionId, payload?.workspaceCwd);
 						const cols = Math.min(Math.max(Number(payload?.cols) || 80, 20), 300);
 						const rows = Math.min(Math.max(Number(payload?.rows) || 24, 5), 120);
+						if (terms.size >= MAX_TERMS) evictOldestTerm();
 						if (isDsshPath(cwd)) {
 							const parsed = parseDsshPath(cwd);
 							if (!parsed) throw new Error("invalid remote workspace path");
+							const termId = randomUUID();
+							const entry = {
+								stream: null,
+								buf: "",
+								sessionId,
+								closed: false,
+								remote: true,
+								cwd: parsed.remotePath,
+								shell: "",
+								hostId: parsed.hostId,
+							};
+							const appendBuf = (data) => {
+								entry.buf += data.toString("utf8");
+								if (entry.buf.length > MAX_BUF) {
+									entry.buf = entry.buf.slice(entry.buf.length - MAX_BUF);
+								}
+							};
 							const { stream, cwd: remoteCwd, host } = await openSshShell(
 								parsed.hostId,
 								parsed.remotePath,
 								cols,
 								rows,
+								{
+									onData: appendBuf,
+									onClose: () => {
+										entry.closed = true;
+										entry.buf += "\r\n[ssh session closed]\r\n";
+									},
+								},
 							);
-							const termId = randomUUID();
-							const entry = { stream, buf: "", sessionId, closed: false, remote: true };
-							stream.on("data", (data) => {
-								entry.buf += data.toString("utf8");
-								if (entry.buf.length > MAX_BUF) {
-									entry.buf = entry.buf.slice(entry.buf.length - MAX_BUF);
-								}
-							});
-							stream.on("close", () => {
-								entry.closed = true;
-								entry.buf += "\r\n[ssh session closed]\r\n";
-							});
+							entry.stream = stream;
+							entry.cwd = remoteCwd || parsed.remotePath;
+							entry.shell = `ssh:${host?.label || parsed.hostId}`;
 							terms.set(termId, entry);
 							return ok({
 								termId,
@@ -137,21 +222,28 @@ function registerRpc(ctx) {
 						}
 						const shell = process.env.DSH_TERMINAL_SHELL || process.env.SHELL || "/bin/bash";
 						const termId = randomUUID();
-						const proc = pty.spawn(shell, ["-l"], {
-							name: "xterm-256color",
-							cols,
-							rows,
+						const geminiEnv = await resolveGeminiEnv(ctx);
+						const localBanner = localMotdEnabled()
+							? buildLocalMotd({
+									ctx,
+									sessionId,
+									cwd,
+									cols,
+									geminiKeySet: Boolean(geminiEnv.GEMINI_API_KEY),
+									geminiInstalled: geminiCliInstalled(),
+								})
+							: "";
+						const proc = await spawnLocalPty(pty, shell, cols, rows, cwd, ctx);
+						const entry = {
+							pty: proc,
+							buf: "",
+							localBanner,
+							sessionId,
+							closed: false,
 							cwd,
-							env: {
-								...process.env,
-								TERM: "xterm-256color",
-								COLORTERM: "truecolor",
-								FORCE_COLOR: "1",
-								CLICOLOR: "1",
-								CLICOLOR_FORCE: "1",
-							},
-						});
-						const entry = { pty: proc, buf: "", sessionId, closed: false };
+							shell,
+							remote: false,
+						};
 						proc.onData((data) => {
 							entry.buf += data;
 							if (entry.buf.length > MAX_BUF) {
@@ -163,7 +255,35 @@ function registerRpc(ctx) {
 							entry.buf += "\r\n[process exited]\r\n";
 						});
 						terms.set(termId, entry);
-						return ok({ termId, cwd, shell });
+						return ok({
+							termId,
+							cwd,
+							shell,
+							banner: localBanner || undefined,
+						});
+					}
+					case "attach": {
+						const termId = String(payload?.termId || "").trim();
+						const entry = terms.get(termId);
+						if (!entry || entry.closed) throw new Error("terminal not found");
+						const cols = Math.min(Math.max(Number(payload?.cols) || 80, 20), 300);
+						const rows = Math.min(Math.max(Number(payload?.rows) || 24, 5), 120);
+						if (entry.stream && typeof entry.stream.setWindow === "function") {
+							entry.stream.setWindow(rows, cols, 0, 0, 0, 0);
+						} else if (entry.pty) {
+							entry.pty.resize(cols, rows);
+						}
+						const replay = (entry.localBanner || "") + entry.buf;
+						entry.buf = "";
+						return ok({
+							termId,
+							attached: true,
+							replay,
+							cwd: entry.cwd || "",
+							shell: entry.shell || "",
+							remote: !!entry.remote,
+							hostId: entry.hostId || null,
+						});
 					}
 					case "write": {
 						const termId = payload?.termId;
@@ -199,16 +319,16 @@ function registerRpc(ctx) {
 					case "close": {
 						const termId = payload?.termId;
 						const entry = terms.get(termId);
-						if (entry) {
-							try {
-								if (entry.stream) entry.stream.close();
-								else entry.pty.kill();
-							} catch {
-								/* ignore */
-							}
-							terms.delete(termId);
-						}
+						if (entry) closeTermEntry(termId, entry);
 						return ok({ closed: true });
+					}
+					case "closeAll": {
+						const n = terms.size;
+						closeAllTerms();
+						return ok({ closed: n });
+					}
+					case "stats": {
+						return ok({ count: terms.size, max: MAX_TERMS });
 					}
 					default:
 						return transportError(new Error(`unknown endpoint: ${endpoint}`));
@@ -216,26 +336,18 @@ function registerRpc(ctx) {
 			} catch (error) {
 				return transportError(error);
 			}
-		},
-		{ authority: "loopback" }
-	);
+		});
 }
 
 function apply(ctx) {
-	ctx.inject(["connection"], (connectionCtx) => {
+	ctx.inject(["connection", "webServer"], (connectionCtx) => {
 		connectionCtx.inject(["sessions"], (scope) => {
 			scope.effect(() => {
 				const dispose = registerRpc(scope);
 				return () => {
 					dispose();
 					for (const [id, entry] of terms) {
-						try {
-							if (entry.stream) entry.stream.close();
-							else entry.pty.kill();
-						} catch {
-							/* ignore */
-						}
-						terms.delete(id);
+						closeTermEntry(id, entry);
 					}
 				};
 			}, "dsh-terminal: rpc");
@@ -243,4 +355,4 @@ function apply(ctx) {
 	});
 }
 
-export { apply, name };
+export { apply, name, inject };

@@ -25,7 +25,7 @@ window.__ModuleLoader__.load({
 .dd_btnPrimary{background:transparent;color:var(--dsw-alias-state-business-primary);border-color:var(--dsw-alias-state-business-primary);border-width:2px}
 .dd_btnPrimary:hover:not(:disabled){background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent)}
 .dd_bar .dsh_tabSettingsBtn{flex:none;width:30px;height:30px;min-width:30px;padding:0;margin-left:0}
-.dd_body{flex:1;min-height:0;display:grid;grid-template-columns:220px minmax(0,1fr);overflow:hidden}
+.dd_body{flex:1;min-height:0;overflow:hidden}
 .dd_side{min-height:0;overflow:hidden;border-right:1px solid var(--dsw-alias-border-l2);display:flex;flex-direction:column}
 .dd_sideSearch{padding:8px;flex:none;border-bottom:1px solid var(--dsw-alias-border-l2)}
 .dd_sideSearch .dd_input{width:100%;box-sizing:border-box}
@@ -71,7 +71,7 @@ window.__ModuleLoader__.load({
 @container dd (max-width:900px){
   .dd_bar{padding:6px 8px;gap:4px}
   .dd_select{flex:1 1 0;min-width:0;padding:0 6px;font-size:11px}
-  .dd_body{grid-template-columns:1fr;grid-template-rows:minmax(0,auto) minmax(0,1fr)}
+  .dd_body{flex:none;min-height:0}
   .dd_side{border-right:none;border-bottom:1px solid var(--dsw-alias-border-l2);max-height:min(28vh,200px)}
   .dd_queryShell{margin:6px 8px 0}
   .dd_query{padding:0 8px;font-size:11px}
@@ -104,6 +104,12 @@ window.__ModuleLoader__.load({
 				document.head.appendChild(t);
 			}
 			t.textContent = css;
+		}
+
+		function PaneSplit(props) {
+			const Split = typeof window !== "undefined" && window.__dshPaneResizer?.SplitPane;
+			if (Split) return React.createElement(Split, props);
+			return React.createElement("div", { className: props.className }, props.children);
 		}
 
 		function defaultCloneName(activeName) {
@@ -887,7 +893,13 @@ window.__ModuleLoader__.load({
 					);
 				})(),
 				error && React.createElement("div", { className: "dd_err" }, error),
-				React.createElement("div", { className: "dd_body" },
+				React.createElement(PaneSplit, {
+					className: "dd_body",
+					storageKey: "database.tables-query",
+					defaultRatio: 0.22,
+					minFirst: 160,
+					minSecond: 280,
+				},
 					React.createElement("div", { className: "dd_side" },
 						React.createElement("div", { className: "dd_sideSearch" },
 							React.createElement("input", {

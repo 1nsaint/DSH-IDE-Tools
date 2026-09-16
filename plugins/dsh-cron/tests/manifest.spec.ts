@@ -8,7 +8,8 @@ describe('client bundle manifest', () => {
     expect(manifest.exports['./client'].default).toBe('./lib/client.js')
     expect(manifest.exports['./client'].types).toBe('./lib/types/client/index.d.ts')
     expect(manifest.dsh.client.platform).toBe('web')
-    expect(manifest.dsh.client.inject).toContain('@deepseek-ai/dsh-client-ui-sidebar')
+    expect(manifest.dsh.client.inject).toContain('@deepseek-ai/dsh-client-ui-slots')
+    expect(manifest.dsh.client.inject).not.toContain('@deepseek-ai/dsh-client-ui-sidebar')
     expect(manifest.dsh.bundle.patch).toBe('./cordis.patch.yml')
   })
 

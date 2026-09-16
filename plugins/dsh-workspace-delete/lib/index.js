@@ -11,8 +11,10 @@ import { homedir } from "node:os";
 import { readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import path from "node:path";
+import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 
 const name = "dsh-workspace-delete";
+const inject = ["connection", "webServer"];
 const RPC_CHANNEL = "/workspace-delete";
 const ROOT = process.env.DSH_WORKSPACE_ROOT || "/workspace";
 
@@ -300,9 +302,9 @@ async function executeDelete(ctx, registry, workspaceId) {
  * @param {any} ctx
  */
 function registerRpc(ctx) {
-	const register = ctx.connection.rpc.handle;
 	const registry = ctx.workspaceRegistry;
-	const dispose = register(
+	const dispose = registerRpcChannel(
+		ctx,
 		RPC_CHANNEL,
 		async (endpoint, payload) => {
 			try {
@@ -322,7 +324,6 @@ function registerRpc(ctx) {
 				return transportError(error);
 			}
 		},
-		{ authority: "loopback" },
 	);
 	return () => dispose();
 }
@@ -331,11 +332,11 @@ function registerRpc(ctx) {
  * @param {any} ctx
  */
 function apply(ctx) {
-	ctx.inject(["connection"], (connectionCtx) => {
+	ctx.inject(["connection", "webServer"], (connectionCtx) => {
 		connectionCtx.inject(["workspaceRegistry"], (scope) => {
 			scope.effect(() => registerRpc(scope), `${name}: rpc`);
 		});
 	});
 }
 
-export { apply, name };
+export { apply, name, inject };

@@ -25,10 +25,10 @@ vi.mock('react', async (importOriginal) => {
 
 vi.mock('../src/client/rpc.ts', () => ({ callRpc: clientMocks.callRpc }))
 
-import { CronPanel, formatDateTime } from '../src/client/CronPanel.tsx'
-import { apply } from '../src/client/index.ts'
+import { CronScheduleView, formatDateTime } from '../src/client/CronPanel.tsx'
+import { apply, CRON_HERO_TOOL_ID, CRON_TAB_LABEL } from '../src/client/index.ts'
 
-describe('CronPanel', () => {
+describe('CronScheduleView', () => {
   beforeEach(() => {
     clientMocks.effects.length = 0
     clientMocks.states.length = 0
@@ -39,31 +39,41 @@ describe('CronPanel', () => {
     expect(formatDateTime('not-a-timestamp')).toBe('not-a-timestamp')
   })
 
-  it('polls the list endpoint only while the panel is open', async () => {
+  it('polls the list endpoint while the view is mounted', async () => {
     clientMocks.callRpc.mockResolvedValue({ jobs: [], generatedAt: 1 })
     const connection = {} as ConnectionHandle
 
-    // Closed: the refresh and keyboard effects both return early.
-    CronPanel({
-      wide: true,
+    CronScheduleView({
       connection,
       t: (key: string) => key,
       useSessions: selector => selector({ current: undefined } as never),
-      useWorkspaces: selector => selector({} as never),
+      useWorkspaces: selector => selector({ items: [] } as never),
     })
-    expect(clientMocks.effects).toHaveLength(2)
-    const cleanupPoll = clientMocks.effects[0]?.()
-    const cleanupDismiss = clientMocks.effects[1]?.()
-    expect(clientMocks.callRpc).not.toHaveBeenCalled()
-    expect(cleanupPoll).toBeUndefined()
-    expect(cleanupDismiss).toBeUndefined()
+    const cleanups = clientMocks.effects.map(effect => effect?.())
+    expect(clientMocks.callRpc).toHaveBeenCalledWith(connection, 'list', {}, expect.any(AbortSignal))
+    const pollCleanup = cleanups.find(cleanup => typeof cleanup === 'function')
+    expect(typeof pollCleanup).toBe('function')
+    pollCleanup?.()
   })
 
-  it('registers the sidebar footer action slot on apply', () => {
+  it('registers workbench tab + hero tool on apply', () => {
     const registered: unknown[] = []
     const injected: Array<readonly unknown[]> = []
+    const heroRegistered: Array<readonly unknown[]> = []
+    const connection = {}
+    const priorWindow = globalThis.window
+    vi.stubGlobal('window', {
+      __dshHeroToolRegistry: {
+        _map: new Map(),
+        register(id: string, factory: () => unknown) {
+          heroRegistered.push([id, factory])
+          return () => {}
+        },
+        get: () => undefined,
+      },
+    })
     const ctx = {
-      get: (name: string) => (name === 'connection' ? {} : undefined),
+      get: (name: string) => (name === 'connection' ? connection : undefined),
       effect: (fn: () => unknown) => { fn() },
       locale: {
         register: vi.fn(() => () => {}),
@@ -85,10 +95,14 @@ describe('CronPanel', () => {
       en: expect.any(Object),
     })
     expect(injected).toHaveLength(1)
-    const registration = registered[0] as [{ name: string; id: string; locale: string }, unknown]
-    expect(registration[0].name).toBe('sidebar.footer.action')
-    expect(registration[0].id).toBe('cron')
-    expect(registration[0].locale).toBe('sidebar.cron')
-    expect(registration[1]).toBe(CronPanel)
+    expect(injected[0]?.[0]).toBe('conversation.view')
+    const tabRegistration = registered[0] as [{ name: string; id: string; locale: string; label: () => string }, unknown]
+    expect(tabRegistration[0].name).toBe('conversation.view')
+    expect(tabRegistration[0].id).toBe(CRON_HERO_TOOL_ID)
+    expect(tabRegistration[0].locale).toBe('sidebar.cron')
+    expect(tabRegistration[0].label()).toBe(CRON_TAB_LABEL)
+    expect(heroRegistered).toHaveLength(1)
+    expect(heroRegistered[0]?.[0]).toBe(CRON_HERO_TOOL_ID)
+    vi.stubGlobal('window', priorWindow)
   })
 })

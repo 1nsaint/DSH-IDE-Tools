@@ -1,48 +1,122 @@
 /**
- * dsh-cron browser half: the cron job panel on the sidebar footer action
- * slot. The panel polls the host `/cron` channel — no model involvement.
+ * dsh-cron browser half: scheduled tasks in the workbench tab strip.
+ * Polls the host `/cron` channel — no model involvement.
  * @module
  */
 
+import { createElement } from 'react'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-// Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-// Legacy DSH releases expose the standard Client seats through runtime.
 import type {} from '@deepseek-ai/dsh-client-runtime/client'
-// Type-only: pulls the 'sidebar.footer.action' SlotMap merge declared by the
-// sidebar owner package into this compilation unit.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
-// Current DSH releases own the SlotRegistry Context merge in the renderer.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-import { CronPanel } from './CronPanel.tsx'
-import { en, zh, type CronKey } from './locales.ts'
+import { CronTabView, type CronScheduleProps } from './CronPanel.tsx'
+import { en, formatCronMessage, zh, type CronKey } from './locales.ts'
+import {
+  bindHarnessRuntimeStores,
+  unbindHarnessRuntimeStores,
+  useCronSessions,
+  useCronWorkspaces,
+} from './runtime-stores.ts'
 
 /** Namespace owning the cron panel copy; merged into LocaleNamespaceMap. */
 export const CRON_LOCALE_NS = 'sidebar.cron'
 
+export const CRON_TAB_LABEL = 'Scheduled'
+export const CRON_HERO_TOOL_ID = 'scheduled'
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** Cron sidebar panel copy. */
+    /** Cron workbench tab copy. */
     'sidebar.cron': CronKey
   }
 }
 
-export const inject = ['slots', 'connection', 'locale']
+declare global {
+  interface Window {
+    __dshHeroToolRegistry?: {
+      _map?: Map<string, () => unknown>
+      register: (id: string, factory: () => unknown) => () => void
+      get: (id: string) => (() => unknown) | undefined
+    }
+  }
+}
+
+export const inject = ['slots', 'connection', 'locale', 'workspaces', 'sessions']
+
+const heroSessionsHook = useCronSessions as unknown as CronScheduleProps['useSessions']
+const heroWorkspacesHook = useCronWorkspaces as unknown as CronScheduleProps['useWorkspaces']
+
+function ensureHeroRegistry(): NonNullable<Window['__dshHeroToolRegistry']> {
+  if (typeof window === 'undefined') {
+    return {
+      register: () => () => {},
+      get: () => undefined,
+    }
+  }
+  if (!window.__dshHeroToolRegistry) {
+    const map = new Map<string, () => unknown>()
+    window.__dshHeroToolRegistry = {
+      _map: map,
+      register(id: string, factory: () => unknown) {
+        map.set(id, factory)
+        return () => { map.delete(id) }
+      },
+      get(id: string) {
+        return map.get(id)
+      },
+    }
+  }
+  return window.__dshHeroToolRegistry
+}
+
+function heroCronView(connection: ConnectionHandle): ReturnType<typeof createElement> {
+  const t = (key: CronKey, params?: Record<string, string | number>) => formatCronMessage(en, key, params)
+  return createElement(CronTabView, {
+    connection,
+    t,
+    useSessions: heroSessionsHook,
+    useWorkspaces: heroWorkspacesHook,
+  } as never)
+}
+
+function bindFromContext(ctx: ClientContext): void {
+  bindHarnessRuntimeStores({
+    workspaces: ctx.get('workspaces' as never),
+    sessions: ctx.get('sessions' as never),
+  })
+}
 
 export function apply(ctx: ClientContext): void {
   const connection = ctx.get('connection') as unknown as ConnectionHandle
 
-  // Registration is an effect: the disposer releases on fiber end.
+  bindFromContext(ctx)
+  ctx.effect(() => {
+    bindFromContext(ctx)
+    return () => { unbindHarnessRuntimeStores() }
+  }, 'dsh-cron: runtime stores')
+
   ctx.effect(() => ctx.locale.register(CRON_LOCALE_NS, { zh, en }), 'dsh-cron: panel dictionaries')
 
-  // Mount inside the owner's declaration lifetime: the panel registers only
-  // while the footer action slot exists, and unloads with this plugin.
-  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
-    name: 'sidebar.footer.action',
-    id: 'cron',
-    order: 20,
-    locale: CRON_LOCALE_NS,
-    inject: () => ({ connection }),
-  }, CronPanel))
+  ctx.effect(() => ctx.slots.inject(
+    'conversation.view' as 'root',
+    () => ctx.slots.register({
+      name: 'conversation.view',
+      id: CRON_HERO_TOOL_ID,
+      order: 46,
+      label: () => CRON_TAB_LABEL,
+      locale: CRON_LOCALE_NS,
+      inject: () => ({
+        connection,
+        useSessions: heroSessionsHook,
+        useWorkspaces: heroWorkspacesHook,
+      }),
+    } as never, CronTabView),
+  ), 'dsh-cron: workbench tab')
+
+  ctx.effect(() => {
+    const registry = ensureHeroRegistry()
+    return registry.register(CRON_HERO_TOOL_ID, () => heroCronView(connection))
+  }, 'dsh-cron: hero tool')
 }

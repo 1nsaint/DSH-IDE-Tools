@@ -1,34 +1,18 @@
 /**
- * `/cron` RPC channel (loopback): the browser task center's create, list,
- * update, remove, and fire-now actions over the shared scheduler.
+ * `/cron` RPC channel: browser task center create/list/update/remove/fire-now.
  * @module dsh-cron/rpc
+ *
+ * On DSH 0.1.5+, `connection.rpc.handle()` never mounts routes (HTTP 405).
+ * Use shared `registerRpcChannel` with `webServer` inject — see `_shared/UPGRADE.md`.
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-connection'
+import { registerRpcChannel, ok, transportError } from '../../_shared/register-rpc-channel.js'
 import type { CronService } from './scheduler.ts'
 import { targetFromPayload } from './target.ts'
 
 export const CRON_RPC_CHANNEL = '/cron'
-
-type RpcResult<T> =
-  | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly error: { readonly code: string; readonly message: string; readonly details: object } }
-
-function ok<T>(value: T): RpcResult<T> {
-  return { ok: true, value }
-}
-
-function transportError<T>(error: unknown): RpcResult<T> {
-  return {
-    ok: false,
-    error: {
-      code: 'internal',
-      message: error instanceof Error ? error.message : String(error),
-      details: {},
-    },
-  }
-}
 
 function payloadId(payload: unknown): string {
   const id = (payload as { id?: unknown } | undefined)?.id
@@ -52,19 +36,12 @@ function payloadOptionalId(payload: unknown, key: string): string | undefined {
 
 /**
  * Register the `/cron` channel handlers.
- * @param ctx - context carrying the `connection` service.
+ * @param ctx - context carrying `connection` + `webServer`.
  * @param service - the scheduler's service view.
  * @returns the channel disposer.
  */
 export function registerCronRpc(ctx: Context, service: CronService): () => void {
-  // rc.2 required an authority option; alpha.1 authenticates every channel and
-  // removed that parameter. JavaScript safely ignores the retained option.
-  const register = ctx.connection.rpc.handle as unknown as (
-    channel: string,
-    handler: (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<RpcResult<unknown>>,
-    options?: { authority: 'loopback' },
-  ) => () => Promise<void>
-  const handle = register(CRON_RPC_CHANNEL, async (endpoint, payload, _signal) => {
+  return registerRpcChannel(ctx, CRON_RPC_CHANNEL, async (endpoint, payload, _signal) => {
     try {
       switch (endpoint) {
         case 'list': return ok({ jobs: service.list(), generatedAt: Date.now() })
@@ -83,6 +60,20 @@ export function registerCronRpc(ctx: Context, service: CronService): () => void 
             ...(target === undefined ? {} : { target }),
           }))
         }
+        case 'edit': {
+          const id = payloadId(payload)
+          const cron = payloadText(payload, 'cron')
+          const timeZone = payloadText(payload, 'timeZone')
+          const at = payloadText(payload, 'at')
+          const target = targetFromPayload(payload)
+          return ok(service.edit(id, {
+            prompt: payloadText(payload, 'prompt') ?? '',
+            ...(cron === undefined ? {} : { cron }),
+            ...(timeZone === undefined ? {} : { timeZone }),
+            ...(at === undefined ? {} : { at }),
+            ...(target === undefined ? {} : { target }),
+          }))
+        }
         case 'remove': return ok({ id: payloadId(payload), removed: service.remove(payloadId(payload)) })
         case 'update': {
           const paused = (payload as { paused?: unknown } | undefined)?.paused
@@ -94,11 +85,10 @@ export function registerCronRpc(ctx: Context, service: CronService): () => void 
           const id = payloadId(payload)
           return ok({ id, result: await service.fireNow(id) })
         }
-        default: return transportError<unknown>(new Error(`dsh-cron RPC unknown endpoint: ${endpoint}`))
+        default: return transportError(new Error(`dsh-cron RPC unknown endpoint: ${endpoint}`))
       }
     } catch (error) {
-      return transportError<unknown>(error)
+      return transportError(error)
     }
-  }, { authority: 'loopback' })
-  return () => { void handle() }
+  })
 }

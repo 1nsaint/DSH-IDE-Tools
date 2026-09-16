@@ -5,9 +5,10 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 
 const name = "dsh-ai-metrics";
-const inject = ["webServer"];
+const inject = ["webServer", "connection"];
 const PROXY_PREFIX = "/jetson-metrics-api";
 const DEFAULT_UPSTREAM = "http://192.168.0.146:8001";
 const RPC_CHANNEL = "/ai-metrics-config";
@@ -62,9 +63,7 @@ async function saveStore(cfg) {
 }
 
 function registerRpc(ctx) {
-	return ctx.connection.rpc.handle(
-		RPC_CHANNEL,
-		async (endpoint, payload) => {
+	return registerRpcChannel(ctx, RPC_CHANNEL, async (endpoint, payload) => {
 			try {
 				if (endpoint === "loadConfig") {
 					const store = await loadStore();
@@ -87,9 +86,7 @@ function registerRpc(ctx) {
 			} catch (error) {
 				return transportError(error);
 			}
-		},
-		{ authority: "loopback" }
-	);
+		});
 }
 
 function apply(ctx) {
@@ -117,7 +114,8 @@ function apply(ctx) {
 			const upstream = await fetch(target, {
 				method,
 				headers: { accept: "application/json" },
-				signal: AbortSignal.timeout(8_000),
+				// /api/ai/active on Jetson can exceed 8s under load; 20s avoids false 502s.
+				signal: AbortSignal.timeout(20_000),
 			});
 			const buf = Buffer.from(await upstream.arrayBuffer());
 			res.writeHead(upstream.status, {
@@ -147,7 +145,7 @@ function apply(ctx) {
 		`${name}: jetson-metrics proxy`,
 	);
 
-	ctx.inject(["connection"], (scope) => {
+	ctx.inject(["connection", "webServer"], (scope) => {
 		scope.effect(() => registerRpc(scope), `${name}: rpc`);
 	});
 }

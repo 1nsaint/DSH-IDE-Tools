@@ -6,6 +6,8 @@ import type { CronJob, CronRunRecord, CronStore } from './store.ts'
 const CONSUMER_ID = 'cron.adapter.v1'
 const EVENT_PAGE_SIZE = 200
 
+export type CronSessionReady = (job: CronJob, record: CronRunRecord, sessionId: string) => void
+
 export class CronAutomationAdapter {
   private reconcileTask: Promise<void> | undefined
 
@@ -15,6 +17,7 @@ export class CronAutomationAdapter {
     private readonly now: () => number,
     private readonly warn: (message: string) => void,
     private readonly onSettled?: (job: CronJob, run: CronRunRecord) => void,
+    private readonly onSessionReady?: CronSessionReady,
   ) {}
 
   /** Resume every source occurrence that was persisted before a process loss. */
@@ -22,6 +25,27 @@ export class CronAutomationAdapter {
     for (const job of this.store.list()) {
       for (const run of job.runs) {
         if (run.state === 'submitting' && run.automationRunId === undefined) await this.submit(job, run)
+      }
+    }
+  }
+
+  /** Re-attach known Sessions after restart (Ungrouped → workspace). */
+  async reattachKnownSessions(): Promise<void> {
+    for (const job of this.store.list()) {
+      for (const run of job.runs) {
+        const known = run.sessionId
+        if (known) {
+          this.onSessionReady?.(job, run, known)
+          continue
+        }
+        if (run.automationRunId === undefined) continue
+        try {
+          const view = this.automation.get(run.automationRunId)
+          const sessionId = view.finalSessionId
+          if (sessionId) this.noteSession(job, run, sessionId)
+        } catch (error) {
+          this.warn(`dsh-cron: reattach lookup failed for ${run.automationRunId}: ${message(error)}`)
+        }
       }
     }
   }
@@ -47,6 +71,7 @@ export class CronAutomationAdapter {
       record.automationRunId = result.run.id
       record.firedAt = new Date(this.now()).toISOString()
       const settled = applyProjection(record, result.run)
+      if (result.run.finalSessionId) this.noteSession(job, record, result.run.finalSessionId)
       this.store.flush()
       if (settled) this.onSettled?.(job, record)
     } catch (error) {
@@ -79,8 +104,14 @@ export class CronAutomationAdapter {
         this.automation.checkpointConsumer(CONSUMER_ID, cursor)
         continue
       }
-      const runIds = new Set(page.events.map(event => event.runId))
-      for (const runId of runIds) this.refreshRun(runId)
+      for (const event of page.events) {
+        const sessionId = sessionIdFromEvent(event)
+        if (sessionId !== undefined) {
+          const found = findRun(this.store, event.runId)
+          if (found !== undefined) this.noteSession(found.job, found.record, sessionId)
+        }
+        this.refreshRun(event.runId)
+      }
       this.store.advanceEventCursor(page.nextSeq)
       this.automation.checkpointConsumer(CONSUMER_ID, page.nextSeq)
       if (!page.hasMore) return
@@ -99,12 +130,24 @@ export class CronAutomationAdapter {
     const found = findRun(this.store, runId)
     if (found === undefined) return
     try {
-      const settled = applyProjection(found.record, this.automation.get(runId))
+      const view = this.automation.get(runId)
+      const settled = applyProjection(found.record, view)
+      if (view.finalSessionId) this.noteSession(found.job, found.record, view.finalSessionId)
       this.store.flush()
       if (settled) this.onSettled?.(found.job, found.record)
     } catch (error) {
       this.warn(`dsh-cron: could not reconcile Automation Run ${runId}: ${message(error)}`)
     }
+  }
+
+  private noteSession(job: CronJob, record: CronRunRecord, sessionId: string): void {
+    if (record.sessionId === sessionId) {
+      this.onSessionReady?.(job, record, sessionId)
+      return
+    }
+    record.sessionId = sessionId
+    this.store.flush()
+    this.onSessionReady?.(job, record, sessionId)
   }
 }
 
@@ -139,6 +182,12 @@ function findRun(store: CronStore, runId: string): { readonly job: CronJob; read
     if (found !== undefined) return { job, record: found }
   }
   return undefined
+}
+
+function sessionIdFromEvent(event: { readonly type?: string; readonly data?: unknown }): string | undefined {
+  if (event.data === null || typeof event.data !== 'object') return undefined
+  const sessionId = (event.data as { sessionId?: unknown }).sessionId
+  return typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : undefined
 }
 
 function terminalRecord(run: CronRunRecord): boolean {

@@ -12,8 +12,10 @@ import { promisify } from "node:util";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 
 const name = "dsh-database";
+const inject = ["connection", "webServer"];
 const RPC_CHANNEL = "/database";
 const { Client: PgClient } = pg;
 const execFileAsync = promisify(execFile);
@@ -904,7 +906,7 @@ async function createPostgresSidecarClone(payload) {
 }
 
 function registerRpc(ctx) {
-	return ctx.connection.rpc.handle(
+	return registerRpcChannel(ctx, 
 		RPC_CHANNEL,
 		async (endpoint, payload) => {
 			try {
@@ -985,15 +987,13 @@ function registerRpc(ctx) {
 			} catch (error) {
 				return transportError(error);
 			}
-		},
-		{ authority: "loopback" }
-	);
+		});
 }
 
 function apply(ctx) {
-	ctx.inject(["connection"], (scope) => {
+	ctx.inject(["connection", "webServer"], (scope) => {
 		scope.effect(() => registerRpc(scope), "dsh-database: rpc");
 	});
 }
 
-export { apply, name, createPostgresSidecarClone, loadCloneCatalog };
+export {  apply, name, createPostgresSidecarClone, loadCloneCatalog, inject };

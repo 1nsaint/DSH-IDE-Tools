@@ -1,35 +1,41 @@
 {
-  "name": "dsh-ssh-workspace",
-  "version": "0.2.0",
-  "description": "Cursor-style SSH remote workspaces — saved hosts, remote folder picker, dssh:// paths, sidebar chips, SFTP files, SSH terminal.",
-  "type": "module",
-  "main": "lib/index.js",
-  "exports": {
-    ".": { "default": "./lib/index.js" },
-    "./client": { "default": "./lib/client.js" },
-    "./ssh": { "default": "./lib/ssh.js" },
-    "./package.json": "./package.json"
-  },
-  "dependencies": {
-    "ssh2": "^1.16.0"
-  },
-  "dsh": {
-    "client": {
-      "platform": "web",
-      "immediately": true,
-      "inject": [
-        "@deepseek-ai/dsh-client-connection",
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-renderer",
-        "@deepseek-ai/dsh-client-ui-slots",
-        "@deepseek-ai/dsh-client-ui-settings"
-      ]
-    }
-  },
-  "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
-  },
-  "license": "MIT"
+	"name": "dsh-ssh-workspace",
+	"version": "0.2.3",
+	"description": "Cursor-style SSH remote workspaces \u2014 saved hosts, remote folder picker, dssh:// paths, sidebar chips, SFTP files, SSH terminal.",
+	"type": "module",
+	"main": "lib/index.js",
+	"exports": {
+		".": {
+			"default": "./lib/index.js"
+		},
+		"./client": {
+			"default": "./lib/client.js"
+		},
+		"./ssh": {
+			"default": "./lib/ssh.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"dependencies": {
+		"ssh2": "^1.16.0"
+	},
+	"dsh": {
+		"client": {
+			"platform": "web",
+			"immediately": true,
+			"inject": [
+				"@deepseek-ai/dsh-client-connection",
+				"@deepseek-ai/dsh-client-runtime",
+				"@deepseek-ai/dsh-client-ui-renderer",
+				"@deepseek-ai/dsh-client-ui-slots",
+				"@deepseek-ai/dsh-client-ui-settings"
+			]
+		}
+	},
+	"peerDependencies": {
+		"@deepseek-ai/cordis": "^4.0.1",
+		"react": "^18.2.0",
+		"react-dom": "^18.2.0"
+	},
+	"license": "MIT"
 }

@@ -11,8 +11,10 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { constants, zstdCompress, zstdDecompress } from "node:zlib";
 import { promisify } from "node:util";
+import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 
 const name = "dsh-session-move";
+const inject = ["connection", "webServer"];
 const RPC_CHANNEL = "/session-move";
 const zstdCompressAsync = promisify(zstdCompress);
 const zstdDecompressAsync = promisify(zstdDecompress);
@@ -394,9 +396,7 @@ async function unloadLiveSession(ctx, sessionId) {
  * @param {any} registry
  */
 function registerRpc(ctx, registry) {
-	const dispose = ctx.connection.rpc.handle(
-		RPC_CHANNEL,
-		async (endpoint, payload) => {
+	const dispose = registerRpcChannel(ctx, RPC_CHANNEL, async (endpoint, payload) => {
 			try {
 				if (endpoint !== "moveToWorkspace") {
 					return transportError(new Error(`dsh-session-move unknown endpoint: ${endpoint}`));
@@ -465,11 +465,11 @@ function registerRpc(ctx, registry) {
 }
 
 function apply(ctx) {
-	ctx.inject(["connection"], (connectionCtx) => {
+	ctx.inject(["connection", "webServer"], (connectionCtx) => {
 		connectionCtx.inject(["workspaceRegistry"], (scope) => {
 			scope.effect(() => registerRpc(scope, scope.workspaceRegistry), "dsh-session-move: rpc");
 		});
 	});
 }
 
-export { apply, name };
+export { apply, name, inject };

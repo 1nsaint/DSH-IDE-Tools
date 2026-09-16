@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
 		};
 
 		const css = [
-			".hHd-Xa_footerActions{flex-direction:column;align-items:stretch;width:100%}",
+			'[class*="_footerActions"]{flex-direction:column;align-items:stretch;width:100%}',
 			".djm_layer{width:100%;max-width:100%;box-sizing:border-box}",
 			".djm_layer.djm_rail{width:36px;align-self:center}",
 			".djm_tipWrap{position:relative;display:block;width:100%;max-width:100%;box-sizing:border-box}",
@@ -234,8 +234,8 @@ window.__ModuleLoader__.load({
 				const root = rootRef.current;
 				if (!root) return;
 				const slotHost = root.parentElement;
-				const footArea = root.closest(".hHd-Xa_footArea");
-				const settings = footArea?.querySelector(".hHd-Xa_settingsArea");
+				const footArea = root.closest('[class*="_footArea"]');
+				const settings = footArea?.querySelector('[class*="_settingsArea"]');
 				if (!slotHost || !footArea || !settings) return;
 				if (settings.nextElementSibling !== slotHost) {
 					footArea.appendChild(slotHost);

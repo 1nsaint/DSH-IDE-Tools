@@ -5,11 +5,14 @@
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, readdir, access } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
+import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 
 const name = "dsh-containers";
+const inject = ["connection", "webServer"];
 const RPC_CHANNEL = "/containers";
 const execFileAsync = promisify(execFile);
 
@@ -42,6 +45,20 @@ function configPath() {
 function containersRoot() {
 	return resolve(process.env.CONTAINERS_ROOT || "/containers");
 }
+
+function containersHostRoot() {
+	return resolve(process.env.CONTAINERS_HOST_ROOT || containersRoot());
+}
+
+/** Top-level folders under ~/Containers we skip when scanning for idle compose stacks. */
+const COMPOSE_SCAN_SKIP = new Set([
+	".test-environments",
+	"apps",
+	"assets",
+	"jetson",
+	"DSH-IDE-Tools",
+	"data",
+]);
 
 function normalizeHost(raw, fallbackId) {
 	if (!raw || typeof raw !== "object") return null;
@@ -182,8 +199,108 @@ function formatPortsList(portsStr, inspectInfo) {
 	return out;
 }
 
+/** @type {{ key: string, at: number, rows: object[] } | null} */
+let idleComposeCache = null;
+const IDLE_COMPOSE_CACHE_MS = 45_000;
+
+function idleComposeCacheKey(cfg, envMode) {
+	return `${envMode}|${(cfg.allowPrefixes || []).join("\t")}`;
+}
+
+function clearIdleComposeCache() {
+	idleComposeCache = null;
+}
+
+/** Compose projects with no container records yet (e.g. after `compose down` or never started). */
+async function discoverIdleComposeStacks(cfg, envMode, endpoint) {
+	if (endpoint) return [];
+	const cacheKey = idleComposeCacheKey(cfg, envMode);
+	if (
+		idleComposeCache
+		&& idleComposeCache.key === cacheKey
+		&& Date.now() - idleComposeCache.at < IDLE_COMPOSE_CACHE_MS
+	) {
+		return idleComposeCache.rows;
+	}
+	const root = containersRoot();
+	const hostRoot = containersHostRoot();
+	let entries;
+	try {
+		entries = await readdir(root, { withFileTypes: true });
+	} catch {
+		return [];
+	}
+	/** @type {{ name: string, bare: string, hostDir: string, composeFile: string, test: boolean }[]} */
+	const candidates = [];
+	for (const ent of entries) {
+		if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
+		if (COMPOSE_SCAN_SKIP.has(ent.name)) continue;
+		const containerCompose = join(root, ent.name, "docker-compose.yml");
+		try {
+			await access(containerCompose, fsConstants.R_OK);
+		} catch {
+			continue;
+		}
+		const bare = ent.name.replace(/^\//, "");
+		if (!allowed(bare, cfg.allowPrefixes) && !allowed(ent.name, cfg.allowPrefixes)) continue;
+		const fakeRow = { Names: bare, Labels: "" };
+		const test = isTestContainer(fakeRow);
+		if (envMode === "live" && test) continue;
+		if ((envMode === "test" || envMode === "sandbox") && !test) continue;
+		candidates.push({
+			name: ent.name,
+			bare,
+			hostDir: join(hostRoot, ent.name),
+			composeFile: join(hostRoot, ent.name, "docker-compose.yml"),
+			test,
+		});
+	}
+	const rows = await Promise.all(candidates.map(async (c) => {
+		try {
+			const psRes = await docker(
+				["compose", "--project-directory", c.hostDir, "-f", c.composeFile, "ps", "-a", "-q"],
+				{ endpoint: "" },
+			);
+			const ids = psRes.stdout.trim().split("\n").map((l) => l.trim()).filter(Boolean);
+			if (ids.length) return null;
+		} catch {
+			return null;
+		}
+		return {
+			id: `compose:${c.name}`,
+			name: c.bare,
+			image: "docker compose",
+			status: "Stack not started (no containers)",
+			state: "down",
+			ports: "",
+			portList: [],
+			cpu: null,
+			mem: null,
+			memPerc: null,
+			hostId: LOCAL_HOST.id,
+			hostLabel: LOCAL_HOST.label,
+			test: c.test,
+			sandbox: c.test,
+			synthetic: true,
+			compose: { hostDir: c.hostDir, composeFile: c.composeFile },
+		};
+	}));
+	const out = rows.filter(Boolean);
+	idleComposeCache = { key: cacheKey, at: Date.now(), rows: out };
+	return out;
+}
+
+function composeStackFromId(id) {
+	const raw = String(id || "");
+	if (!raw.startsWith("compose:")) return null;
+	const stack = raw.slice("compose:".length).trim();
+	if (!stack) return null;
+	const hostDir = join(containersHostRoot(), stack);
+	return { stack, hostDir, composeFile: join(hostDir, "docker-compose.yml") };
+}
+
 function registerRpc(ctx) {
-	return ctx.connection.rpc.handle(
+	return registerRpcChannel(ctx, 
 		RPC_CHANNEL,
 		async (endpointName, payload) => {
 			try {
@@ -216,6 +333,7 @@ function registerRpc(ctx) {
 
 						const cfg = { allowPrefixes: prefixes, hosts, activeHostId };
 						await saveConfig(cfg);
+						clearIdleComposeCache();
 						return ok(cfg);
 					}
 					case "list":
@@ -243,14 +361,41 @@ function registerRpc(ctx) {
 						}
 
 						if (endpointName === "list") {
+							const envMode = String(payload?.env || "all");
 							const res = await docker(["ps", "-a", "--format", "{{json .}}"], { endpoint: ep });
+							const lines = res.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+							const ids = [];
+							for (const line of lines) {
+								try {
+									const row = JSON.parse(line);
+									const id = String(row.ID || row.Id || "");
+									if (id) ids.push(id);
+								} catch { /* skip */ }
+							}
+
+							const statsPromise = docker(
+								["stats", "--no-stream", "--format", "{{json .}}"],
+								{ maxBuffer: 8 * 1024 * 1024, endpoint: ep },
+							).catch(() => null);
+							const inspectPromise = ids.length
+								? docker(["inspect", ...ids], {
+									endpoint: ep,
+									maxBuffer: 32 * 1024 * 1024,
+								}).catch(() => null)
+								: Promise.resolve(null);
+							const idlePromise = !ep
+								? discoverIdleComposeStacks(cfg, envMode, ep)
+								: Promise.resolve([]);
+
+							const [statsRes, inspectRes, idleRows] = await Promise.all([
+								statsPromise,
+								inspectPromise,
+								idlePromise,
+							]);
+
 							/** @type {Map<string, { cpu: string, mem: string, memPerc: string }>} */
 							const statsById = new Map();
-							try {
-								const statsRes = await docker(
-									["stats", "--no-stream", "--format", "{{json .}}"],
-									{ maxBuffer: 8 * 1024 * 1024, endpoint: ep },
-								);
+							if (statsRes?.stdout) {
 								for (const line of statsRes.stdout.split("\n").map((l) => l.trim()).filter(Boolean)) {
 									try {
 										const s = JSON.parse(line);
@@ -265,39 +410,24 @@ function registerRpc(ctx) {
 										/* skip */
 									}
 								}
-							} catch {
-								/* stats optional */
 							}
-							const envMode = String(payload?.env || "all");
-							const lines = res.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
-							const containers = [];
 							/** @type {Map<string, any>} */
 							const inspectById = new Map();
-							try {
-								const ids = [];
-								for (const line of lines) {
-									try {
-										const row = JSON.parse(line);
-										const id = String(row.ID || row.Id || "");
-										if (id) ids.push(id);
-									} catch { /* skip */ }
-								}
-								if (ids.length) {
-									const insp = await docker(["inspect", ...ids], {
-										endpoint: ep,
-										maxBuffer: 32 * 1024 * 1024,
-									});
-									const parsed = JSON.parse(insp.stdout || "[]");
+							if (inspectRes?.stdout) {
+								try {
+									const parsed = JSON.parse(inspectRes.stdout || "[]");
 									if (Array.isArray(parsed)) {
 										for (const info of parsed) {
 											const id = String(info?.Id || "");
 											if (id) inspectById.set(id, info);
 										}
 									}
+								} catch {
+									/* inspect optional */
 								}
-							} catch {
-								/* inspect optional */
 							}
+
+							const containers = [];
 							for (const line of lines) {
 								try {
 									const row = JSON.parse(line);
@@ -331,6 +461,7 @@ function registerRpc(ctx) {
 									/* skip */
 								}
 							}
+							for (const row of idleRows) containers.push(row);
 							containers.sort((a, b) =>
 								String(a.name || a.id).localeCompare(String(b.name || b.id), undefined, {
 									sensitivity: "base",
@@ -350,6 +481,12 @@ function registerRpc(ctx) {
 						if (endpointName === "logs") {
 							const id = String(payload?.id || "").trim();
 							if (!id) throw new Error("id required");
+							const stack = composeStackFromId(id);
+							if (stack) {
+								return ok({
+									logs: "This compose stack is not running.\n\nClick Start on the row to run `docker compose up -d`, then select a service container for logs.",
+								});
+							}
 							const tail = Math.min(Number(payload?.tail) || 200, 2000);
 							const res = await docker(["logs", "--tail", String(tail), id], {
 								maxBuffer: 8 * 1024 * 1024,
@@ -360,6 +497,35 @@ function registerRpc(ctx) {
 
 						const id = String(payload?.id || "").trim();
 						if (!id) throw new Error("id required");
+						const stack = composeStackFromId(id);
+						if (stack) {
+							const { hostDir, composeFile } = stack;
+							if (endpointName === "start") {
+								await docker(
+									["compose", "--project-directory", hostDir, "-f", composeFile, "up", "-d"],
+									{ endpoint: ep },
+								);
+							} else if (endpointName === "stop") {
+								await docker(
+									["compose", "--project-directory", hostDir, "-f", composeFile, "down"],
+									{ endpoint: ep },
+								);
+							} else if (endpointName === "restart") {
+								await docker(
+									["compose", "--project-directory", hostDir, "-f", composeFile, "down"],
+									{ endpoint: ep },
+								);
+								await docker(
+									["compose", "--project-directory", hostDir, "-f", composeFile, "up", "-d"],
+									{ endpoint: ep },
+								);
+							} else {
+								throw new Error(`unsupported action for compose stack: ${endpointName}`);
+							}
+							clearIdleComposeCache();
+							return ok({ id, action: endpointName, hostId: host.id });
+						}
+						clearIdleComposeCache();
 						const listed = await docker(["ps", "-a", "--format", "{{.ID}} {{.Names}}"], {
 							endpoint: ep,
 						});
@@ -380,17 +546,15 @@ function registerRpc(ctx) {
 			} catch (error) {
 				return transportError(error);
 			}
-		},
-		{ authority: "loopback" },
-	);
+		});
 }
 
 function apply(ctx) {
-	ctx.inject(["connection"], (connectionCtx) => {
+	ctx.inject(["connection", "webServer"], (connectionCtx) => {
 		connectionCtx.inject(["sessions"], (scope) => {
 			scope.effect(() => registerRpc(scope), "dsh-containers: rpc");
 		});
 	});
 }
 
-export { apply, name };
+export { apply, name, inject };

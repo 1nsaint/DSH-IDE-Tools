@@ -14,11 +14,58 @@ window.__ModuleLoader__.load({
 		const PLUGIN = "dsh-hero-tools";
 		const OPEN_EVENT = "dsh-hero-open-tool";
 		const CLOSE_EVENT = "dsh-hero-close-tool";
-		const ROW_SEL = ".wSkVaW_heroWorkspaceRow";
+		const ROW_SEL = '[class*="_heroWorkspaceRow"]';
 		const ORDER_KEY = "dsh-hero-tabs.order.v1";
 		const ORDER_EVENT = "dsh-tabs-order-changed";
 		const ACTIVE_KEY = "dsh-hero-tabs.active.v1";
 		const DRAG_THRESHOLD_PX = 8;
+
+		/** Resolve live CSS-module prefix (e.g. "wSkVaW_") from DOM; falls back for first paint.
+		 * Keep in sync with `_shared/client-dom.snippet.js` (`createStockClass`). */
+		const STOCK_PREFIX_FALLBACK = {
+			heroWorkspaceRow: "wSkVaW_",
+			header: "wSkVaW_",
+			tab: "wSkVaW_",
+			tabActive: "wSkVaW_",
+			titleRow: "wSkVaW_",
+			titleCluster: "wSkVaW_",
+			headerActions: "wSkVaW_",
+			tabs: "wSkVaW_",
+			root: "wSkVaW_",
+		};
+		const _prefixCache = new Map();
+		function stockPrefix(local) {
+			if (_prefixCache.has(local)) return _prefixCache.get(local);
+			const name = String(local || "").replace(/^_+/, "");
+			let prefix = STOCK_PREFIX_FALLBACK[name] || "wSkVaW_";
+			// Exact local — `[class*="_tab"]` alone would also hit `tabActive`.
+			for (const el of document.querySelectorAll(`[class*="_${name}"]`)) {
+				let hit = null;
+				for (const c of el.classList) {
+					if (c === name || c.endsWith(`_${name}`)) {
+						hit = c;
+						break;
+					}
+				}
+				if (hit && hit.length > name.length) {
+					prefix = hit.slice(0, hit.length - name.length);
+					break;
+				}
+			}
+			_prefixCache.set(local, prefix);
+			return prefix;
+		}
+		function stockClass(local) {
+			return stockPrefix(local) + local;
+		}
+		function hasStockLocal(el, local) {
+			if (!el?.classList) return false;
+			const name = String(local || "").replace(/^_+/, "");
+			for (const c of el.classList) {
+				if (c === name || c.endsWith(`_${name}`)) return true;
+			}
+			return false;
+		}
 
 		window.__dshHeroToolRegistry = window.__dshHeroToolRegistry || {
 			_map: new Map(),
@@ -75,17 +122,17 @@ window.__ModuleLoader__.load({
 .dsh-tab-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;line-height:0}
 .dsh-tab-icon svg{display:block}
 .dsh-tab-label{display:inline}
-.wSkVaW_tab.dsh-tab-enhanced{
+[class*="_tab"].dsh-tab-enhanced{
   display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;
   box-sizing:border-box;user-select:none;cursor:pointer;pointer-events:auto;
 }
-.wSkVaW_tab.dsh-tab-enhanced.dsh-tab-dragging{opacity:.45;cursor:grabbing}
-.wSkVaW_header.dsh-tabs-reordering,
-.wSkVaW_header.dsh-tabs-reordering .wSkVaW_tabs .wSkVaW_tab{cursor:grabbing}
-.wSkVaW_tabs .wSkVaW_tab.dsh-tab-drop-before{
+[class*="_tab"].dsh-tab-enhanced.dsh-tab-dragging{opacity:.45;cursor:grabbing}
+[class*="_header"].dsh-tabs-reordering,
+[class*="_header"].dsh-tabs-reordering [class*="_tabs"] [class*="_tab"]{cursor:grabbing}
+[class*="_tabs"] [class*="_tab"].dsh-tab-drop-before{
   box-shadow:inset 2px 0 0 var(--dsw-alias-state-business-primary);
 }
-.wSkVaW_tabs .wSkVaW_tab.dsh-tab-drop-after{
+[class*="_tabs"] [class*="_tab"].dsh-tab-drop-after{
   box-shadow:inset -2px 0 0 var(--dsw-alias-state-business-primary);
 }
 @media (max-width:768px){
@@ -94,60 +141,77 @@ window.__ModuleLoader__.load({
     justify-content:center;font-size:0!important;line-height:0!important;
   }
   .SVAs4q_label .SVAs4q_icon{opacity:.85}
-  .wSkVaW_header{padding-left:12px!important;padding-right:8px!important}
-  .wSkVaW_tabs{
+  [class*="_header"]{padding-left:12px!important;padding-right:8px!important}
+  [class*="_tabs"]{
     gap:2px!important;margin-top:4px;padding-left:0!important;padding-right:8px;max-width:100%;
     overflow-x:auto!important;overflow-y:hidden!important;flex-wrap:nowrap!important;
     -webkit-overflow-scrolling:touch;scrollbar-width:none;overscroll-behavior-x:contain;
     mask-image:linear-gradient(90deg,#000 0%,#000 calc(100% - 18px),transparent 100%);
     -webkit-mask-image:linear-gradient(90deg,#000 0%,#000 calc(100% - 18px),transparent 100%);
   }
-  .wSkVaW_tabs::-webkit-scrollbar{display:none;height:0}
-  .wSkVaW_tab.dsh-tab-enhanced{
+  [class*="_tabs"]::-webkit-scrollbar{display:none;height:0}
+  [class*="_tab"].dsh-tab-enhanced{
     flex:0 0 auto;gap:0;width:32px;min-width:32px;justify-content:center;padding:4px 2px 11px!important;
   }
-  .wSkVaW_tab.dsh-tab-enhanced .dsh-tab-label{display:none!important}
-  .wSkVaW_tab.dsh-tab-enhanced .dsh-tab-icon svg{width:18px;height:18px}
+  [class*="_tab"].dsh-tab-enhanced .dsh-tab-label{display:none!important}
+  [class*="_tab"].dsh-tab-enhanced .dsh-tab-icon svg{width:18px;height:18px}
 }
 @media (min-width:769px){
-  .wSkVaW_tabs{gap:6px!important}
-  .wSkVaW_tab.dsh-tab-enhanced{width:auto;min-width:0;padding:4px 10px 11px!important}
-  .wSkVaW_tab.dsh-tab-enhanced .dsh-tab-icon svg{width:14px;height:14px;opacity:.9}
+  [class*="_tabs"]{gap:6px!important}
+  [class*="_tab"].dsh-tab-enhanced{width:auto;min-width:0;padding:4px 10px 11px!important}
+  [class*="_tab"].dsh-tab-enhanced .dsh-tab-icon svg{width:14px;height:14px;opacity:.9}
 }
 @media (max-width:1024px){
-  .pI_x6G_frame[data-sidebar-collapsed][data-details-collapsed]{
+  /* Stock collapsed rail is 56px inline; 0.1.5+ exposes data-rightbar-collapsed (not data-details-collapsed). */
+  .pI_x6G_frame[data-sidebar-collapsed][data-rightbar-collapsed],
+  .pI_x6G_frame[data-sidebar-collapsed][data-dsh-details-drawer="1"]{
     grid-template-columns:40px minmax(0,1fr) 0px!important;
   }
+  .pI_x6G_frame[data-sidebar-collapsed]:not([data-rightbar-collapsed]){
+    grid-template-columns:40px minmax(0,1fr) minmax(280px,70vw)!important;
+  }
+  [class*="_root"][class*="_collapsed"],
   .hHd-Xa_root.hHd-Xa_collapsed{padding:10px 4px 6px!important;align-items:center}
-  .hHd-Xa_collapsed .hHd-Xa_logoRow{height:32px!important;margin-bottom:8px!important;justify-content:center!important}
-  .hHd-Xa_collapsed .hHd-Xa_iconButton,
-  .hHd-Xa_collapsed .hHd-Xa_newSession{
+  [class*="_collapsed"] [class*="_logoRow"]{height:32px!important;margin-bottom:8px!important;justify-content:center!important}
+  [class*="_collapsed"] [class*="_iconButton"],
+  [class*="_collapsed"] [class*="_newSession"]{
     width:32px!important;height:32px!important;margin-left:0!important;margin-right:0!important;
   }
-  .hHd-Xa_collapsed .hHd-Xa_newSession{margin-bottom:8px!important;align-self:center!important}
-  .hHd-Xa_collapsed .hHd-Xa_regionArea,
-  .hHd-Xa_collapsed .qDHVXG_root{
+  [class*="_collapsed"] [class*="_newSession"]{margin-bottom:8px!important;align-self:center!important}
+  [class*="_collapsed"] [class*="_regionArea"],
+  [class*="_collapsed"] [class*="_root"]{
     overflow-x:hidden!important;
     min-width:0!important;
   }
 }
-.wSkVaW_root[data-dsh-tool-tab="1"] .wSkVaW_composerSeat{display:none!important}
-.wSkVaW_root[data-dsh-tool-tab="1"] .wSkVaW_scrollBody{overflow:hidden!important}
-.wSkVaW_root[data-dsh-tool-tab="1"][data-phase=active] .wSkVaW_viewArea,
-.wSkVaW_root[data-dsh-tool-tab="1"] .wSkVaW_viewArea{
+[class*="_root"][data-dsh-tool-tab="1"] [class*="_composerSeat"]{display:none!important}
+/* Width handles are direct children of _body (siblings of scrollBody), not inside scrollBody */
+[class*="_root"][data-dsh-tool-tab="1"] > [class*="_body"] > [class*="_widthHandle"],
+[class*="_root"]:has(.db_root) > [class*="_body"] > [class*="_widthHandle"],
+[class*="_root"]:has(.dg_root) > [class*="_body"] > [class*="_widthHandle"],
+[class*="_root"]:has(.dc_root) > [class*="_body"] > [class*="_widthHandle"],
+[class*="_root"]:has(.dd_root) > [class*="_body"] > [class*="_widthHandle"],
+[class*="_root"]:has(.dte_root) > [class*="_body"] > [class*="_widthHandle"],
+[class*="_root"]:has(.dsh-code-tab-root) > [class*="_body"] > [class*="_widthHandle"],
+[class*="_root"]:has([data-dsh-cron-root]) > [class*="_body"] > [class*="_widthHandle"]{
+  display:none!important;pointer-events:none!important;
+}
+[class*="_root"][data-dsh-tool-tab="1"] [class*="_scrollBody"]{overflow:hidden!important}
+[class*="_root"][data-dsh-tool-tab="1"][data-phase=active] [class*="_viewArea"],
+[class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"]{
   flex:1 1 0!important;min-height:0!important;overflow:hidden!important;height:auto!important;
 }
-.wSkVaW_root[data-dsh-tool-tab="1"] .wSkVaW_viewArea>div{
+[class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"]>div{
   height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden;
 }
 
 /* --- Hero header shell --- */
-.dsh-hero-header.wSkVaW_header{
+.dsh-hero-header[class*="_header"]{
   flex:none;position:relative;z-index:5;padding:12px 28px 0 20px;box-sizing:border-box;
   border-bottom:1px solid transparent;pointer-events:auto;
 }
-.dsh-hero-header .wSkVaW_titleRow{display:flex;align-items:center;gap:12px;min-width:0;width:100%}
-.dsh-hero-header .wSkVaW_titleCluster{display:flex;align-items:center;gap:8px;min-width:0;flex:1 1 auto}
+.dsh-hero-header [class*="_titleRow"]{display:flex;align-items:center;gap:12px;min-width:0;width:100%}
+.dsh-hero-header [class*="_titleCluster"]{display:flex;align-items:center;gap:8px;min-width:0;flex:1 1 auto}
 .dsh-hero-header .dsh-hero-title{
   font-size:14px;font-weight:500;line-height:20px;color:var(--dsw-alias-label-primary);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
@@ -161,29 +225,29 @@ window.__ModuleLoader__.load({
   flex:none;font-size:9px;font-weight:500;line-height:1.25;padding:1px 6px;border-radius:999px;
   text-transform:uppercase;letter-spacing:.03em;
 }
-.wSkVaW_root [class*="previewBadge"][data-dsh-location-badge="1"]{
+[class*="_root"] [class*="previewBadge"][data-dsh-location-badge="1"]{
   text-transform:uppercase;letter-spacing:.03em;
 }
-.dsh-hero-header .wSkVaW_headerActions{
+.dsh-hero-header [class*="_headerActions"]{
   display:inline-flex;align-items:center;gap:6px;flex:none;margin-left:auto;
   pointer-events:auto;position:relative;z-index:6;
 }
-.dsh-hero-header .wSkVaW_tabs{
+.dsh-hero-header [class*="_tabs"]{
   display:flex;align-items:flex-end;gap:6px;margin-top:4px;padding:0;min-width:0;max-width:100%;
   overflow-x:auto;overflow-y:hidden;scrollbar-width:none;flex-wrap:nowrap;box-sizing:border-box;
   pointer-events:auto;position:relative;z-index:2;
 }
-.dsh-hero-header .wSkVaW_tabs::-webkit-scrollbar{display:none;height:0}
-.wSkVaW_root[data-phase=hero] > .wSkVaW_header.wSkVaW_headerHidden{display:none!important}
+.dsh-hero-header [class*="_tabs"]::-webkit-scrollbar{display:none;height:0}
+[class*="_root"][data-phase=hero] > [class*="_header"][class*="_headerHidden"]{display:none!important}
 
 .dsh-hero-tool-host{
   display:none;flex:1 1 0;min-height:0;min-width:0;overflow:hidden;flex-direction:column;
   background:var(--dsw-alias-bg-base);position:relative;z-index:1;
 }
-.wSkVaW_root[data-phase=hero][data-dsh-tool-tab="1"] > .dsh-hero-tool-host{display:flex!important}
-/* 0.1.5 nests scrollBody under .wSkVaW_body; hide that whole column for tool tabs */
-.wSkVaW_root[data-phase=hero][data-dsh-tool-tab="1"] > .wSkVaW_body{display:none!important}
-.wSkVaW_root[data-phase=hero][data-dsh-tool-tab="1"] > .wSkVaW_scrollBody{display:none!important}
+[class*="_root"][data-phase=hero][data-dsh-tool-tab="1"] > .dsh-hero-tool-host{display:flex!important}
+/* 0.1.5 nests scrollBody under [class*="_body"]; hide that whole column for tool tabs */
+[class*="_root"][data-phase=hero][data-dsh-tool-tab="1"] > [class*="_body"]{display:none!important}
+[class*="_root"][data-phase=hero][data-dsh-tool-tab="1"] > [class*="_scrollBody"]{display:none!important}
 .dsh-hero-tool-view{
   flex:1 1 0;min-height:0;min-width:0;height:100%;display:flex;flex-direction:column;overflow:hidden;
 }
@@ -196,10 +260,10 @@ window.__ModuleLoader__.load({
 .dsh-hero-tool-view .dg_root,
 .dsh-hero-tool-view .dt_root,
 .dsh-hero-tool-view [data-dsh-cron-root]{height:100%;min-height:0}
-.wSkVaW_scrollBody:has([data-dsh-cron-root]){overflow:hidden!important;display:flex;flex-direction:column;min-height:0}
-.wSkVaW_scrollBody:has([data-dsh-cron-root])>.wSkVaW_viewArea,
-.wSkVaW_viewArea:has([data-dsh-cron-root]){flex:1 1 0!important;min-height:0!important;overflow:hidden!important;height:auto!important}
-.wSkVaW_viewArea:has([data-dsh-cron-root])>div{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+[class*="_scrollBody"]:has([data-dsh-cron-root]){overflow:hidden!important;display:flex;flex-direction:column;min-height:0}
+[class*="_scrollBody"]:has([data-dsh-cron-root])>[class*="_viewArea"],
+[class*="_viewArea"]:has([data-dsh-cron-root]){flex:1 1 0!important;min-height:0!important;overflow:hidden!important;height:auto!important}
+[class*="_viewArea"]:has([data-dsh-cron-root])>div{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .dsh-hero-tool-view .db_body{grid-template-rows:minmax(0,1fr)}
 .dsh-hero-tool-view .db_frameWrap{height:100%;min-height:0}
 .dsh-hero-tool-view[hidden]{display:none!important}
@@ -238,7 +302,7 @@ window.__ModuleLoader__.load({
 		}
 
 		function allTablists(root) {
-			const list = (root || document).querySelectorAll?.('[role="tablist"].wSkVaW_tabs, .wSkVaW_tabs[role="tablist"]');
+			const list = (root || document).querySelectorAll?.('[role="tablist"][class*="_tabs"], [class*="_tabs"][role="tablist"]');
 			return list ? [...list] : [];
 		}
 
@@ -449,16 +513,48 @@ window.__ModuleLoader__.load({
 			btn.innerHTML = `<span class="dsh-tab-icon">${iconFor(label)}</span><span class="dsh-tab-label">${label}</span>`;
 		}
 
+		function purgeHeroChromeFromNonHeroRoots() {
+			document.querySelectorAll('[class*="_root"]').forEach((root) => {
+				if (root.getAttribute("data-phase") === "hero") return;
+				root.querySelectorAll(":scope > [data-dsh-hero-header-host], :scope > .dsh-hero-tool-host").forEach((el) => {
+					el.remove();
+				});
+			});
+		}
+
+		/** Active workbench tab for composer hiding — ignore stale hero chrome on session roots. */
+		function workbenchActiveTab(root) {
+			if (!(root instanceof HTMLElement)) return null;
+			if (root.getAttribute("data-phase") === "hero") {
+				return root.querySelector('[data-dsh-hero-tabs] [role="tab"][aria-selected="true"]');
+			}
+			const headerCandidates = [
+				...root.querySelectorAll(':scope > header, :scope > [class*="_header"]'),
+				...root.querySelectorAll(':scope > * > header, :scope > * > [class*="_header"]'),
+			];
+			const sessionHeader = headerCandidates.find((header) => {
+				if (header.classList.contains("dsh-hero-header")) return false;
+				if (header.hasAttribute("data-dsh-hero-header-host")) return false;
+				return ![...header.classList].some((c) => c.endsWith("_headerHidden"));
+			});
+			if (sessionHeader) {
+				return sessionHeader.querySelector('[class*="_tabs"] [role="tab"][aria-selected="true"]');
+			}
+			return root.querySelector('[class*="_tabs"]:not([data-dsh-hero-tabs]) [role="tab"][aria-selected="true"]')
+				|| root.querySelector('[class*="_tabs"] [role="tab"][aria-selected="true"]');
+		}
+
 		function resyncWorkbenchTab() {
-			document.querySelectorAll(".wSkVaW_root").forEach((root) => {
+			purgeHeroChromeFromNonHeroRoots();
+			document.querySelectorAll('[class*="_root"]').forEach((root) => {
 				if (root.getAttribute("data-phase") === "hero") {
 					const label = readActiveLabel();
 					openLabel(label || "Chat");
 					return;
 				}
-				const active = root.querySelector('.wSkVaW_tabs [role="tab"][aria-selected="true"]');
-				const label = tabLabel(active);
 				syncComposerVisibility();
+				const active = workbenchActiveTab(root);
+				const label = tabLabel(active);
 				if (label && label !== "Chat" && active instanceof HTMLElement) {
 					active.click();
 				}
@@ -466,8 +562,8 @@ window.__ModuleLoader__.load({
 		}
 
 		function syncComposerVisibility() {
-			document.querySelectorAll(".wSkVaW_root").forEach((root) => {
-				const active = root.querySelector('.wSkVaW_tabs [role="tab"][aria-selected="true"]');
+			document.querySelectorAll('[class*="_root"]').forEach((root) => {
+				const active = workbenchActiveTab(root);
 				const label = tabLabel(active);
 				if (label && label !== "Chat") root.setAttribute("data-dsh-tool-tab", "1");
 				else if (!root.hasAttribute("data-phase") || root.getAttribute("data-phase") !== "hero" || label === "Chat") {
@@ -486,7 +582,7 @@ window.__ModuleLoader__.load({
 		let suppressClick = false;
 
 		function syncHeroToolPanel(toolId) {
-			const root = document.querySelector(".wSkVaW_root[data-phase=hero]");
+			const root = document.querySelector('[class*="_root"][data-phase=hero]');
 			if (!root) return;
 			const { toolHost } = ensureHeroChrome(root);
 			if (!(toolHost instanceof HTMLElement)) return;
@@ -539,7 +635,8 @@ window.__ModuleLoader__.load({
 		}
 
 		function maintainHeroChrome() {
-			const root = document.querySelector(".wSkVaW_root[data-phase=hero]");
+			purgeHeroChromeFromNonHeroRoots();
+			const root = document.querySelector('[class*="_root"][data-phase=hero]');
 			if (!root) return;
 			ensureHeroChrome(root);
 			patchComposerPreviewBadges();
@@ -554,11 +651,12 @@ window.__ModuleLoader__.load({
 			syncHeroToolPanel(null);
 			destroyHeroToolPanels();
 			document.querySelectorAll("[data-dsh-hero-header-host], .dsh-hero-tool-host").forEach((el) => el.remove());
-			document.querySelector(".wSkVaW_root[data-phase=hero]")?.removeAttribute("data-dsh-tool-tab");
+			document.querySelector('[class*="_root"][data-phase=hero]')?.removeAttribute("data-dsh-tool-tab");
 			heroToolRestored = false;
 		}
 
 		function enhanceAll(root) {
+			purgeHeroChromeFromNonHeroRoots();
 			allTablists(root).forEach((tabs) => {
 				tabs.querySelectorAll('[role="tab"]').forEach(enhanceTab);
 			});
@@ -582,9 +680,9 @@ window.__ModuleLoader__.load({
 		}
 
 		function useIsHero() {
-			const [hero, setHero] = React.useState(() => !!document.querySelector(".wSkVaW_root[data-phase=hero]"));
+			const [hero, setHero] = React.useState(() => !!document.querySelector('[class*="_root"][data-phase=hero]'));
 			React.useEffect(() => {
-				const check = () => setHero(!!document.querySelector(".wSkVaW_root[data-phase=hero]"));
+				const check = () => setHero(!!document.querySelector('[class*="_root"][data-phase=hero]'));
 				check();
 				const root = document.getElementById("root") || document.body;
 				const mo = new MutationObserver(check);
@@ -600,10 +698,10 @@ window.__ModuleLoader__.load({
 				tabsEl.querySelectorAll('[role="tab"]').forEach((btn) => {
 					const on = btn.getAttribute("data-dsh-tab-label") === label;
 					btn.setAttribute("aria-selected", on ? "true" : "false");
-					btn.classList.toggle("wSkVaW_tabActive", on);
+					btn.classList.toggle(stockClass("tabActive"), on);
 				});
 			}
-			const root = document.querySelector(".wSkVaW_root[data-phase=hero]");
+			const root = document.querySelector('[class*="_root"][data-phase=hero]');
 			if (!root) return;
 			if (label && label !== "Chat") root.setAttribute("data-dsh-tool-tab", "1");
 			else root.removeAttribute("data-dsh-tool-tab");
@@ -623,18 +721,18 @@ window.__ModuleLoader__.load({
 		}
 
 		function clearDropMarkers() {
-			document.querySelectorAll(".wSkVaW_tabs .dsh-tab-drop-before, .wSkVaW_tabs .dsh-tab-drop-after")
+			document.querySelectorAll('[class*="_tabs"] .dsh-tab-drop-before, [class*="_tabs"] .dsh-tab-drop-after')
 				.forEach((el) => el.classList.remove("dsh-tab-drop-before", "dsh-tab-drop-after"));
 		}
 
 		function endPress({ commit = false, clientX = 0, clientY = 0 } = {}) {
 			if (!press) return;
 			const { label: fromLabel, btn, tabsEl, active } = press;
-			btn.closest(".wSkVaW_header")?.classList.remove("dsh-tabs-reordering");
+			btn.closest('[class*="_header"]')?.classList.remove("dsh-tabs-reordering");
 			btn.classList.remove("dsh-tab-dragging");
 
 			if (active && commit && tabsEl) {
-				const over = document.elementFromPoint(clientX, clientY)?.closest?.('.wSkVaW_tabs [role="tab"]');
+				const over = document.elementFromPoint(clientX, clientY)?.closest?.('[class*="_tabs"] [role="tab"]');
 				clearDropMarkers();
 				if (over && tabsEl.contains(over)) {
 					const toLabel = tabLabel(over);
@@ -664,9 +762,9 @@ window.__ModuleLoader__.load({
 
 		function onPointerDown(e) {
 			if (e.button !== 0) return;
-			const btn = e.target?.closest?.('.wSkVaW_tabs [role="tab"]');
+			const btn = e.target?.closest?.('[class*="_tabs"] [role="tab"]');
 			if (!(btn instanceof HTMLElement)) return;
-			const tabsEl = btn.closest(".wSkVaW_tabs");
+			const tabsEl = btn.closest('[class*="_tabs"]');
 			const label = tabLabel(btn);
 			if (!label || !tabsEl) return;
 			press = { label, btn, tabsEl, x: e.clientX, y: e.clientY, active: false };
@@ -680,11 +778,11 @@ window.__ModuleLoader__.load({
 				if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
 				press.active = true;
 				press.btn.classList.add("dsh-tab-dragging");
-				press.btn.closest(".wSkVaW_header")?.classList.add("dsh-tabs-reordering");
+				press.btn.closest('[class*="_header"]')?.classList.add("dsh-tabs-reordering");
 			}
 			e.preventDefault();
 			clearDropMarkers();
-			const over = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.wSkVaW_tabs [role="tab"]');
+			const over = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('[class*="_tabs"] [role="tab"]');
 			if (!over || over === press.btn || !press.tabsEl.contains(over)) return;
 			const rect = over.getBoundingClientRect();
 			const before = e.clientX < rect.left + rect.width / 2;
@@ -706,7 +804,7 @@ window.__ModuleLoader__.load({
 		}
 
 		function onTabClick(e) {
-			const btn = e.target?.closest?.('.wSkVaW_tabs [role="tab"]');
+			const btn = e.target?.closest?.('[class*="_tabs"] [role="tab"]');
 			if (!btn) return;
 			if (suppressClick) {
 				suppressClick = false;
@@ -716,7 +814,7 @@ window.__ModuleLoader__.load({
 			}
 			// Only hero tabs need synthetic open; session React handles its own clicks.
 			if (!btn.closest("[data-dsh-hero-tabs]")) return;
-			if (!document.querySelector(".wSkVaW_root[data-phase=hero]")) return;
+			if (!document.querySelector('[class*="_root"][data-phase=hero]')) return;
 			e.preventDefault();
 			e.stopPropagation();
 			openLabel(tabLabel(btn) || "Chat");
@@ -756,6 +854,11 @@ window.__ModuleLoader__.load({
 		function readHeroTitle() {
 			const badge = readLocationBadge();
 			try {
+				const ptr = typeof window !== "undefined" && window.__dshCurrentWorkspace?.get?.();
+				const ptrLabel = String(ptr?.label || "").trim();
+				if (ptrLabel && ptrLabel.length < 64) {
+					return { title: ptrLabel, badge };
+				}
 				const row = document.querySelector(ROW_SEL);
 				const wsInput = row?.querySelector("input[readonly], input");
 				const wsBtn = row?.querySelector("button");
@@ -763,7 +866,7 @@ window.__ModuleLoader__.load({
 				if (ws && ws.length < 48 && !/^standard|choose/i.test(ws)) {
 					return { title: ws, badge };
 				}
-				const scroll = document.querySelector(".wSkVaW_root[data-phase=hero] .wSkVaW_scrollBody");
+				const scroll = document.querySelector('[class*="_root"][data-phase=hero] [class*="_scrollBody"]');
 				const headline = scroll?.querySelector("h1, h2, [class*='heroTitle'], [class*='HeroTitle']");
 				const headlineText = (headline?.textContent || "").replace(/\s+/g, " ").trim();
 				if (headlineText && headlineText.length < 64) {
@@ -807,7 +910,7 @@ window.__ModuleLoader__.load({
 		function patchComposerPreviewBadges() {
 			const badge = readLocationBadge();
 			if (!badge) return;
-			document.querySelectorAll('.wSkVaW_root[data-phase=hero] [class*="previewBadge"]').forEach((el) => {
+			document.querySelectorAll('[class*="_root"][data-phase=hero] [class*="previewBadge"]').forEach((el) => {
 				applyLocationBadgeEl(el, badge);
 			});
 		}
@@ -822,10 +925,10 @@ window.__ModuleLoader__.load({
 		function placeChrome(root, headerHost, toolHost) {
 			// 0.1.1: root > scrollBody. 0.1.5+: root > body > scrollBody.
 			// Pin our chrome above the stock body (same band as session header).
-			const body = root.querySelector(":scope > .wSkVaW_body");
+			const body = root.querySelector(':scope > [class*="_body"]');
 			const scroll =
-				root.querySelector(":scope > .wSkVaW_scrollBody")
-				|| body?.querySelector(":scope > .wSkVaW_scrollBody")
+				root.querySelector(':scope > [class*="_scrollBody"]')
+				|| body?.querySelector(':scope > [class*="_scrollBody"]')
 				|| null;
 			const anchor = body || scroll;
 			const kids = [...root.children];
@@ -850,6 +953,9 @@ window.__ModuleLoader__.load({
 		}
 
 		function ensureHeroChrome(root) {
+			if (!(root instanceof HTMLElement) || root.getAttribute("data-phase") !== "hero") {
+				return { headerHost: null, toolHost: null };
+			}
 			let headerHost = root.querySelector(":scope > [data-dsh-hero-header-host]");
 			const needsRebuild =
 				!headerHost
@@ -858,23 +964,24 @@ window.__ModuleLoader__.load({
 			if (needsRebuild) {
 				headerHost?.remove();
 				headerHost = document.createElement("header");
-				headerHost.className = "wSkVaW_header dsh-hero-header";
+				headerHost.className = `${stockClass("header")} dsh-hero-header`;
 				headerHost.setAttribute("data-dsh-hero-header-host", "1");
 				headerHost.setAttribute("data-dsh-hero-header", "1");
 				const active = readActiveLabel();
 				const tabBtns = orderedTabs().map((t) => {
 					const on = t.label === active;
-					return `<button type="button" role="tab" class="wSkVaW_tab${on ? " wSkVaW_tabActive" : ""}" data-dsh-tab-label="${t.label}" aria-selected="${on ? "true" : "false"}" aria-label="${t.label}" title="${t.label}">${t.label}</button>`;
+					const tabCls = stockClass("tab") + (on ? ` ${stockClass("tabActive")}` : "");
+					return `<button type="button" role="tab" class="${tabCls}" data-dsh-tab-label="${t.label}" aria-selected="${on ? "true" : "false"}" aria-label="${t.label}" title="${t.label}">${t.label}</button>`;
 				}).join("");
 				headerHost.innerHTML = `
-  <div class="wSkVaW_titleRow">
-    <div class="wSkVaW_titleCluster">
+  <div class="${stockClass("titleRow")}">
+    <div class="${stockClass("titleCluster")}">
       <span class="dsh-hero-title" data-dsh-hero-title></span>
       <span class="dsh-hero-titleBadge" data-dsh-hero-title-badge hidden></span>
-      <div class="wSkVaW_headerActions" data-dsh-hero-header-actions="1" aria-label="Workbench controls"></div>
+      <div class="${stockClass("headerActions")}" data-dsh-hero-header-actions="1" aria-label="Workbench controls"></div>
     </div>
   </div>
-  <div class="wSkVaW_tabs" role="tablist" aria-label="Views" data-dsh-hero-tabs="1">${tabBtns}</div>`;
+  <div class="${stockClass("tabs")}" role="tablist" aria-label="Views" data-dsh-hero-tabs="1">${tabBtns}</div>`;
 			}
 
 			let toolHost = root.querySelector(":scope > .dsh-hero-tool-host");
@@ -913,7 +1020,7 @@ window.__ModuleLoader__.load({
 					}
 					if (m.type === "attributes") {
 						const t = m.target;
-						if (t?.getAttribute?.("role") === "tab" || t?.classList?.contains?.("wSkVaW_tabs") || t?.classList?.contains?.("wSkVaW_tab")) {
+						if (t?.getAttribute?.("role") === "tab" || hasStockLocal(t, "tabs") || hasStockLocal(t, "tab")) {
 							touch = true;
 							break;
 						}
@@ -979,10 +1086,11 @@ window.__ModuleLoader__.load({
 				const onClose = () => syncHeroToolPanel(null);
 				const onKey = (e) => {
 					if (e.key !== "Escape") return;
-					if (!document.querySelector(".wSkVaW_root[data-phase=hero]")?.getAttribute("data-dsh-tool-tab")) return;
+					if (!document.querySelector('[class*="_root"][data-phase=hero]')?.getAttribute("data-dsh-tool-tab")) return;
 					openLabel("Chat");
 				};
 				const onWorkspaceSwitch = () => {
+					destroyHeroToolPanels();
 					requestAnimationFrame(() => {
 						requestAnimationFrame(() => resyncWorkbenchTab());
 					});
@@ -999,7 +1107,7 @@ window.__ModuleLoader__.load({
 					window.removeEventListener("keydown", onKey);
 					window.removeEventListener("dsh-current-workspace-changed", onWorkspaceSwitch);
 					window.removeEventListener("dsh-current-workspace-changed", refreshLocationBadges);
-					if (!document.querySelector(".wSkVaW_root[data-phase=hero]")) {
+					if (!document.querySelector('[class*="_root"][data-phase=hero]')) {
 						clearHeroChromeDom();
 					}
 				};

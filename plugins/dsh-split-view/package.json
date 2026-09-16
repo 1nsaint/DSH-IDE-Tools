@@ -1,6 +1,6 @@
 {
   "name": "dsh-split-view",
-  "version": "0.2.2",
+  "version": "0.2.5",
   "description": "Split workbench — hero root-level panes when tool tabs hide scrollBody.",
   "type": "module",
   "main": "lib/index.js",

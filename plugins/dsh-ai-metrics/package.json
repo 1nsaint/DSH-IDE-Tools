@@ -1,6 +1,6 @@
 {
   "name": "dsh-ai-metrics",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Sidebar memory donut + Jetson metrics same-origin proxy (/jetson-metrics-api).",
   "type": "module",
   "main": "lib/index.js",

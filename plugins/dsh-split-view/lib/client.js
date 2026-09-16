@@ -19,6 +19,7 @@ window.__ModuleLoader__.load({
 			Terminal: "terminal",
 			Browser: "browser",
 			Database: "db",
+			Scheduled: "scheduled",
 		};
 
 		const lucide = (paths) =>
@@ -40,6 +41,7 @@ window.__ModuleLoader__.load({
 			Containers: lucide(`<path d="M22 7.7c0-.6-.4-1.2-.8-1.5l-6.3-3.9a1.72 1.72 0 0 0-1.7 0l-10.3 6c-.5.2-.9.8-.9 1.4v6.6c0 .5.4 1.2.8 1.5l6.3 3.9a1.72 1.72 0 0 0 1.7 0l10.3-6c.5-.3.9-1 .9-1.5Z"/><path d="M10 21.9V14L2.1 9.1"/><path d="m10 14 11.9-6.9"/><path d="M14 19.8v-8.1"/><path d="M18 17.5V9.4"/>`),
 			Terminal: lucide(`<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>`),
 			Database: lucide(`<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>`),
+			Scheduled: lucide(`<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>`),
 			Trajectory: lucide(`<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>`),
 		};
 
@@ -72,35 +74,53 @@ window.__ModuleLoader__.load({
 				React.createElement("path", { d: "M12 3v18" }),
 			);
 
+		const closeSplitIcon = () =>
+			React.createElement(
+				"svg",
+				{
+					viewBox: "0 0 24 24",
+					width: 15,
+					height: 15,
+					fill: "none",
+					stroke: "currentColor",
+					strokeWidth: 2,
+					strokeLinecap: "round",
+					strokeLinejoin: "round",
+					"aria-hidden": true,
+				},
+				React.createElement("path", { d: "M18 6 6 18" }),
+				React.createElement("path", { d: "m6 6 12 12" }),
+			);
+
 		const css = `
 /* Hide legacy Split tab if an older build registered it */
-.wSkVaW_tab[data-dsh-tab-label="Split"]{display:none!important}
+[class*="_tab"][data-dsh-tab-label="Split"]{display:none!important}
 
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_scrollBody{
+[class*="_root"][data-dsh-split="1"] [class*="_scrollBody"]{
   display:grid!important;
   grid-template-columns:minmax(0,var(--dsh-split-left,50%)) 11px minmax(0,1fr);
   grid-template-rows:minmax(0,1fr) auto;
   overflow:hidden!important;
 }
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_viewArea,
-.wSkVaW_root[data-dsh-split="1"] [data-slot="conversation.session"]{
+[class*="_root"][data-dsh-split="1"] [class*="_viewArea"],
+[class*="_root"][data-dsh-split="1"] [data-slot="conversation.session"]{
   grid-column:1;
   grid-row:1;
   min-width:0;min-height:0;overflow:hidden!important;
   height:auto!important;flex:unset!important;
 }
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_viewArea{
+[class*="_root"][data-dsh-split="1"] [class*="_viewArea"]{
   flex:1 1 0!important;min-height:0!important;height:100%!important;
   min-width:0!important;max-width:100%!important;width:auto!important;
 }
 /* Chat (and other left views) must shrink inside the split cell — follow polish chat width */
-.wSkVaW_root[data-dsh-split="1"]{
+[class*="_root"][data-dsh-split="1"]{
   --dsh-chat-content-width:min(920px,100%);
   --dsh-composer-card-max-width:min(calc(var(--dsh-chat-content-width) + 32px),100%);
   --dsh-composer-side-clearance:8px;
 }
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_viewArea>div,
-.wSkVaW_root[data-dsh-split="1"] .Md3f7G_root{
+[class*="_root"][data-dsh-split="1"] [class*="_viewArea"]>div,
+[class*="_root"][data-dsh-split="1"] .Md3f7G_root{
   height:100%!important;
   min-height:0!important;
   min-width:0!important;
@@ -111,7 +131,7 @@ window.__ModuleLoader__.load({
   flex-direction:column!important;
   overflow:hidden!important;
 }
-.wSkVaW_root[data-dsh-split="1"] .Md3f7G_scroll{
+[class*="_root"][data-dsh-split="1"] .Md3f7G_scroll{
   flex:1 1 0!important;
   min-height:0!important;
   min-width:0!important;
@@ -120,25 +140,25 @@ window.__ModuleLoader__.load({
   overflow-y:auto!important;
   box-sizing:border-box;
 }
-.wSkVaW_root[data-dsh-split="1"] .Md3f7G_column{
+[class*="_root"][data-dsh-split="1"] .Md3f7G_column{
   max-width:100%!important;
   width:100%!important;
   min-width:0!important;
   box-sizing:border-box;
 }
-.wSkVaW_root[data-dsh-split="1"] .Md3f7G_flowItem,
-.wSkVaW_root[data-dsh-split="1"] .Md3f7G_callRow{
+[class*="_root"][data-dsh-split="1"] .Md3f7G_flowItem,
+[class*="_root"][data-dsh-split="1"] .Md3f7G_callRow{
   min-width:0!important;
   max-width:100%!important;
 }
-.wSkVaW_root[data-dsh-split="1"] .Md3f7G_scroll .Sxvs8a_root,
-.wSkVaW_root[data-dsh-split="1"] .Md3f7G_scroll .Sxvs8a_body{
+[class*="_root"][data-dsh-split="1"] .Md3f7G_scroll .Sxvs8a_root,
+[class*="_root"][data-dsh-split="1"] .Md3f7G_scroll .Sxvs8a_body{
   min-width:0!important;
   max-width:100%!important;
   overflow-wrap:anywhere;
   word-break:break-word;
 }
-.wSkVaW_root[data-dsh-split="1"] .dsplit_dividerHost{
+[class*="_root"][data-dsh-split="1"] .dsplit_dividerHost{
   grid-column:2;grid-row:1 / span 2;
   cursor:col-resize;
   position:relative;
@@ -148,13 +168,13 @@ window.__ModuleLoader__.load({
   background:transparent;
 }
 /* Fat invisible hit target (~17px) around the 1px visual line */
-.wSkVaW_root[data-dsh-split="1"] .dsplit_dividerHost:after{
+[class*="_root"][data-dsh-split="1"] .dsplit_dividerHost:after{
   content:"";
   position:absolute;
   inset:0 -4px;
   z-index:1;
 }
-.wSkVaW_root[data-dsh-split="1"] .dsplit_dividerHost:before{
+[class*="_root"][data-dsh-split="1"] .dsplit_dividerHost:before{
   content:"";
   position:absolute;
   top:0;bottom:0;left:50%;
@@ -164,23 +184,23 @@ window.__ModuleLoader__.load({
   z-index:0;
   pointer-events:none;
 }
-.wSkVaW_root[data-dsh-split="1"] .dsplit_dividerHost:hover:before,
-.wSkVaW_root[data-dsh-split="1"] .dsplit_dividerHost.dsplit_dragging:before{
+[class*="_root"][data-dsh-split="1"] .dsplit_dividerHost:hover:before,
+[class*="_root"][data-dsh-split="1"] .dsplit_dividerHost.dsplit_dragging:before{
   width:3px;
   background:var(--dsw-alias-state-business-primary);
 }
-.wSkVaW_root[data-dsh-split="1"] .dsplit_dividerHost.dsplit_dragging{
+[class*="_root"][data-dsh-split="1"] .dsplit_dividerHost.dsplit_dragging{
   cursor:col-resize;
 }
-.wSkVaW_root[data-dsh-split="1"].dsplit_isDragging,
-.wSkVaW_root[data-dsh-split="1"].dsplit_isDragging *{
+[class*="_root"][data-dsh-split="1"].dsplit_isDragging,
+[class*="_root"][data-dsh-split="1"].dsplit_isDragging *{
   cursor:col-resize!important;
   user-select:none!important;
 }
-.wSkVaW_root[data-dsh-split="1"].dsplit_isDragging iframe{
+[class*="_root"][data-dsh-split="1"].dsplit_isDragging iframe{
   pointer-events:none!important;
 }
-.wSkVaW_root[data-dsh-split="1"] .dsplit_rightHost{
+[class*="_root"][data-dsh-split="1"] .dsplit_rightHost{
   grid-column:3;grid-row:1 / span 2;min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column;
   border-left:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);
 }
@@ -189,7 +209,7 @@ window.__ModuleLoader__.load({
  * Hero: left tools live in .dsh-hero-tool-host (scrollBody is hidden on non-Chat).
  * Split must be a root-level grid — not inside the hidden scrollBody.
  */
-.wSkVaW_root[data-phase=hero][data-dsh-split="1"]{
+[class*="_root"][data-phase=hero][data-dsh-split="1"]{
   display:grid!important;
   grid-template-columns:minmax(0,var(--dsh-split-left,50%)) 11px minmax(0,1fr);
   grid-template-rows:auto minmax(0,1fr);
@@ -197,18 +217,18 @@ window.__ModuleLoader__.load({
   height:100%;
   overflow:hidden!important;
 }
-.wSkVaW_root[data-phase=hero][data-dsh-split="1"] .dsh-hero-header,
-.wSkVaW_root[data-phase=hero][data-dsh-split="1"] [data-dsh-hero-header-host],
-.wSkVaW_root[data-phase=hero][data-dsh-split="1"] > .dsh-hero-header{
+[class*="_root"][data-phase=hero][data-dsh-split="1"] .dsh-hero-header,
+[class*="_root"][data-phase=hero][data-dsh-split="1"] [data-dsh-hero-header-host],
+[class*="_root"][data-phase=hero][data-dsh-split="1"] > .dsh-hero-header{
   grid-column:1 / -1!important;
   grid-row:1!important;
   min-width:0;
 }
-.wSkVaW_root[data-phase=hero][data-dsh-split="1"] > [data-dsh-hero-header-host]:not(header){
+[class*="_root"][data-phase=hero][data-dsh-split="1"] > [data-dsh-hero-header-host]:not(header){
   display:contents!important;
 }
-.wSkVaW_root[data-phase=hero][data-dsh-split="1"] > .dsh-hero-tool-host,
-.wSkVaW_root[data-phase=hero][data-dsh-split="1"] > .wSkVaW_scrollBody{
+[class*="_root"][data-phase=hero][data-dsh-split="1"] > .dsh-hero-tool-host,
+[class*="_root"][data-phase=hero][data-dsh-split="1"] > [class*="_scrollBody"]{
   grid-column:1;
   grid-row:2;
   min-width:0!important;
@@ -217,68 +237,69 @@ window.__ModuleLoader__.load({
   height:auto!important;
   max-height:none!important;
 }
-.wSkVaW_root[data-phase=hero][data-dsh-split="1"] > .wSkVaW_scrollBody{
+[class*="_root"][data-phase=hero][data-dsh-split="1"] > [class*="_scrollBody"]{
   display:flex!important;
   flex-direction:column!important;
   grid-template-columns:none!important;
   grid-template-rows:none!important;
 }
-.wSkVaW_root[data-phase=hero][data-dsh-split="1"][data-dsh-tool-tab="1"] > .wSkVaW_scrollBody{
+[class*="_root"][data-phase=hero][data-dsh-split="1"][data-dsh-tool-tab="1"] > [class*="_scrollBody"]{
   display:none!important;
 }
-.wSkVaW_root[data-phase=hero][data-dsh-split="1"][data-dsh-tool-tab="1"] > .dsh-hero-tool-host{
+[class*="_root"][data-phase=hero][data-dsh-split="1"][data-dsh-tool-tab="1"] > .dsh-hero-tool-host{
   display:flex!important;
   flex-direction:column!important;
 }
-.wSkVaW_root[data-phase=hero][data-dsh-split="1"]:not([data-dsh-tool-tab="1"]) > .dsh-hero-tool-host{
+[class*="_root"][data-phase=hero][data-dsh-split="1"]:not([data-dsh-tool-tab="1"]) > .dsh-hero-tool-host{
   display:none!important;
 }
-.wSkVaW_root[data-phase=hero][data-dsh-split="1"] > .dsplit_dividerHost{
+[class*="_root"][data-phase=hero][data-dsh-split="1"] > .dsplit_dividerHost{
   grid-column:2;
   grid-row:2;
 }
-.wSkVaW_root[data-phase=hero][data-dsh-split="1"] > .dsplit_rightHost{
+[class*="_root"][data-phase=hero][data-dsh-split="1"] > .dsplit_rightHost{
   grid-column:3;
   grid-row:2;
   border-left:1px solid var(--dsw-alias-border-l2);
 }
-.wSkVaW_root[data-phase=hero][data-dsh-split="1"] .wSkVaW_scrollBody > .dsplit_dividerHost,
-.wSkVaW_root[data-phase=hero][data-dsh-split="1"] .wSkVaW_scrollBody > .dsplit_rightHost{
+[class*="_root"][data-phase=hero][data-dsh-split="1"] [class*="_scrollBody"] > .dsplit_dividerHost,
+[class*="_root"][data-phase=hero][data-dsh-split="1"] [class*="_scrollBody"] > .dsplit_rightHost{
   display:none!important;
 }
-.wSkVaW_root[data-phase=hero][data-dsh-split="1"] .wSkVaW_composerSeat{
+[class*="_root"][data-phase=hero][data-dsh-split="1"] [class*="_composerSeat"]{
   grid-column:unset;
   grid-row:unset;
 }
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_composerSeat{
+[class*="_root"][data-dsh-split="1"] [class*="_composerSeat"]{
   grid-column:1;grid-row:2;
   min-width:0;max-width:100%;
   width:100%;
   box-sizing:border-box;
   z-index:5;
 }
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_composerSeat .wSkVaW_composerStack,
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_composerSeat [data-composer-card],
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_composerSeat .uV2eYG_root,
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_composerSeat .uV2eYG_card{
+[class*="_root"][data-dsh-split="1"] [class*="_composerSeat"] [class*="_composerStack"],
+[class*="_root"][data-dsh-split="1"] [class*="_composerSeat"] [data-composer-card],
+[class*="_root"][data-dsh-split="1"] [class*="_composerSeat"] [class*="_root"],
+[class*="_root"][data-dsh-split="1"] [class*="_composerSeat"] [class*="_card"]{
   max-width:100%!important;
   width:100%!important;
   box-sizing:border-box;
 }
-/* Session + hero headers share the same split chrome */
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_header:not(.wSkVaW_headerHidden){
+/* Session + hero headers share the same split chrome (0.1.5 session chrome is a <header> child of root) */
+[class*="_root"][data-dsh-split="1"] > header:not([class*="_headerHidden"]),
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]){
   display:grid!important;
   grid-template-columns:minmax(0,var(--dsh-split-left,50%)) 11px minmax(0,1fr);
   grid-template-rows:auto auto;
   align-items:end;
   overflow:hidden;
 }
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_header:not(.wSkVaW_headerHidden) .wSkVaW_titleRow{
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) [class*="_titleRow"]{
   grid-column:1 / -1;
   grid-row:1;
   align-self:center;
 }
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_header:not(.wSkVaW_headerHidden) .wSkVaW_tabs{
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) [class*="_tabs"]{
   grid-column:1;
   grid-row:2;
   max-width:100%!important;
@@ -294,9 +315,9 @@ window.__ModuleLoader__.load({
   flex-wrap:nowrap!important;
   scrollbar-width:none;
 }
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_header:not(.wSkVaW_headerHidden) .wSkVaW_tabs::-webkit-scrollbar{display:none;height:0}
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) [class*="_tabs"]::-webkit-scrollbar{display:none;height:0}
 /* Dual mode: icon-only on the stock (left) tab strip — override session-tabs 104px desktop widths */
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_header:not(.wSkVaW_headerHidden) .wSkVaW_tabs .wSkVaW_tab.dsh-tab-enhanced{
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) [class*="_tabs"] [class*="_tab"].dsh-tab-enhanced{
   flex:0 0 auto!important;
   gap:0!important;
   width:40px!important;
@@ -305,15 +326,15 @@ window.__ModuleLoader__.load({
   justify-content:center!important;
   padding:4px 0 11px!important;
 }
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_header:not(.wSkVaW_headerHidden) .wSkVaW_tabs .wSkVaW_tab .dsh-tab-label{display:none!important}
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_header:not(.wSkVaW_headerHidden) .wSkVaW_tabs .wSkVaW_tab .dsh-tab-icon svg{width:16px!important;height:16px!important;opacity:1}
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_header:not(.wSkVaW_headerHidden) .dsplit_headerGap{
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) [class*="_tabs"] [class*="_tab"] .dsh-tab-label{display:none!important}
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) [class*="_tabs"] [class*="_tab"] .dsh-tab-icon svg{width:16px!important;height:16px!important;opacity:1}
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) .dsplit_headerGap{
   grid-column:2;
   grid-row:2;
   align-self:stretch;
   min-width:0;
 }
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_header:not(.wSkVaW_headerHidden) .dsplit_rightTabsAnchor{
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) .dsplit_rightTabsAnchor{
   grid-column:3;
   grid-row:2;
   position:static;
@@ -326,9 +347,17 @@ window.__ModuleLoader__.load({
   pointer-events:auto;
   z-index:2;
 }
-.wSkVaW_root[data-dsh-split="1"] .wSkVaW_header:not(.wSkVaW_headerHidden) .dsplit_rightTabsAnchor>*{width:100%;min-width:0;max-width:100%}
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) .dsplit_rightTabsAnchor>*{width:100%;min-width:0;max-width:100%}
 
 .dsplit_rightFrame{display:flex;flex-direction:column;height:100%;min-height:0;min-width:0;overflow:hidden}
+.dsplit_rightTabsRow{
+  display:flex;align-items:flex-end;gap:4px;
+  width:100%;min-width:0;max-width:100%;box-sizing:border-box;
+  margin-top:4px;padding:0 4px;
+}
+.dsplit_rightTabsRow>.dsplit_rightTabs{
+  flex:1 1 auto;min-width:0;margin-top:0;padding:0;
+}
 .dsplit_rightTabs{
   display:flex;gap:4px;flex:none;margin:0;
   margin-top:4px;padding:0 4px;
@@ -376,23 +405,42 @@ window.__ModuleLoader__.load({
   display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;
   border:1px solid transparent;border-radius:7px;background:transparent;
   color:var(--dsw-alias-label-secondary);cursor:pointer;
+  transition:color .15s ease,filter .15s ease,transform .15s ease;
 }
 .fex-ibtn.dsplit-toggle:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
 .fex-ibtn.dsplit-toggle.active{
-  color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);
+  color:var(--dsw-alias-state-business-primary,var(--dsw-alias-brand-primary));
+  border-color:transparent;background:transparent;
+  filter:drop-shadow(0 0 5px color-mix(in srgb,var(--dsw-alias-state-business-primary,var(--dsw-alias-brand-primary)) 50%,transparent));
+}
+.fex-ibtn.dsplit-toggle.active:hover{
+  background:transparent;
+  color:var(--dsw-alias-state-business-primary,var(--dsw-alias-brand-primary));
+  filter:drop-shadow(0 0 8px color-mix(in srgb,var(--dsw-alias-state-business-primary,var(--dsw-alias-brand-primary)) 72%,transparent));
+  transform:scale(1.06);
+}
+.fex-ibtn.dsplit-close{
+  display:inline-flex;align-items:center;justify-content:center;
+  flex:0 0 auto;width:26px;height:26px;margin:0 0 3px;padding:0;
+  border:1px solid transparent;border-radius:7px;background:transparent;
+  color:var(--dsw-alias-label-secondary);cursor:pointer;
+  transition:color .15s ease,background .15s ease;
+}
+.fex-ibtn.dsplit-close:hover{
+  background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);
 }
 /* Split is desktop-only — hide toggle and tear down chrome on narrow viewports */
 @media (max-width:900px){
   .fex-ibtn.dsplit-toggle{display:none!important}
 }
 @media (max-width:900px){
-  .wSkVaW_root[data-dsh-split="1"] .wSkVaW_header:not(.wSkVaW_headerHidden){
+  [class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]){
     display:flex!important;flex-direction:column;overflow:visible;
   }
-  .wSkVaW_root[data-dsh-split="1"] .wSkVaW_header:not(.wSkVaW_headerHidden) .wSkVaW_tabs{max-width:100%;width:100%}
-  .wSkVaW_root[data-dsh-split="1"] .dsplit_rightTabsAnchor,
-  .wSkVaW_root[data-dsh-split="1"] .dsplit_headerGap{display:none!important}
-  .wSkVaW_root[data-dsh-split="1"] .wSkVaW_scrollBody{
+  [class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) [class*="_tabs"]{max-width:100%;width:100%}
+  [class*="_root"][data-dsh-split="1"] .dsplit_rightTabsAnchor,
+  [class*="_root"][data-dsh-split="1"] .dsplit_headerGap{display:none!important}
+  [class*="_root"][data-dsh-split="1"] [class*="_scrollBody"]{
     grid-template-columns:minmax(0,1fr)!important;
     /* chat scroll | composer | divider | tool pane */
     grid-template-rows:minmax(0,var(--dsh-split-top,42%)) auto 11px minmax(0,1fr);
@@ -402,8 +450,8 @@ window.__ModuleLoader__.load({
     min-height:0!important;
     height:100%!important;
   }
-  .wSkVaW_root[data-dsh-split="1"] .wSkVaW_viewArea,
-  .wSkVaW_root[data-dsh-split="1"] [data-slot="conversation.session"]{
+  [class*="_root"][data-dsh-split="1"] [class*="_viewArea"],
+  [class*="_root"][data-dsh-split="1"] [data-slot="conversation.session"]{
     grid-column:1;grid-row:1;
     width:100%!important;
     max-width:100%!important;
@@ -413,67 +461,81 @@ window.__ModuleLoader__.load({
     overflow:hidden!important;
     overscroll-behavior:contain;
   }
-  .wSkVaW_root[data-dsh-split="1"] .wSkVaW_composerSeat{
+  [class*="_root"][data-dsh-split="1"] [class*="_composerSeat"]{
     grid-column:1;grid-row:2;
     min-width:0;max-width:100%;
   }
-  .wSkVaW_root[data-dsh-split="1"] .dsplit_dividerHost{
+  [class*="_root"][data-dsh-split="1"] .dsplit_dividerHost{
     grid-column:1;grid-row:3;height:11px;width:auto;cursor:row-resize;
     touch-action:none;
   }
-  .wSkVaW_root[data-dsh-split="1"] .dsplit_dividerHost:after{
+  [class*="_root"][data-dsh-split="1"] .dsplit_dividerHost:after{
     inset:-6px 0;
   }
-  .wSkVaW_root[data-dsh-split="1"] .dsplit_dividerHost:before{
+  [class*="_root"][data-dsh-split="1"] .dsplit_dividerHost:before{
     top:50%;bottom:auto;left:0;right:0;width:auto;height:1px;
     transform:translateY(-50%);
   }
-  .wSkVaW_root[data-dsh-split="1"] .dsplit_dividerHost:hover:before,
-  .wSkVaW_root[data-dsh-split="1"] .dsplit_dividerHost.dsplit_dragging:before{
+  [class*="_root"][data-dsh-split="1"] .dsplit_dividerHost:hover:before,
+  [class*="_root"][data-dsh-split="1"] .dsplit_dividerHost.dsplit_dragging:before{
     width:auto;height:3px;
   }
-  .wSkVaW_root[data-dsh-split="1"].dsplit_isDragging,
-  .wSkVaW_root[data-dsh-split="1"].dsplit_isDragging *{
+  [class*="_root"][data-dsh-split="1"].dsplit_isDragging,
+  [class*="_root"][data-dsh-split="1"].dsplit_isDragging *{
     cursor:row-resize!important;
   }
-  .wSkVaW_root[data-dsh-split="1"] .dsplit_rightHost{
+  [class*="_root"][data-dsh-split="1"] .dsplit_rightHost{
     grid-column:1;grid-row:4;border-left:none;border-top:1px solid var(--dsw-alias-border-l2);
     width:100%!important;max-width:100%!important;min-width:0!important;
     min-height:0!important;max-height:100%!important;
     overflow:hidden!important;
     overscroll-behavior:contain;
   }
-  .wSkVaW_root[data-dsh-split="1"] .dsplit_rightFrame,
-  .wSkVaW_root[data-dsh-split="1"] .dsplit_rightBody{
+  [class*="_root"][data-dsh-split="1"] .dsplit_rightFrame,
+  [class*="_root"][data-dsh-split="1"] .dsplit_rightBody{
     min-height:0!important;
     max-height:100%!important;
   }
-  .wSkVaW_root[data-dsh-split="1"] .dsplit_rightBody>*{
+  [class*="_root"][data-dsh-split="1"] .dsplit_rightBody>*{
     overflow-y:auto!important;
     -webkit-overflow-scrolling:touch;
     overscroll-behavior:contain;
     touch-action:pan-y;
   }
-  .wSkVaW_root[data-dsh-split="1"]{
+  [class*="_root"][data-dsh-split="1"]{
     --dsh-composer-side-clearance:8px;
     --dsh-chat-content-width:100%;
     --dsh-composer-card-max-width:100%;
   }
-  .wSkVaW_root[data-dsh-split="1"] .Md3f7G_scroll{
+  [class*="_root"][data-dsh-split="1"] .Md3f7G_scroll{
     padding-left:12px!important;
     padding-right:12px!important;
     overscroll-behavior:contain;
     touch-action:pan-y;
     -webkit-overflow-scrolling:touch;
   }
-  .dsplit_rightTabs.dsplit_tabsInBody{
+  .dsplit_rightTabs.dsplit_tabsInBody,
+  .dsplit_rightTabsRow.dsplit_tabsInBody{
     display:flex;border-bottom:1px solid var(--dsw-alias-border-l2);padding:4px 4px 0;
     flex:none;
   }
 }
 @media (min-width:901px){
   /* Desktop: right tools tabs live in the header anchor (session + hero) */
-  .dsplit_rightTabs.dsplit_tabsInBody{display:none!important}
+  .dsplit_rightTabs.dsplit_tabsInBody,
+  .dsplit_rightTabsRow.dsplit_tabsInBody{display:none!important}
+  [class*="_root"][data-dsh-split-body-tabs="1"] .dsplit_rightTabsRow.dsplit_tabsInBody{
+    display:flex!important;
+    border-bottom:1px solid var(--dsw-alias-border-l2);
+    padding:4px 4px 0;
+    flex:none;
+  }
+  [class*="_root"][data-dsh-split-body-tabs="1"] .dsplit_rightTabs.dsplit_tabsInBody{
+    display:flex!important;
+    border-bottom:1px solid var(--dsw-alias-border-l2);
+    padding:4px 4px 0;
+    flex:none;
+  }
 }
 `;
 
@@ -509,29 +571,57 @@ window.__ModuleLoader__.load({
 		}
 
 		function sessionRoot() {
-			return document.querySelector(".wSkVaW_root[data-phase]") || document.querySelector(".wSkVaW_root");
+			const split = document.querySelector('[class*="_root"][data-dsh-split="1"]');
+			if (split) return split;
+			const session = document.querySelector('[data-slot="conversation.session"]')?.closest('[class*="_root"]');
+			if (session) return session;
+			return (
+				document.querySelector('[class*="_root"][data-phase="hero"]')
+				|| document.querySelector('[class*="_root"][data-phase]')
+				|| document.querySelector('[class*="_root"]')
+			);
 		}
 
 		function isHeroPhase(root = sessionRoot()) {
 			return root?.getAttribute("data-phase") === "hero";
 		}
 
-		/** Real title/tabs header — session or our hero chrome (never the empty stock-hidden shell). */
+		function isStockSessionHeader(el) {
+			if (!el || !(el instanceof HTMLElement)) return false;
+			if (el.classList.contains("dsh-hero-header")) return false;
+			if (el.hasAttribute("data-dsh-hero-header-host")) return false;
+			return ![...el.classList].some((c) => c.endsWith("_headerHidden"));
+		}
+
+		/** Real title/tabs header — session `<header>` or hero chrome. */
 		function findSessionHeader(root) {
 			if (!root) return null;
-			const hero = root.querySelector(".dsh-hero-header");
-			if (hero) return hero;
-			return (
-				[...root.querySelectorAll(":scope > .wSkVaW_header")].find(
-					(h) => !h.classList.contains("wSkVaW_headerHidden"),
-				) || null
-			);
+			if (root.getAttribute("data-phase") === "hero") {
+				return (
+					root.querySelector(":scope > .dsh-hero-header")
+					|| root.querySelector(":scope > [data-dsh-hero-header-host]")
+					|| null
+				);
+			}
+			// 0.1.5+: header is often root > (wrapper) > header, not root > header.
+			const selectors = [
+				":scope > header",
+				':scope > [class*="_header"]',
+				":scope > * > header",
+				':scope > * > [class*="_header"]',
+			];
+			for (const sel of selectors) {
+				for (const el of root.querySelectorAll(sel)) {
+					if (isStockSessionHeader(el)) return el;
+				}
+			}
+			return null;
 		}
 
 		function readStockTabs() {
 			const root = sessionRoot();
 			if (!root) return [];
-			const tabs = root.querySelectorAll('.wSkVaW_tabs [role="tab"]');
+			const tabs = root.querySelectorAll('[class*="_tabs"] [role="tab"]');
 			const out = [];
 			const seen = new Set();
 			tabs.forEach((tab) => {
@@ -542,7 +632,7 @@ window.__ModuleLoader__.load({
 			});
 			return out.length
 				? out
-				: ["Chat", "Code", "Git", "Containers", "Terminal", "Browser", "Database", "Trajectory"];
+				: ["Chat", "Code", "Git", "Containers", "Terminal", "Browser", "Database", "Scheduled", "Trajectory"];
 		}
 
 		function isStackedSplit() {
@@ -572,8 +662,11 @@ window.__ModuleLoader__.load({
 		function ensureHosts() {
 			const root = sessionRoot();
 			if (!root) return null;
+			const body = root.querySelector(':scope > [class*="_body"]');
 			const scrollBody =
-				root.querySelector(":scope > .wSkVaW_scrollBody") || root.querySelector(".wSkVaW_scrollBody");
+				root.querySelector(':scope > [class*="_scrollBody"]')
+				|| body?.querySelector(':scope > [class*="_scrollBody"]')
+				|| root.querySelector('[class*="_scrollBody"]');
 			if (!scrollBody) return null;
 			const hero = isHeroPhase(root);
 			const header = findSessionHeader(root);
@@ -619,7 +712,7 @@ window.__ModuleLoader__.load({
 					root.insertBefore(rightHost, divider.nextSibling);
 				}
 			} else {
-				const composer = scrollBody.querySelector(".wSkVaW_composerSeat");
+				const composer = scrollBody.querySelector('[class*="_composerSeat"]');
 				if (divider.parentElement !== scrollBody) {
 					if (composer) scrollBody.insertBefore(divider, composer);
 					else scrollBody.appendChild(divider);
@@ -666,7 +759,7 @@ window.__ModuleLoader__.load({
 			}
 
 			// Order: titleRow (existing), tabs (existing), gap, right tabs
-			const stockTabs = header.querySelector(".wSkVaW_tabs");
+			const stockTabs = header.querySelector('[class*="_tabs"]');
 			if (headerGap.parentElement !== header) {
 				if (stockTabs?.nextSibling) header.insertBefore(headerGap, stockTabs.nextSibling);
 				else header.appendChild(headerGap);
@@ -697,7 +790,7 @@ window.__ModuleLoader__.load({
 			}
 		}
 
-		function RightTabList({ activeLabel, onSelect, inBody }) {
+		function RightTabList({ activeLabel, onSelect, inBody, onCloseSplit }) {
 			const [, bump] = React.useState(0);
 			const labels = readStockTabs();
 
@@ -719,10 +812,10 @@ window.__ModuleLoader__.load({
 				};
 			}, []);
 
-			return React.createElement(
+			const tabStrip = React.createElement(
 				"div",
 				{
-					className: "dsplit_rightTabs" + (inBody ? " dsplit_tabsInBody" : ""),
+					className: "dsplit_rightTabs" + (inBody && !onCloseSplit ? " dsplit_tabsInBody" : ""),
 					role: "tablist",
 					"aria-label": "Right window",
 				},
@@ -744,9 +837,30 @@ window.__ModuleLoader__.load({
 					),
 				),
 			);
+
+			if (!onCloseSplit) return tabStrip;
+
+			return React.createElement(
+				"div",
+				{
+					className: "dsplit_rightTabsRow" + (inBody ? " dsplit_tabsInBody" : ""),
+				},
+				tabStrip,
+				React.createElement(
+					"button",
+					{
+						type: "button",
+						className: "fex-ibtn dsplit-close",
+						title: "Close split window",
+						"aria-label": "Close split window",
+						onClick: onCloseSplit,
+					},
+					closeSplitIcon(),
+				),
+			);
 		}
 
-		function RightPane({ activeLabel, onSelect, sessionId }) {
+		function RightPane({ activeLabel, onSelect, sessionId, showBodyTabs, onCloseSplit }) {
 			const panelId = LABEL_TO_PANEL[activeLabel];
 			const factory = panelId ? window.__dshHeroToolRegistry?.get(panelId) : null;
 
@@ -778,16 +892,19 @@ window.__ModuleLoader__.load({
 			return React.createElement(
 				"div",
 				{ className: "dsplit_rightFrame" },
-				React.createElement(RightTabList, {
-					activeLabel,
-					onSelect,
-					inBody: true,
-				}),
+				showBodyTabs
+					? React.createElement(RightTabList, {
+							activeLabel,
+							onSelect,
+							inBody: true,
+							onCloseSplit,
+						})
+					: null,
 				React.createElement("div", { className: "dsplit_rightBody" }, body),
 			);
 		}
 
-		function SplitChrome({ enabled, ratio, rightLabel, sessionId, onRatio, onRightLabel }) {
+		function SplitChrome({ enabled, ratio, rightLabel, sessionId, onRatio, onRightLabel, onCloseSplit }) {
 			const [hosts, setHosts] = React.useState(null);
 			const dragging = React.useRef(false);
 			const liveRatio = React.useRef(ratio);
@@ -800,6 +917,7 @@ window.__ModuleLoader__.load({
 				if (!root) return;
 				if (!enabled) {
 					root.removeAttribute("data-dsh-split");
+					root.removeAttribute("data-dsh-split-body-tabs");
 					clearHosts(root);
 					setHosts(null);
 					return;
@@ -807,12 +925,19 @@ window.__ModuleLoader__.load({
 				root.setAttribute("data-dsh-split", "1");
 				applyRatio(liveRatio.current);
 				const next = ensureHosts();
+				if (next?.tabsAnchor) root.removeAttribute("data-dsh-split-body-tabs");
+				else root.setAttribute("data-dsh-split-body-tabs", "1");
 				setHosts(next);
 
 				const obs = new MutationObserver(() => {
 					if (!sessionRoot()?.hasAttribute("data-dsh-split")) return;
 					if (dragging.current) return;
 					const h = ensureHosts();
+					const r = sessionRoot();
+					if (r) {
+						if (h?.tabsAnchor) r.removeAttribute("data-dsh-split-body-tabs");
+						else r.setAttribute("data-dsh-split-body-tabs", "1");
+					}
 					setHosts((prev) =>
 						prev?.rightHost === h?.rightHost && prev?.tabsAnchor === h?.tabsAnchor && prev?.divider === h?.divider
 							? prev
@@ -876,7 +1001,7 @@ window.__ModuleLoader__.load({
 					let next;
 					if (isStackedSplit()) {
 						if (rect.height <= 0) return;
-						const composer = body?.querySelector(":scope > .wSkVaW_composerSeat");
+						const composer = body?.querySelector(':scope > [class*="_composerSeat"]');
 						const composerH = composer?.getBoundingClientRect().height || 0;
 						const y = e.clientY - rect.top;
 						const chatBlock = Math.max(0, y - 5);
@@ -924,17 +1049,23 @@ window.__ModuleLoader__.load({
 				activeLabel: rightLabel,
 				onSelect: onRightLabel,
 				inBody: false,
+				onCloseSplit,
 			});
+			const useHeaderTabs = !!(hosts?.tabsAnchor?.isConnected && isSplitDesktop());
 			const bodyWithTabs = React.createElement(RightPane, {
 				activeLabel: rightLabel,
 				onSelect: onRightLabel,
 				sessionId,
+				onCloseSplit,
+				showBodyTabs:
+					!useHeaderTabs
+					&& (isStackedSplit() || !!hosts?.root?.hasAttribute("data-dsh-split-body-tabs")),
 			});
 
 			return React.createElement(
 				React.Fragment,
 				null,
-				hosts.tabsAnchor ? ReactDOM.createPortal(tabs, hosts.tabsAnchor) : null,
+				hosts.tabsAnchor?.isConnected ? ReactDOM.createPortal(tabs, hosts.tabsAnchor) : null,
 				ReactDOM.createPortal(bodyWithTabs, hosts.rightHost),
 			);
 		}
@@ -945,8 +1076,8 @@ window.__ModuleLoader__.load({
 
 		function clickSidebarToggle() {
 			const btn =
-				document.querySelector("button.hHd-Xa_toggle") ||
-				document.querySelector(".hHd-Xa_toggle");
+				document.querySelector('button[class*="_toggle"]') ||
+				document.querySelector('[class*="_toggle"]');
 			if (btn instanceof HTMLElement) {
 				btn.click();
 				return true;
@@ -1073,6 +1204,7 @@ window.__ModuleLoader__.load({
 					sessionId,
 					onRatio: setRatio,
 					onRightLabel: setRightLabel,
+					onCloseSplit: () => setSplitEnabled(false),
 				}),
 			);
 		}
@@ -1080,9 +1212,9 @@ window.__ModuleLoader__.load({
 		const inject = ["slots", "layout"];
 
 		function useIsHero() {
-			const [hero, setHero] = React.useState(() => !!document.querySelector(".wSkVaW_root[data-phase=hero]"));
+			const [hero, setHero] = React.useState(() => !!document.querySelector('[class*="_root"][data-phase=hero]'));
 			React.useEffect(() => {
-				const check = () => setHero(!!document.querySelector(".wSkVaW_root[data-phase=hero]"));
+				const check = () => setHero(!!document.querySelector('[class*="_root"][data-phase=hero]'));
 				check();
 				const root = document.getElementById("root") || document.body;
 				const mo = new MutationObserver(check);
@@ -1216,6 +1348,7 @@ window.__ModuleLoader__.load({
 					sessionId: null,
 					onRatio: setRatio,
 					onRightLabel: setRightLabel,
+					onCloseSplit: () => setSplitEnabled(false),
 				}),
 			);
 		}

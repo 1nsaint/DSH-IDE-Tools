@@ -4,6 +4,7 @@
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 import {
 	readFile,
 	writeFile,
@@ -18,6 +19,7 @@ import { dirname, join, basename, resolve, sep, relative } from "node:path";
 import { homedir } from "node:os";
 
 const name = "dsh-testenv";
+const inject = ["connection", "webServer"];
 const RPC_CHANNEL = "/testenv";
 const execFileAsync = promisify(execFile);
 
@@ -723,9 +725,7 @@ async function cloneDataDirs(liveDir, testDir) {
 }
 
 function registerRpc(ctx) {
-	return ctx.connection.rpc.handle(
-		RPC_CHANNEL,
-		async (endpointName, payload) => {
+	return registerRpcChannel(ctx, RPC_CHANNEL, async (endpointName, payload) => {
 			try {
 				switch (endpointName) {
 					case "roots": {
@@ -856,11 +856,11 @@ function registerRpc(ctx) {
 }
 
 function apply(ctx) {
-	ctx.inject(["connection"], (connectionCtx) => {
+	ctx.inject(["connection", "webServer"], (connectionCtx) => {
 		connectionCtx.inject(["sessions"], (scope) => {
 			scope.effect(() => registerRpc(scope), "dsh-testenv: rpc");
 		});
 	});
 }
 
-export { apply, name };
+export { apply, name, inject };

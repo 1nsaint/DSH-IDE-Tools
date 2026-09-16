@@ -39,6 +39,13 @@ button[class*="_navCell"] svg.${ICON_CLASS}{margin:0}
 			notify: "Notifications",
 			git: "Git",
 			"ssh-workspace": "SSH",
+			"agent-presets": "Agent presets",
+		};
+
+		/** Deep-link aliases → nav section + optional Agent presets sub-tab. */
+		const SECTION_ALIASES = {
+			"local-agent": { label: "Agent presets", agentPresetsTab: "lite" },
+			"lite-mode": { label: "Agent presets", agentPresetsTab: "lite" },
 		};
 
 		const GEAR_SVG = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`;
@@ -83,6 +90,7 @@ button[class*="_navCell"] svg.${ICON_CLASS}{margin:0}
 		function resolveSectionLabel(section) {
 			const key = String(section || "").trim();
 			if (!key) return null;
+			if (SECTION_ALIASES[key]) return SECTION_ALIASES[key].label;
 			if (SECTION_LABELS[key]) return SECTION_LABELS[key];
 			// Accept nav label directly.
 			for (const label of Object.values(SECTION_LABELS)) {
@@ -91,15 +99,20 @@ button[class*="_navCell"] svg.${ICON_CLASS}{margin:0}
 			return key;
 		}
 
+		function resolveSectionAlias(section) {
+			const key = String(section || "").trim();
+			return SECTION_ALIASES[key] || null;
+		}
+
 		function settingsPanelOpen() {
 			return !!document.querySelector('.VOzbGW_panel[role="dialog"], [class*="_panel"][role="dialog"]');
 		}
 
 		function clickSettingsTrigger() {
 			const btn =
-				document.querySelector('.hHd-Xa_settingsArea button[aria-haspopup="dialog"]') ||
+				document.querySelector('[class*="_settingsArea"] button[aria-haspopup="dialog"]') ||
 				document.querySelector("button.VOzbGW_trigger") ||
-				document.querySelector('.hHd-Xa_settingsArea button');
+				document.querySelector('[class*="_settingsArea"] button');
 			if (btn instanceof HTMLElement) {
 				btn.click();
 				return true;
@@ -127,12 +140,21 @@ button[class*="_navCell"] svg.${ICON_CLASS}{margin:0}
 
 		/** Open Settings and select a section by id or nav label. */
 		function openSettingsSection(section) {
+			const alias = resolveSectionAlias(section);
 			const label = resolveSectionLabel(section);
 			if (!label) return false;
+			if (alias?.agentPresetsTab && typeof window.__dshAgentPresetsTab === "function") {
+				window.__dshAgentPresetsTab(alias.agentPresetsTab);
+			}
 			if (!settingsPanelOpen()) clickSettingsTrigger();
 			let tries = 0;
 			const tick = () => {
-				if (clickNavCell(label)) return;
+				if (clickNavCell(label)) {
+					if (alias?.agentPresetsTab && typeof window.__dshAgentPresetsTab === "function") {
+						window.__dshAgentPresetsTab(alias.agentPresetsTab);
+					}
+					return;
+				}
 				if (tries++ > 30) return;
 				requestAnimationFrame(tick);
 			};

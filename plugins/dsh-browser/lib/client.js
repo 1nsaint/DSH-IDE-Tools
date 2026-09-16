@@ -7,7 +7,7 @@ window.__ModuleLoader__.load({
 		const REF_SOURCE = "browser-dom";
 		const STORE_KEY = "dsh-browser.view.v1";
 		const OPEN_EVENT = "dsh-open-browser-url";
-		const BUILD = "0.6.25-save-to-css";
+		const BUILD = "0.6.27-inspect-no-auto-devtools";
 		const DT_SIZE = {
 			bottomMin: 160,
 			bottomMax: 720,
@@ -16,8 +16,10 @@ window.__ModuleLoader__.load({
 			rightMax: 900,
 			rightDefault: 400,
 		};
-		/** Blank black home — no site chrome, no invert filter. */
-		const DEFAULT_HOME = "data:text/html;charset=utf-8," + encodeURIComponent(
+		/** Empty home — show the tip panel instead of a blank iframe. */
+		const DEFAULT_HOME = "";
+		/** Legacy black data: home from older builds (treat as empty). */
+		const LEGACY_BLACK_HOME = "data:text/html;charset=utf-8," + encodeURIComponent(
 			"<!doctype html><html><head><meta charset=utf-8><title></title>"
 			+ "<style>html,body{margin:0;height:100%;background:#000}</style></head><body></body></html>",
 		);
@@ -164,31 +166,54 @@ window.__ModuleLoader__.load({
 			}
 		}
 
+		function isBlankHome(raw) {
+			const s = String(raw || "").trim();
+			if (!s || s === "about:blank" || s === "about:srcdoc") return true;
+			if (s === LEGACY_BLACK_HOME) return true;
+			if (!s.startsWith("data:text/html")) return false;
+			try {
+				const html = decodeURIComponent(s.replace(/^data:text\/html[^,]*,/, ""));
+				return /background\s*:\s*#000\b/i.test(html) && !/<[^>]+>[^<]+<\/\w+>/.test(html.replace(/<style[\s\S]*?<\/style>/gi, ""));
+			} catch {
+				return false;
+			}
+		}
+
+		function normalizeHomeUrl(raw) {
+			const s = sanitizeBrowseUrl(raw);
+			if (!s || isLegacyExampleHome(s) || isBlankHome(s)) return DEFAULT_HOME;
+			return s;
+		}
+
 		const persisted = readPersisted();
 		const persistedHistory = Array.isArray(persisted?.history)
-			? persisted.history.map(sanitizeBrowseUrl).filter(Boolean)
-				.map((u) => (isLegacyExampleHome(u) ? DEFAULT_HOME : u))
+			? persisted.history.map(normalizeHomeUrl).filter(Boolean)
 			: [];
 		let persistedIdx = Number.isInteger(persisted?.histIdx) ? persisted.histIdx : -1;
 		if (persistedHistory.length && (persistedIdx < 0 || persistedIdx >= persistedHistory.length)) {
 			persistedIdx = persistedHistory.length - 1;
 		}
-		let persistedUrl = sanitizeBrowseUrl(persisted?.currentUrl || "")
-			|| sanitizeBrowseUrl(persistedHistory[persistedIdx] || "")
+		let persistedUrl = normalizeHomeUrl(persisted?.currentUrl || "")
+			|| normalizeHomeUrl(persistedHistory[persistedIdx] || "")
 			|| DEFAULT_HOME;
-		if (isLegacyExampleHome(persistedUrl)) persistedUrl = DEFAULT_HOME;
 		let persistedInput = sanitizeBrowseUrl(persisted?.urlInput || "")
 			|| (persistedUrl.startsWith("data:") ? "" : fromGateUrl(persistedUrl))
 			|| "";
-		if (isLegacyExampleHome(persistedInput)) persistedInput = "";
+		if (
+			isLegacyExampleHome(persistedInput)
+			|| isBlankHome(persistedInput)
+			|| isHarnessAppShell(persistedInput)
+		) {
+			persistedInput = "";
+		}
 
 		/** Survives tab switches (module memory) + reloads (sessionStorage). */
 		const viewCache = {
 			urlInput: persistedInput,
-			currentUrl: toGateUrl(persistedUrl) || toGateUrl(DEFAULT_HOME),
+			currentUrl: persistedUrl ? (toGateUrl(persistedUrl) || persistedUrl) : "",
 			mode: "live",
-			history: persistedHistory.length ? persistedHistory : [DEFAULT_HOME],
-			histIdx: persistedHistory.length ? persistedIdx : 0,
+			history: persistedHistory,
+			histIdx: persistedHistory.length ? persistedIdx : -1,
 			selections: Array.isArray(persisted?.selections) ? persisted.selections : [],
 			sideOpen: persisted?.sideOpen === true,
 			devtoolsOpen: false,
@@ -248,6 +273,7 @@ window.__ModuleLoader__.load({
 
 		const css = `
 .db_root{display:flex;flex-direction:column;height:100%;min-height:0;background:var(--dsw-alias-bg-base);container-type:inline-size;container-name:db}
+[class*="_root"]:has(.db_root) > [class*="_body"] > [class*="_widthHandle"]{display:none!important;pointer-events:none!important}
 /* One row: nav + tools never shrink; only the URL eats leftover space. */
 .db_bar{
   display:flex;
@@ -321,9 +347,16 @@ window.__ModuleLoader__.load({
 .db_mid.db_midDockRight > .db_body{flex:1 1 0;min-width:0;min-height:0}
 .db_body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 300px;grid-template-rows:minmax(0,1fr)}
 .db_body.db_bodySideCollapsed{grid-template-columns:minmax(0,1fr)}
-.db_frameWrap{min-height:0;overflow:hidden;background:#000;position:relative}
-.db_frame{width:100%;height:100%;border:0;background:#000}
-.db_frameWrap .db_empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--dsw-alias-label-tertiary);background:#000;font-size:13px}
+.db_frameWrap{min-height:0;overflow:hidden;background:var(--dsw-alias-bg-base,#1b1d21);position:relative}
+.db_frame{width:100%;height:100%;border:0;background:#fff}
+.db_frameWrap .db_empty{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+  height:100%;padding:32px 24px;box-sizing:border-box;text-align:center;
+  color:var(--dsw-alias-label-secondary,#9aa0a6);
+  background:var(--dsw-alias-bg-base,#1b1d21);font-size:13px;line-height:1.5;
+}
+.db_frameWrap .db_emptyTitle{font-size:14px;font-weight:500;color:var(--dsw-alias-label-primary,#e8eaed)}
+.db_frameWrap .db_emptyHint{max-width:28em;color:var(--dsw-alias-label-tertiary,#8b919a);font-size:12px;line-height:1.45}
 .db_side{min-height:0;overflow:auto;border-left:1px solid var(--dsw-alias-border-l2);padding:10px;display:flex;flex-direction:column;gap:8px}
 .db_sideList{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:8px;-webkit-overflow-scrolling:touch}
 .db_sideTitle{font-size:12px;font-weight:500;color:var(--dsw-alias-label-secondary);display:flex;align-items:center;justify-content:space-between;gap:8px;flex:none}
@@ -477,12 +510,12 @@ window.__ModuleLoader__.load({
 		}
 
 		function goChatTab() {
-			const btn = document.querySelector('.wSkVaW_tabs [role="tab"][data-dsh-tab-label="Chat"]');
+			const btn = document.querySelector('[class*="_tabs"] [role="tab"][data-dsh-tab-label="Chat"]');
 			if (btn instanceof HTMLElement) btn.click();
 		}
 
 		function isHeroPhase() {
-			return !!document.querySelector(".wSkVaW_root[data-phase=hero]");
+			return !!document.querySelector('[class*="_root"][data-phase=hero]');
 		}
 
 		function resolveCurrentSessionId(conversation) {
@@ -506,7 +539,7 @@ window.__ModuleLoader__.load({
 		}
 
 		function focusHeroComposer() {
-			const ta = document.querySelector("textarea.uV2eYG_input");
+			const ta = document.querySelector('textarea[class*="_input"]');
 			if (ta instanceof HTMLTextAreaElement) {
 				ta.focus();
 				try {
@@ -518,7 +551,7 @@ window.__ModuleLoader__.load({
 
 		/** Last-resort plain-text insert when chip shell is unavailable. */
 		function appendHeroComposerText(text) {
-			const ta = document.querySelector("textarea.uV2eYG_input");
+			const ta = document.querySelector('textarea[class*="_input"]');
 			if (!(ta instanceof HTMLTextAreaElement) || !text) return false;
 			const proto = window.HTMLTextAreaElement.prototype;
 			const desc = Object.getOwnPropertyDescriptor(proto, "value");
@@ -530,6 +563,25 @@ window.__ModuleLoader__.load({
 			ta.dispatchEvent(new Event("input", { bubbles: true }));
 			ta.dispatchEvent(new Event("change", { bubbles: true }));
 			return true;
+		}
+
+		/** Collapsed detect span at the document end (insertReference uses detect coords, not draft/clipboard length). */
+		function chipInsertSpan(shell) {
+			const snap = shell.snapshot;
+			if (typeof shell.caretSpan === "function") {
+				const caret = shell.caretSpan();
+				return {
+					start: caret.end,
+					end: caret.end,
+					draftRev: snap.draftRev,
+				};
+			}
+			const draft = String(snap?.draft || "");
+			return {
+				start: draft.length,
+				end: draft.length,
+				draftRev: snap.draftRev,
+			};
 		}
 
 		function insertSelectionChips(conversation, sessionId, items) {
@@ -548,18 +600,14 @@ window.__ModuleLoader__.load({
 					: `dom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 				const full = formatSelection(sel);
 				chipPayloads.set(id, full);
-				const snap = shell.snapshot;
+				const span = chipInsertSpan(shell);
 				const ok = shell.insertReference({
 					source: REF_SOURCE,
 					ref: id,
 					label: shortLabel(sel),
 					appearance: "file",
 					clipboardText: full,
-				}, {
-					start: snap.draft.length,
-					end: snap.draft.length,
-					draftRev: snap.draftRev,
-				});
+				}, span);
 				if (ok) inserted += 1;
 				else chipPayloads.delete(id);
 			}
@@ -1068,14 +1116,24 @@ window.__ModuleLoader__.load({
 
 			const loadLive = React.useCallback((raw, { push = true } = {}) => {
 				const requested = fromGateUrl(normalizeUrl(raw));
-				const selfNav = isHarnessAppShell(requested);
-				const publicUrl = selfNav ? DEFAULT_HOME : requested;
-				const frameUrl = toGateUrl(publicUrl);
-				if (!frameUrl || !isBrowseUrl(frameUrl)) return;
+				if (!requested || !isBrowseUrl(requested)) {
+					setError("Enter a valid http(s) URL.");
+					return;
+				}
+				if (isHarnessAppShell(requested)) {
+					setError("Can’t open the Harness UI inside Browser (that nests the app). Use an external or LAN URL.");
+					setCurrentUrl("");
+					setUrlInput("");
+					writePersisted({ urlInput: "", currentUrl: "", mode: "live" });
+					return;
+				}
+				const frameUrl = toGateUrl(requested);
+				if (!frameUrl || !isBrowseUrl(frameUrl)) {
+					setError("Could not open that URL through the browser gate.");
+					return;
+				}
 				loadGenRef.current += 1;
-				setError(selfNav
-					? "Can’t open the Harness UI inside Browser (inception). Loading a blank page instead."
-					: "");
+				setError("");
 				selectModeRef.current = false;
 				setSelectMode(false);
 				setDevtoolsOpen(false);
@@ -1089,9 +1147,9 @@ window.__ModuleLoader__.load({
 				setStyleDraft({});
 				setTreeFilter("");
 				setCurrentUrl(frameUrl);
-				setUrlInput(addressBarValue(publicUrl));
-				writePersisted({ urlInput: addressBarValue(publicUrl), currentUrl: frameUrl, mode: "live" });
-				if (push) pushHistory(publicUrl, histIdxRef.current, setHistory, setHistIdx);
+				setUrlInput(addressBarValue(requested));
+				writePersisted({ urlInput: addressBarValue(requested), currentUrl: frameUrl, mode: "live" });
+				if (push) pushHistory(requested, histIdxRef.current, setHistory, setHistIdx);
 			}, []);
 
 			React.useEffect(() => {
@@ -1137,15 +1195,7 @@ window.__ModuleLoader__.load({
 							const sel = data.selection.selector;
 							const doc = iframeRef.current?.contentDocument;
 							const el = sel && doc?.querySelector?.(sel);
-							if (el) {
-								setInspectEl(el);
-								if (selectModeRef.current) {
-									setDevtoolsOpen(true);
-									if (dtTabRef.current !== "elements" && dtTabRef.current !== "styles") {
-										setDtTab("styles");
-									}
-								}
-							}
+							if (el) setInspectEl(el);
 						} catch { /* ignore */ }
 					}
 					if (data.type === "dsh-browser-console") {
@@ -1486,8 +1536,9 @@ window.__ModuleLoader__.load({
 				} catch { /* ignore */ }
 			};
 
-			const showFrame = !!currentUrl;
-			const hasUrl = !!(currentUrl || normalizeUrl(urlInput));
+			const blankHome = isBlankHome(currentUrl);
+			const showFrame = !!currentUrl && !blankHome;
+			const hasUrl = showFrame || !!normalizeUrl(urlInput);
 
 			const onFrameLoad = () => {
 				// Address bar only — never setCurrentUrl (that remounts and kills Inspect).
@@ -1556,7 +1607,14 @@ window.__ModuleLoader__.load({
 						onSubmit: (e) => {
 							e.preventDefault();
 							const url = normalizeUrl(urlInput);
-							if (!url || !isBrowseUrl(url)) return;
+							if (!url) {
+								setError("Enter a URL first.");
+								return;
+							}
+							if (!isBrowseUrl(url)) {
+								setError("Enter a valid http(s) URL.");
+								return;
+							}
 							loadLive(url, { push: true });
 						},
 					},
@@ -1632,14 +1690,17 @@ window.__ModuleLoader__.load({
 									src: currentUrl,
 									referrerPolicy: "no-referrer-when-downgrade",
 								})
-								: React.createElement("div", {
-									className: "db_empty",
-									style: { padding: 24 },
-								}, busy && hasUrl
-									? `Loading ${currentUrl || urlInput}…`
-									: hasUrl
-										? "Page failed to load — use Reload or pick a history entry."
-										: "Enter a URL and press Go."),
+								: React.createElement("div", { className: "db_empty" },
+									busy && normalizeUrl(urlInput)
+										? `Loading ${fromGateUrl(urlInput) || urlInput}…`
+										: React.createElement(React.Fragment, null,
+											React.createElement("div", { className: "db_emptyTitle" }, "No page loaded"),
+											React.createElement("div", { className: "db_emptyHint" },
+												"Type a URL above and press Go. You can also open a published container port from the Containers tab."),
+											React.createElement("div", { className: "db_emptyHint" },
+												"LAN and localhost go through the browser gate, so mixed content works on HTTPS."),
+										),
+								),
 						),
 						sideOpen && React.createElement("div", { className: "db_side" },
 							React.createElement("div", { className: "db_sideTitle" },

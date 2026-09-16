@@ -157,7 +157,7 @@ window.__ModuleLoader__.load({
 
 				const rememberWorkspaceRow = (target) => {
 					const row = target instanceof Element
-						? target.closest('[role="treeitem"][aria-expanded], .YDXeBa_projectRow, [data-dsh-sf-cwd]')
+						? target.closest('[role="treeitem"][aria-expanded], [class*="_projectRow"], [data-dsh-sf-cwd]')
 						: null;
 					if (!(row instanceof Element)) return;
 					const cwd = row.getAttribute("data-dsh-sf-cwd");

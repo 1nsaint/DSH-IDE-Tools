@@ -47,6 +47,9 @@ export interface CronAddWire {
   readonly nextOccurrences: readonly string[]
 }
 
+/** Payload returned after editing a task. */
+export type CronEditWire = CronAddWire
+
 /** Payload of the `remove` endpoint. */
 export interface CronRemoveWire {
   readonly id: string

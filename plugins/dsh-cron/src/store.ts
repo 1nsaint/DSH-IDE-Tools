@@ -41,6 +41,8 @@ export interface CronRunRecord {
   excerpt?: string
   error?: string
   lastEventSeq?: number
+  /** Automation Attempt Session id once claimed. */
+  sessionId?: string
 }
 
 /** One durable scheduled job. */

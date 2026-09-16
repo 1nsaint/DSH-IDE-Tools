@@ -40,10 +40,40 @@ export function connect(host) {
 	return connectResolved(host);
 }
 
+function clientAlive(entry) {
+	if (!entry?.ready || !entry?.client) return false;
+	const sock = entry.client._sock;
+	if (sock && (sock.destroyed || sock.readyState !== "open")) return false;
+	return true;
+}
+
+export function dropConnection(host) {
+	if (!host) return;
+	const key = cacheKey(host);
+	const existing = connCache.get(key);
+	connCache.delete(key);
+	try {
+		existing?.client?.end?.();
+	} catch {
+		/* ignore */
+	}
+}
+
+export async function dropConnectionForHostId(hostId) {
+	const host = await getHostById(hostId);
+	dropConnection(host);
+}
+
+function shouldRetrySsh(err) {
+	const m = String(err?.message || err);
+	return /Channel open failure|Not connected|ECONNRESET|connection reset|SSH_MSG_DISCONNECT|Socket is closed/i.test(m);
+}
+
 function connectResolved(host) {
 	const key = cacheKey(host);
 	const existing = connCache.get(key);
-	if (existing?.ready) return Promise.resolve(existing.client);
+	if (clientAlive(existing)) return Promise.resolve(existing.client);
+	if (existing) dropConnection(host);
 
 	return new Promise((resolve, reject) => {
 		const client = new Client();
@@ -161,9 +191,26 @@ function sftpRename(sftp, from, to) {
 }
 
 export async function testHostConnection(host) {
+	dropConnection(host);
 	const client = await connect(host);
-	client.end();
+	try {
+		await withSftpSession(client, (sftp) => sftpStat(sftp, "/"));
+	} finally {
+		try {
+			client.end();
+		} catch {
+			/* ignore */
+		}
+	}
 	return { ok: true, detail: `Connected to ${host.user}@${host.hostname}` };
+}
+
+/** Verify SFTP works (reconnects if the cached session died). */
+export async function warmHostById(hostId) {
+	const host = await getHostById(hostId);
+	const client = await connect(host);
+	await withSftpSession(client, (sftp) => sftpStat(sftp, "/"));
+	return { ok: true, detail: `SSH ready for ${host.label || hostId}` };
 }
 
 export async function listRemoteDirectory(hostId, remotePath = "/") {
@@ -206,7 +253,7 @@ export async function listRemoteDirectory(hostId, remotePath = "/") {
 	try {
 		return await run();
 	} catch (err) {
-		if (String(err?.message || err).includes("Channel open failure")) {
+		if (shouldRetrySsh(err)) {
 			evictConn(host);
 			return run();
 		}
@@ -250,21 +297,68 @@ export async function remoteReadFile(hostId, remotePath, maxBytes = 256 * 1024) 
 	});
 }
 
+export async function remoteReadFileBytes(hostId, remotePath, maxBytes = 16 * 1024 * 1024) {
+	const host = await getHostById(hostId);
+	const client = await connect(host);
+	return withSftpSession(client, async (sftp) => {
+		const st = await sftpStat(sftp, remotePath);
+		if ((st.mode & 0o40000) !== 0) throw new Error("not a file");
+		if (st.size > maxBytes) {
+			const err = new Error("file too large");
+			err.code = "FS_TOO_LARGE";
+			throw err;
+		}
+		const buf = await sftpReadFile(sftp, remotePath);
+		return { content: buf, size: buf.length };
+	});
+}
+
 export async function remoteWriteFile(hostId, remotePath, content) {
 	const host = await getHostById(hostId);
 	const client = await connect(host);
 	return withSftpSession(client, async (sftp) => {
-		await sftpWriteFile(sftp, remotePath, Buffer.from(String(content), "utf8"));
+		const buf = Buffer.isBuffer(content) ? content : Buffer.from(String(content), "utf8");
+		await sftpWriteFile(sftp, remotePath, buf);
 		return { ok: true };
 	});
+}
+
+export async function remoteMkdir(hostId, remotePath) {
+	const host = await getHostById(hostId);
+	const client = await connect(host);
+	return withSftpSession(client, async (sftp) => {
+		await sftpMkdir(sftp, remotePath);
+		return { ok: true };
+	});
+}
+
+async function remoteRemoveTree(sftp, remotePath, type) {
+	if (type !== "directory") {
+		await sftpUnlink(sftp, remotePath);
+		return;
+	}
+	let entries;
+	try {
+		entries = await sftpReaddir(sftp, remotePath);
+	} catch (err) {
+		await sftpRmdir(sftp, remotePath);
+		return;
+	}
+	for (const entry of entries) {
+		const name = entry.filename;
+		if (!name || name === "." || name === "..") continue;
+		const child = remotePath === "/" ? `/${name}` : `${remotePath.replace(/\/+$/, "")}/${name}`;
+		const isDir = (entry.attrs.mode & 0o40000) !== 0;
+		await remoteRemoveTree(sftp, child, isDir ? "directory" : "file");
+	}
+	await sftpRmdir(sftp, remotePath);
 }
 
 export async function remoteRemove(hostId, remotePath, type) {
 	const host = await getHostById(hostId);
 	const client = await connect(host);
 	return withSftpSession(client, async (sftp) => {
-		if (type === "directory") await sftpRmdir(sftp, remotePath);
-		else await sftpUnlink(sftp, remotePath);
+		await remoteRemoveTree(sftp, remotePath, type);
 		return { ok: true };
 	});
 }
@@ -278,18 +372,39 @@ export async function remoteRename(hostId, from, to) {
 	});
 }
 
-export async function openSshShell(hostId, remotePath, cols, rows) {
+export async function openSshShell(hostId, remotePath, cols, rows, hooks = {}) {
 	const host = await getHostById(hostId);
-	const client = await connect(host);
 	const cwd = remotePath || host.home || "/";
-	return new Promise((resolve, reject) => {
-		client.shell({ term: "xterm-256color", cols, rows }, (err, stream) => {
-			if (err) return reject(err);
-			const init = `cd ${shellQuote(cwd)} 2>/dev/null || cd ~\n`;
-			stream.write(init);
-			resolve({ client, stream, cwd, host });
-		});
+	const ptyEnv = {
+		TERM: "xterm-256color",
+		COLORTERM: "truecolor",
+		FORCE_COLOR: "1",
+		CLICOLOR: "1",
+		CLICOLOR_FORCE: "1",
+	};
+	const cdLine = `cd ${shellQuote(cwd)} 2>/dev/null || cd ~`;
+	const onData = typeof hooks.onData === "function" ? hooks.onData : null;
+	const onClose = typeof hooks.onClose === "function" ? hooks.onClose : null;
+
+	const openOnce = () => new Promise((resolve, reject) => {
+		connect(host).then((client) => {
+			client.shell({ term: "xterm-256color", cols, rows, env: ptyEnv }, (err, stream) => {
+				if (err) return reject(err);
+				if (onData) stream.on("data", onData);
+				if (onClose) stream.on("close", onClose);
+				setTimeout(() => stream.write(`${cdLine}\n`), 150);
+				resolve({ client, stream, cwd, host });
+			});
+		}).catch(reject);
 	});
+
+	try {
+		return await openOnce();
+	} catch (err) {
+		if (!shouldRetrySsh(err)) throw err;
+		evictConn(host);
+		return openOnce();
+	}
 }
 
 function shellQuote(s) {

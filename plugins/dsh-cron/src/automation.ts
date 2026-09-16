@@ -20,10 +20,17 @@ export interface AutomationRun {
   readonly resultExcerpt?: string
   readonly error?: string
   readonly updatedAt: number
+  /** Present after settlement (and sometimes earlier depending on store version). */
+  readonly finalSessionId?: string
 }
 
 export interface AutomationEventPage {
-  readonly events: readonly { readonly seq: number; readonly runId: string }[]
+  readonly events: readonly {
+    readonly seq: number
+    readonly runId: string
+    readonly type?: string
+    readonly data?: unknown
+  }[]
   readonly nextSeq: number
   readonly hasMore: boolean
 }

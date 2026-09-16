@@ -268,12 +268,32 @@ Stock Harness: images via paste/drag only; no built-in attach button in the tool
 | Web boots but shows automation CLI help | Disable `dsh-automation-startup` + `dsh-automation-app` in web `cordis.patch.yml` |
 | Old client code | Hard refresh; check `curl …/plugins/my-plugin/client.js` |
 | Whole app 502 | Recreate **both** `deepseek-harness` and `dsh-https` |
+| Tab POSTs return **405** after a DSH bump | Host used `connection.rpc.handle` — switch to `_shared/register-rpc-channel.js` and `inject: ["connection","webServer"]` |
+| Files toggle / chrome “vanishes” after bump | Hardcoded CSS-module hashes (`bhn1Oq_*`, `qDHVXG_*`, …). Prefer `[class*="_sectionHeader"]` / `qsExactLocal` / `_shared/UPGRADE.md` |
+| Chips / decorations missing after bump | Feature gated on `workspaces.create` though it only needs `list` — gate on the minimum API |
+| Workspace switch untouchable / always visible | Don’t leave always-on chrome — rest `width:0;opacity:0;pointer-events:none`, reveal on `[class*="_projectRow"]:hover` with `pointer-events:auto` + `forceUntil` |
+| Plugin CSS loaded but rules don’t apply | Stale browser module cache still serving old hashes — hard refresh; bump `data-dsh-*` version attr |
 
-Inspect stock implementations in the running container:
+---
+
+## Surviving DSH upgrades (read before bumping the image pin)
+
+Full postmortem + durable patterns: **`plugins/_shared/UPGRADE.md`**.
+
+Burned on **0.1.1 → 0.1.5** (and how we survive the next bump):
+
+1. **Host RPC** — never `ctx.connection.rpc.handle()`. Always `registerRpcChannel` + `inject: ["connection","webServer"]`.
+2. **Client CSS modules** — never pin `.bhn1Oq_sectionHeader`. Use `[class*="_sectionHeader"]` / `qsExactLocal` / `createStockClass` (`client-dom.snippet.js`).
+3. **Minimum API gates** — chips need `workspaces.list`, not `create`.
+4. **Hit targets** — hover-only chrome is fine: collapse at rest (`width:0;opacity:0;pointer-events:none`), expand + `pointer-events:auto` on **row** hover. Don’t leave always-visible switch chrome as a “fix”.
+5. **Codemod safety** — `rewriteClientSource` only; never raw whole-file hash replace (`"\n"` → `"\\n"`).
 
 ```bash
-docker exec deepseek-harness sh -c \
-  'sed -n "1090,1140p" /usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-commands/lib/client.js'
+./plugins/_shared/check-upgrade-compat.sh
+STRICT_CSS_HASH=1 ./plugins/_shared/check-upgrade-compat.sh   # optional hard fail
+node plugins/_shared/rewrite-client-css-modules.js            # if hashes moved
+docker compose up -d --force-recreate deepseek-harness dsh-https dsh-login
+# hard-refresh the browser (Ctrl+Shift+R)
 ```
 
 ---

@@ -14,7 +14,29 @@ export interface IconProps {
   size?: number | undefined
   /** Extra class for layout placement; color rides currentColor. */
   className?: string | undefined
+  /** Override fill color (sidebar folder accents). */
+  color?: string | undefined
 }
+
+/** Filled folder (sidebar workspace glyph style). */
+export const IconFolderFilled16 = ({ size = 16, className, color }: IconProps): ReactElement => (
+  <svg
+    width={size}
+    height={size}
+    className={className}
+    viewBox="0 0 16 16"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden
+  >
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M1.75 4.25C1.75 3.42 2.42 2.75 3.25 2.75H6.04C6.31 2.75 6.57 2.86 6.76 3.06L7.94 4.25H12.75C13.58 4.25 14.25 4.92 14.25 5.75V11.75C14.25 12.58 13.58 13.25 12.75 13.25H3.25C2.42 13.25 1.75 12.58 1.75 11.75V4.25ZM3.25 4.25H6.04L7.22 5.44H12.75V11.75H3.25V4.25Z"
+      fill={color ?? 'currentColor'}
+    />
+  </svg>
+)
 
 /** ic_ds_clock_outline_16: ring + 10:10 rounded hands (design-system style). */
 export const IconClockOutline16 = ({ size = 16, className }: IconProps): ReactElement => (

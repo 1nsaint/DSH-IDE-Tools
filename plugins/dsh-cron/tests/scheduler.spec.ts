@@ -145,6 +145,35 @@ describe('CronScheduler Automation adapter', () => {
     expect(cron.setTarget(added.job.id, TARGET)).toBe(true)
     expect(cron.setPaused(added.job.id, false)).toBe(true)
   })
+
+  it('edits prompt, schedule, and target on an active job', () => {
+    const cron = scheduler()
+    const added = cron.addJob({ prompt: 'daily', cron: '0 9 * * *' })
+    cron.setPaused(added.job.id, true)
+    const edited = cron.editJob(added.job.id, {
+      prompt: 'hourly',
+      cron: '0 * * * *',
+      timeZone: 'UTC',
+      target: { kind: 'fresh', cwd: '/workspace/other', provider: 'p', model: 'm' },
+    })
+    expect(edited.job.id).toBe(added.job.id)
+    expect(edited.job.prompt).toBe('hourly')
+    expect(edited.job.schedule).toEqual({ kind: 'cron', expression: '0 * * * *', timeZone: 'UTC' })
+    expect(edited.job.target).toEqual({ kind: 'fresh', cwd: '/workspace/other', provider: 'p', model: 'm' })
+    expect(edited.job.paused).toBe(true)
+    expect(edited.job.createdAt).toBe(added.job.createdAt)
+    expect(() => cron.editJob('missing', { prompt: 'x', at: '2026-08-16T09:00:00Z' })).toThrow('not_found')
+  })
+
+  it('allows saving a one-time job without changing its existing at time', () => {
+    const cron = scheduler()
+    const added = cron.addJob({ prompt: 'once', at: '2026-08-16T09:00:00Z' })
+    now = Date.parse('2026-08-16T10:00:00Z')
+    const at = added.job.schedule.kind === 'at' ? added.job.schedule.at : '2026-08-16T09:00:00.000Z'
+    const edited = cron.editJob(added.job.id, { prompt: 'once updated', at })
+    expect(edited.job.prompt).toBe('once updated')
+    expect(edited.job.schedule).toEqual({ kind: 'at', at: '2026-08-16T09:00:00.000Z' })
+  })
 })
 
 async function settle(): Promise<void> {

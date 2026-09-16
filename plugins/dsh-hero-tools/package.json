@@ -1,6 +1,6 @@
 {
   "name": "dsh-hero-tools",
-  "version": "0.4.1",
+  "version": "0.4.3",
   "description": "Workbench chrome: shared hero+session tabs (icons, order, drag) + hero tool host/registry.",
   "type": "module",
   "main": "lib/index.js",

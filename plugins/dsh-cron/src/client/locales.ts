@@ -2,8 +2,25 @@
 
 export type CronKey = keyof typeof en
 
+/** Simple `{name}` interpolation for hero fallback copy. */
+export function formatCronMessage(
+  dict: Record<CronKey, string>,
+  key: CronKey,
+  params?: Record<string, string | number>,
+): string {
+  let message = dict[key] ?? String(key)
+  if (params) {
+    for (const [name, value] of Object.entries(params)) {
+      message = message.replace(new RegExp(`\\{${name}\\}`, 'g'), String(value))
+    }
+  }
+  return message
+}
+
 export const en = {
   label: 'Scheduled tasks',
+  'filter.create': 'Create task',
+  'filter.edit': 'Edit task',
   'filter.all': 'All tasks',
   'filter.active': 'Scheduled',
   'filter.paused': 'Paused',
@@ -13,7 +30,8 @@ export const en = {
   newTask: 'New task',
   close: 'Close scheduled tasks',
   createTitle: 'Create a scheduled task',
-  createSubtitle: 'Choose a recurring calendar rule or one specific time.',
+  createSubtitle: 'Pick when the task runs, then describe what the agent should do.',
+  editSubtitle: 'Update when the task runs and what the agent should do.',
   fieldPrompt: 'Task instructions',
   promptPlaceholder: 'Describe what the agent should do when this task runs…',
   fieldScheduleType: 'Schedule type',
@@ -22,8 +40,22 @@ export const en = {
   fieldCron: 'Cron expression',
   cronHint: 'Five fields: minute, hour, day, month, weekday.',
   fieldTimeZone: 'Time zone',
-  timeZoneHint: 'Use an IANA name such as Asia/Shanghai.',
+  timeZoneHint: 'Times follow the selected IANA time zone.',
   fieldAt: 'Run at',
+  fieldTime: 'Time',
+  fieldDays: 'On days',
+  recurPattern: 'Repeat',
+  recurHourly: 'Every hour',
+  recurInterval: 'Every few hours',
+  recurWeekly: 'Weekly',
+  recurMonthly: 'Monthly',
+  fieldIntervalHours: 'Hours between runs',
+  fieldAtMinute: 'At minute',
+  fieldDayOfMonth: 'Day of month',
+  intervalHoursOption: 'Every {count} hours',
+  recurDaily: 'Daily',
+  recurWeekdays: 'Weekdays',
+  recurAdvanced: 'Custom cron expression',
   atHint: 'Interpreted in your browser’s local time zone.',
   fieldWorkspace: 'Workspace folder',
   workspaceHint: 'Where the agent runs and saves files. Defaults to the profile default if unset.',
@@ -38,6 +70,9 @@ export const en = {
   cancel: 'Cancel',
   create: 'Create task',
   creating: 'Creating…',
+  edit: 'Edit',
+  save: 'Save changes',
+  saving: 'Saving…',
   loading: 'Loading scheduled tasks…',
   emptyTitle: 'No tasks here',
   emptyAll: 'Create a task to run work at a specific time or on a recurring schedule.',
@@ -95,6 +130,7 @@ export const en = {
   errorMissing: '{id}: task not found.',
   errorUpdate: '{id}: this task can no longer be updated.',
   noticeCreated: '{id} created.',
+  noticeUpdated: '{id} updated.',
   noticeDeduplicated: 'An identical active task already exists as {id}.',
   noticeFired: '{id} was dispatched.',
   noticePaused: '{id} paused.',
@@ -104,6 +140,8 @@ export const en = {
 
 export const zh: Record<CronKey, string> = {
   label: '定时任务',
+  'filter.create': '新建任务',
+  'filter.edit': '编辑任务',
   'filter.all': '全部任务',
   'filter.active': '待执行',
   'filter.paused': '已暂停',
@@ -113,7 +151,8 @@ export const zh: Record<CronKey, string> = {
   newTask: '新建任务',
   close: '关闭定时任务',
   createTitle: '新建定时任务',
-  createSubtitle: '选择周期日历规则，或指定一个准确的执行时间。',
+  createSubtitle: '选择运行时间，并描述 Agent 需要完成的工作。',
+  editSubtitle: '更新任务的运行时间与 Agent 需要完成的工作。',
   fieldPrompt: '任务说明',
   promptPlaceholder: '描述任务触发时希望 Agent 完成的工作…',
   fieldScheduleType: '调度方式',
@@ -122,9 +161,23 @@ export const zh: Record<CronKey, string> = {
   fieldCron: 'Cron 表达式',
   cronHint: '五段格式：分钟、小时、日期、月份、星期。',
   fieldTimeZone: '时区',
-  timeZoneHint: '使用 IANA 时区名称，例如 Asia/Shanghai。',
+  timeZoneHint: '任务时间按所选 IANA 时区计算。',
   fieldAt: '执行时间',
-  atHint: '按照当前浏览器所在时区解释。',
+  fieldTime: '时间',
+  fieldDays: '星期',
+  recurPattern: '重复',
+  recurHourly: '每小时',
+  recurInterval: '每隔数小时',
+  recurWeekly: '每周',
+  recurMonthly: '每月',
+  fieldIntervalHours: '间隔（小时）',
+  fieldAtMinute: '分钟',
+  fieldDayOfMonth: '每月第几天',
+  intervalHoursOption: '每 {count} 小时',
+  recurDaily: '每天',
+  recurWeekdays: '工作日',
+  recurAdvanced: '自定义 cron',
+  atHint: '按浏览器本地时区解释。',
   fieldWorkspace: '工作区目录',
   workspaceHint: '任务运行与写文件的目录。留空则使用配置中的默认目录。',
   workspaceDefault: '使用默认目录',
@@ -138,6 +191,9 @@ export const zh: Record<CronKey, string> = {
   cancel: '取消',
   create: '创建任务',
   creating: '正在创建…',
+  edit: '编辑',
+  save: '保存更改',
+  saving: '正在保存…',
   loading: '正在加载定时任务…',
   emptyTitle: '这里还没有任务',
   emptyAll: '创建任务，让 Agent 在指定时间或固定周期自动执行工作。',
@@ -195,6 +251,7 @@ export const zh: Record<CronKey, string> = {
   errorMissing: '{id}：任务不存在。',
   errorUpdate: '{id}：此任务已无法更新。',
   noticeCreated: '已创建 {id}。',
+  noticeUpdated: '已更新 {id}。',
   noticeDeduplicated: '相同的活动任务已经存在：{id}。',
   noticeFired: '已投递 {id}。',
   noticePaused: '已暂停 {id}。',

@@ -7,7 +7,7 @@
 //   - write / remove REQUIRE an explicit root
 // Remote dssh:// paths are handled via dsh-ssh-workspace SFTP bridge.
 import path from "node:path";
-import { rename, rm } from "node:fs/promises";
+import { cp, rename, rm } from "node:fs/promises";
 import { TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 import * as ssh from "./ssh-delegate.js";
 
@@ -19,7 +19,7 @@ export class FilesService extends TypertRemoteService {
 		this.fs = ctx.get("fs");
 		this.sandboxPolicy = ctx.get("sandboxPolicy");
 
-		const invocations = ["root", "list", "stat", "search", "read", "write", "remove", "rename", "move"].map((method) => ({
+		const invocations = ["root", "list", "stat", "search", "read", "write", "mkdir", "remove", "rename", "move", "copy"].map((method) => ({
 			id: "dsh-files#files/" + method,
 			service: "files",
 			namespace: "files",
@@ -337,6 +337,21 @@ export class FilesService extends TypertRemoteService {
 		}
 	}
 
+	async mkdir(args) {
+		const a = args && typeof args === "object" ? args : {};
+		if (typeof a.path !== "string" || !a.path) {
+			return { ok: false, kind: "error", message: "missing path" };
+		}
+		if (!ssh.pathIsRemote(a.path)) {
+			return { ok: false, kind: "error", message: "mkdir for local paths uses the workspace directory picker" };
+		}
+		try {
+			return await ssh.remoteMkdirEntry(a);
+		} catch (err) {
+			return this.fail(err);
+		}
+	}
+
 	async remove(args) {
 		const a = args && typeof args === "object" ? args : {};
 		if (typeof a.path !== "string" || !a.path) {
@@ -421,6 +436,16 @@ export class FilesService extends TypertRemoteService {
 		}
 		const root = typeof a.root === "string" && a.root ? a.root : null;
 		const destRoot = typeof a.destRoot === "string" && a.destRoot ? a.destRoot : root;
+		if (ssh.pathIsRemote(a.path) || ssh.pathIsRemote(a.destDir)) {
+			if (!ssh.pathIsRemote(a.path) || !ssh.pathIsRemote(a.destDir)) {
+				return { ok: false, kind: "error", message: "move between local and remote workspaces is not supported yet" };
+			}
+			try {
+				return await ssh.remoteMoveEntry(a);
+			} catch (err) {
+				return this.fail(err);
+			}
+		}
 		if (!root || !destRoot) {
 			return { ok: false, kind: "error", message: "move requires an explicit root/destRoot" };
 		}
@@ -468,6 +493,62 @@ export class FilesService extends TypertRemoteService {
 
 			await rename(srcAbs, destAbs);
 			return { ok: true, path: destRel, oldPath: a.path };
+		} catch (err) {
+			return this.fail(err);
+		}
+	}
+
+	/** Copy a file or directory into another parent (supports cross-workspace / cross-host SSH). */
+	async copy(args) {
+		const a = args && typeof args === "object" ? args : {};
+		if (typeof a.path !== "string" || !a.path || typeof a.destDir !== "string" || !a.destDir) {
+			return { ok: false, kind: "error", message: "missing path/destDir" };
+		}
+		const root = typeof a.root === "string" && a.root ? a.root : null;
+		const destRoot = typeof a.destRoot === "string" && a.destRoot ? a.destRoot : root;
+		if (ssh.pathIsRemote(a.path) || ssh.pathIsRemote(a.destDir)) {
+			if (!ssh.pathIsRemote(a.path) || !ssh.pathIsRemote(a.destDir)) {
+				try {
+					return await ssh.hybridCopyLocalRemote(this, a);
+				} catch (err) {
+					return this.fail(err);
+				}
+			}
+			try {
+				return await ssh.remoteCopyEntry(a);
+			} catch (err) {
+				return this.fail(err);
+			}
+		}
+		if (!root || !destRoot) {
+			return { ok: false, kind: "error", message: "copy requires an explicit root/destRoot" };
+		}
+		try {
+			const target = await this.fs.resolve(a.path);
+			await this.guard(root, target);
+			const destDirTarget = await this.fs.resolve(a.destDir);
+			await this.guard(destRoot, destDirTarget);
+			const destDirInfo = await this.fs.stat(destDirTarget);
+			if (!destDirInfo || destDirInfo.type !== "directory") {
+				return { ok: false, kind: "error", message: "destination is not a directory" };
+			}
+			const srcAbs = this.fs.processPath(target);
+			const destDirAbs = this.fs.processPath(destDirTarget);
+			const baseName = typeof a.newName === "string" && a.newName.trim()
+				? a.newName.trim()
+				: path.basename(srcAbs);
+			if (baseName.includes("/") || baseName.includes("\\") || baseName === "." || baseName === "..") {
+				return { ok: false, kind: "error", message: "invalid name" };
+			}
+			const destAbs = path.join(destDirAbs, baseName);
+			const destRel = path.posix.join(String(a.destDir).replace(/\/+$/, "") || "/", baseName);
+			try {
+				const destDisplayTarget = await this.fs.resolve(destRel);
+				const existing = await this.fs.stat(destDisplayTarget);
+				if (existing) return { ok: false, kind: "error", message: "an item with that name already exists there" };
+			} catch { /* dest missing — ok */ }
+			await cp(srcAbs, destAbs, { recursive: true, force: false });
+			return { ok: true, path: destRel };
 		} catch (err) {
 			return this.fail(err);
 		}

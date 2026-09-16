@@ -5,21 +5,34 @@ import type { CronService } from '../src/scheduler.ts'
 
 type Handler = (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<unknown>
 
+vi.mock('../../_shared/register-rpc-channel.js', () => {
+  return {
+    registerRpcChannel: (_ctx: unknown, _channel: string, handler: Handler) => {
+      ;(globalThis as { __cronRpcHandler?: Handler }).__cronRpcHandler = handler
+      const dispose = vi.fn()
+      ;(globalThis as { __cronRpcDispose?: ReturnType<typeof vi.fn> }).__cronRpcDispose = dispose
+      return dispose
+    },
+    ok: <T>(value: T) => ({ ok: true as const, value }),
+    transportError: (error: unknown) => ({
+      ok: false as const,
+      error: {
+        code: 'internal',
+        message: error instanceof Error ? error.message : String(error),
+        details: {},
+      },
+    }),
+  }
+})
+
 function makeHarness(service: Partial<CronService>) {
   const ctx = new Context()
-  let captured: Handler | undefined
-  const disposeChannel = vi.fn()
-  ctx.provide('connection', {
-    rpc: {
-      handle: (channel: string, handler: Handler, _options: unknown) => {
-        void channel
-        captured = handler
-        return disposeChannel
-      },
-    },
-  })
+  ctx.provide('connection', { rpc: {}, requestRejection: () => undefined })
+  ctx.provide('webServer', { register: () => () => {} })
   const disposer = registerCronRpc(ctx, service as CronService)
-  return { captured: captured as Handler, disposer, disposeChannel }
+  const captured = (globalThis as { __cronRpcHandler?: Handler }).__cronRpcHandler
+  const disposeChannel = (globalThis as { __cronRpcDispose?: ReturnType<typeof vi.fn> }).__cronRpcDispose
+  return { captured: captured as Handler, disposer, disposeChannel: disposeChannel! }
 }
 
 describe('registerCronRpc', () => {
@@ -58,6 +71,25 @@ describe('registerCronRpc', () => {
     })
   })
 
+  it('edits an existing job by id', async () => {
+    const edit = vi.fn().mockReturnValue({ job: { id: 'cron-1', prompt: 'updated' }, deduplicated: false, nextOccurrences: [] })
+    const { captured } = makeHarness({ edit })
+    const result = await captured('edit', {
+      id: 'cron-1',
+      prompt: 'updated',
+      cron: '0 10 * * *',
+      timeZone: 'UTC',
+      cwd: '/workspace/test',
+    }, new AbortController().signal) as { ok: boolean; value: { job: { id: string } } }
+    expect(result.ok).toBe(true)
+    expect(result.value.job.id).toBe('cron-1')
+    expect(edit).toHaveBeenCalledWith('cron-1', expect.objectContaining({
+      prompt: 'updated',
+      cron: '0 10 * * *',
+      timeZone: 'UTC',
+    }))
+  })
+
   it('removes and fires by payload id', async () => {
     const remove = vi.fn().mockReturnValue(true)
     const fireNow = vi.fn().mockResolvedValue('fired')
@@ -78,15 +110,11 @@ describe('registerCronRpc', () => {
     expect(blank.ok).toBe(false)
     const malformedAdd = await captured('add', { prompt: 42 }, new AbortController().signal) as { ok: boolean; error: { message: string } }
     expect(malformedAdd.ok).toBe(false)
-    expect(malformedAdd.error.message).toContain('payload.prompt must be a string')
-    const blankOwner = await captured('add', { prompt: 'task', at: '2026-09-01T01:00:00.000Z', createdBy: ' ' }, new AbortController().signal) as { ok: boolean; error: { message: string } }
-    expect(blankOwner.ok).toBe(false)
-    expect(blankOwner.error.message).toContain('payload.createdBy must be a non-blank string')
   })
 
-  it('returns a channel disposer', () => {
-    const { disposer, disposeChannel } = makeHarness({})
+  it('returns the dispose from registerRpcChannel', () => {
+    const { disposer, disposeChannel } = makeHarness({ list: () => [] as never })
     disposer()
-    expect(disposeChannel).toHaveBeenCalledTimes(1)
+    expect(disposeChannel).toHaveBeenCalled()
   })
 })

@@ -1,10 +1,10 @@
 /**
- * Cron task center: a sidebar entry opening a modal for creating, inspecting,
- * and managing durable scheduled tasks through the loopback `/cron` channel.
+ * Scheduled tasks UI: workbench tab view and shared schedule editor.
+ * Polls the host `/cron` channel — no model involvement in the browser.
  * @module
  */
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './CronPanel.module.css'
@@ -12,16 +12,22 @@ import {
   IconCheckOutline14,
   IconChevronDownOutline16,
   IconClockOutline16,
-  IconCloseOutline16,
   IconPauseOutline16,
-  IconPlusOutline16,
 } from './icons.tsx'
 import { callRpc } from './rpc.ts'
-import type { CronAddWire, CronFireWire, CronJobWire, CronListWire, CronRemoveWire, CronUpdateWire } from './wire.ts'
+import type { CronAddWire, CronEditWire, CronFireWire, CronJobWire, CronListWire, CronRemoveWire, CronUpdateWire } from './wire.ts'
+import type { CronKey } from './locales.ts'
+import { SchedulePicker, combineAtLocal, defaultAtLocal } from './schedule-picker.tsx'
+import { isMountRootWorkspace } from './runtime-stores.ts'
+import { WorkspaceSelect } from './workspace-select.tsx'
+import { fetchCronModelGroups } from './model-catalog.ts'
 
 const POLL_MS = 30_000
 
 type Filter = 'all' | 'active' | 'paused' | 'done'
+type TabId = 'create' | Filter
+
+const TAB_ORDER: readonly TabId[] = ['create', 'all', 'active', 'paused', 'done']
 type ScheduleKind = 'cron' | 'at'
 
 interface ModelOption {
@@ -45,9 +51,48 @@ interface Draft {
 
 const MODEL_SEP = '::'
 
-export type CronPanelProps = PropsRuntime<'sidebar.footer.action'> & PropsLocale<'sidebar.cron'> & {
-  /** Injected connection face. */
+export type CronTranslator = (key: CronKey, params?: Record<string, string | number>) => string
+
+export type CronScheduleProps = {
   readonly connection: ConnectionHandle
+  /** 0.1.5+ model catalog (`remote.session.modelCatalog`); optional for older hosts. */
+  readonly remote?: {
+    readonly session?: {
+      readonly modelCatalog?: () => Promise<{
+        readonly ok: boolean
+        readonly value?: {
+          readonly groups?: ReadonlyArray<{
+            readonly id: string
+            readonly name: string
+            readonly models?: ReadonlyArray<{ readonly id: string; readonly name?: string }>
+          }>
+        }
+        readonly error?: { readonly message?: string }
+      }>
+    }
+  }
+  readonly t: CronTranslator
+  readonly useSessions: PropsRuntime<'sidebar.footer.action'>['useSessions']
+  readonly useWorkspaces: PropsRuntime<'sidebar.footer.action'>['useWorkspaces']
+}
+
+export type CronTabProps = PropsLocale<'sidebar.cron'> & CronScheduleProps & {
+  readonly connection: ConnectionHandle
+}
+
+export function CronTabView(props: CronTabProps): JSX.Element {
+  const { connection, remote, t, useSessions, useWorkspaces } = props
+  return (
+    <div className={css.root} data-dsh-cron-root="1">
+      <CronScheduleView
+        connection={connection}
+        {...(remote === undefined ? {} : { remote })}
+        t={t}
+        useSessions={useSessions}
+        useWorkspaces={useWorkspaces}
+      />
+    </div>
+  )
 }
 
 function defaultTimeZone(): string {
@@ -62,7 +107,7 @@ function initialDraft(cwd = ''): Draft {
   return {
     prompt: '',
     kind: 'cron',
-    cron: '0 9 * * 1-5',
+    cron: '0 9 * * *',
     timeZone: defaultTimeZone(),
     at: '',
     cwd,
@@ -83,6 +128,44 @@ function decodeModelKey(key: string): { provider: string; model: string } | null
   return { provider, model }
 }
 
+function pad2(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+function isoToLocalAt(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return defaultAtLocal()
+  const date = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+  return combineAtLocal(date, d.getHours(), d.getMinutes())
+}
+
+function draftFromJob(job: CronJobWire, fallbackCwd = ''): Draft {
+  const cwd = job.target?.cwd ?? fallbackCwd
+  const modelKey = job.target?.provider && job.target?.model
+    ? encodeModelKey(job.target.provider, job.target.model)
+    : ''
+  if (job.schedule.kind === 'cron') {
+    return {
+      prompt: job.prompt,
+      kind: 'cron',
+      cron: job.schedule.expression,
+      timeZone: job.schedule.timeZone,
+      at: '',
+      cwd,
+      modelKey,
+    }
+  }
+  return {
+    prompt: job.prompt,
+    kind: 'at',
+    cron: '0 9 * * *',
+    timeZone: defaultTimeZone(),
+    at: isoToLocalAt(job.schedule.at),
+    cwd,
+    modelKey,
+  }
+}
+
 /** Format a wire timestamp in the browser's locale and time zone. */
 export function formatDateTime(value: string): string {
   const parsed = new Date(value)
@@ -93,11 +176,11 @@ export function formatDateTime(value: string): string {
   }).format(parsed)
 }
 
-function outcomeLabel(run: NonNullable<CronJobWire['lastRun']>, t: CronPanelProps['t']): string {
+function outcomeLabel(run: NonNullable<CronJobWire['lastRun']>, t: CronTranslator): string {
   return t(`outcome.${run.outcome ?? run.state}`)
 }
 
-function scheduleLabel(job: CronJobWire, t: CronPanelProps['t']): string {
+function scheduleLabel(job: CronJobWire, t: CronTranslator): string {
   if (job.schedule.kind === 'at') return t('scheduleOnce')
   return t('scheduleRecurring', { timeZone: job.schedule.timeZone })
 }
@@ -132,7 +215,7 @@ function createPayload(draft: Draft, createdBy: string | undefined): {
   return { prompt: draft.prompt, at: new Date(draft.at).toISOString(), ...owner, ...target }
 }
 
-function createErrorMessage(cause: unknown, t: CronPanelProps['t']): string {
+function createErrorMessage(cause: unknown, t: CronTranslator): string {
   const message = cause instanceof Error ? cause.message : String(cause)
   if (message.includes('invalid_prompt:')) return t('createErrorPrompt')
   if (message.includes('invalid_cron_expression:')) return t('createErrorCron')
@@ -144,27 +227,29 @@ function createErrorMessage(cause: unknown, t: CronPanelProps['t']): string {
   if (message.includes('invalid_selector:')) return t('createErrorSchedule')
   if (message.includes('invalid_target:')) return t('createErrorTarget')
   if (message.includes('payload.cwd')) return t('createErrorTarget')
+  if (message.includes('not_found:')) return t('errorMissing', { id: 'task' })
   return message
 }
 
-export function CronPanel({ connection, t, useSessions, useWorkspaces, wide }: CronPanelProps) {
-  const [open, setOpen] = useState(false)
+export function CronScheduleView({ connection, t, useSessions, useWorkspaces }: CronScheduleProps): JSX.Element {
   const [list, setList] = useState<CronListWire | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [filter, setFilter] = useState<Filter>('all')
-  const [creating, setCreating] = useState(false)
+  const [filter, setFilter] = useState<TabId>('create')
   const [draft, setDraft] = useState<Draft>(() => initialDraft())
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([])
   const [modelsState, setModelsState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
-  const triggerButton = useRef<HTMLButtonElement | null>(null)
-  const closeButton = useRef<HTMLButtonElement | null>(null)
   const titleId = useId()
   const currentSession = useSessions(state => state.current)
-  const workspaces = useWorkspaces(state => state.items ?? [])
+  const workspaceItems = useWorkspaces(state => state.items ?? [])
+  const workspaces = useMemo(
+    () => workspaceItems.filter(item => !isMountRootWorkspace(item.path)),
+    [workspaceItems],
+  )
 
   const suggestedCwd = useMemo(() => {
     if (currentSession) {
@@ -174,23 +259,28 @@ export function CronPanel({ connection, t, useSessions, useWorkspaces, wide }: C
     return workspaces[0]?.path ?? ''
   }, [currentSession, workspaces])
 
-  const beginCreate = useCallback((): void => {
-    setCreating(true)
+  const creating = filter === 'create'
+  const editing = editingId !== null
+
+  useEffect(() => {
+    if (!creating || editing || (draft.cwd ?? '').trim()) return
+    if (suggestedCwd) setDraft(current => ({ ...current, cwd: suggestedCwd }))
+  }, [creating, draft.cwd, editing, suggestedCwd])
+
+  const resetDraft = useCallback((): void => {
     setDraft(initialDraft(suggestedCwd))
-    setError(null)
-    setNotice(null)
+    setEditingId(null)
   }, [suggestedCwd])
 
-  const close = useCallback((): void => {
-    setOpen(false)
-    setCreating(false)
-    setDraft(initialDraft())
+  const beginEdit = useCallback((job: CronJobWire): void => {
+    setEditingId(job.id)
+    setDraft(draftFromJob(job, suggestedCwd))
+    setFilter('create')
     setExpanded(null)
     setConfirmRemove(null)
     setError(null)
     setNotice(null)
-    triggerButton.current?.focus()
-  }, [])
+  }, [suggestedCwd])
 
   const refresh = useCallback(async (signal?: AbortSignal): Promise<void> => {
     const next = await callRpc<CronListWire>(connection, 'list', {}, signal)
@@ -201,15 +291,15 @@ export function CronPanel({ connection, t, useSessions, useWorkspaces, wide }: C
   const loadModels = useCallback(async (signal?: AbortSignal): Promise<void> => {
     setModelsState('loading')
     try {
-      const response = await connection.api.llm.models({})
+      let groups = await fetchCronModelGroups(signal)
       if (signal?.aborted) return
-      if (!response.result.ok) {
+      if (groups === null) {
         setModelsState('error')
         setModelOptions([])
         return
       }
       const options: ModelOption[] = []
-      for (const group of response.result.value.groups ?? []) {
+      for (const group of groups) {
         for (const model of group.models ?? []) {
           options.push({
             key: encodeModelKey(group.id, model.id),
@@ -227,10 +317,9 @@ export function CronPanel({ connection, t, useSessions, useWorkspaces, wide }: C
         setModelOptions([])
       }
     }
-  }, [connection])
+  }, [])
 
   useEffect(() => {
-    if (!open) return undefined
     const controller = new AbortController()
     void refresh(controller.signal).catch(() => {
       if (!controller.signal.aborted) setError(t('errorLoad'))
@@ -243,23 +332,11 @@ export function CronPanel({ connection, t, useSessions, useWorkspaces, wide }: C
       controller.abort()
       clearInterval(timer)
     }
-  }, [loadModels, open, refresh, t])
-
-  useEffect(() => {
-    if (!open) return undefined
-    closeButton.current?.focus()
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        close()
-      }
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => { document.removeEventListener('keydown', onKeyDown) }
-  }, [close, open])
+  }, [loadModels, refresh, t])
 
   const jobs = list?.jobs ?? []
-  const visibleJobs = useMemo(() => jobs.filter(job => visibleFor(job, filter)), [filter, jobs])
+  const listFilter: Filter = creating ? 'all' : filter
+  const visibleJobs = useMemo(() => jobs.filter(job => visibleFor(job, listFilter)), [listFilter, jobs])
   const counts = useMemo(() => ({
     all: jobs.length,
     active: jobs.filter(job => job.state === 'active' && !job.paused).length,
@@ -297,7 +374,7 @@ export function CronPanel({ connection, t, useSessions, useWorkspaces, wide }: C
     }
   }
 
-  const submitCreate = async (): Promise<void> => {
+  const submitForm = async (): Promise<void> => {
     if (draft.prompt.trim().length === 0) {
       setError(t('errorPrompt'))
       return
@@ -314,14 +391,21 @@ export function CronPanel({ connection, t, useSessions, useWorkspaces, wide }: C
       setError(t('errorWorkspaceForModel'))
       return
     }
-    setBusy('create')
+    setBusy(editing ? `edit:${editingId}` : 'create')
     setError(null)
     setNotice(null)
     try {
-      const outcome = await callRpc<CronAddWire>(connection, 'add', createPayload(draft, currentSession))
-      setNotice(outcome.deduplicated ? t('noticeDeduplicated', { id: outcome.job.id }) : t('noticeCreated', { id: outcome.job.id }))
-      setDraft(initialDraft(suggestedCwd))
-      setCreating(false)
+      if (editing && editingId) {
+        const outcome = await callRpc<CronEditWire>(connection, 'edit', {
+          id: editingId,
+          ...createPayload(draft, undefined),
+        })
+        setNotice(t('noticeUpdated', { id: outcome.job.id }))
+      } else {
+        const outcome = await callRpc<CronAddWire>(connection, 'add', createPayload(draft, currentSession))
+        setNotice(outcome.deduplicated ? t('noticeDeduplicated', { id: outcome.job.id }) : t('noticeCreated', { id: outcome.job.id }))
+      }
+      resetDraft()
       setFilter('all')
       await refresh()
     } catch (cause) {
@@ -332,16 +416,20 @@ export function CronPanel({ connection, t, useSessions, useWorkspaces, wide }: C
   }
 
   const cancelCreate = (): void => {
-    setCreating(false)
-    setDraft(initialDraft(suggestedCwd))
+    setFilter('all')
+    resetDraft()
     setError(null)
     setNotice(null)
   }
 
-  const selectFilter = (next: Filter): void => {
+  const selectTab = (next: TabId): void => {
     setFilter(next)
-    setCreating(false)
-    setDraft(initialDraft(suggestedCwd))
+    if (next === 'create') {
+      resetDraft()
+    } else {
+      setDraft(initialDraft(suggestedCwd))
+      setEditingId(null)
+    }
     setExpanded(null)
     setConfirmRemove(null)
     setError(null)
@@ -349,164 +437,130 @@ export function CronPanel({ connection, t, useSessions, useWorkspaces, wide }: C
   }
 
   return (
-    <>
-      <button
-        type="button"
-        title={t('label')}
-        aria-label={t('label')}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        className={`${css.trigger}${wide ? '' : ` ${css.rail}`}`}
-        ref={triggerButton}
-        onClick={() => { setError(null); setNotice(null); setOpen(true) }}
-      >
-        <IconClockOutline16 size={wide ? 16 : 18} />
-        {wide && <span>{t('label')}</span>}
-      </button>
-      {open && (
-        <div className={css.overlay} role="presentation">
-          <div className={css.mask} aria-hidden="true" onClick={close} />
-          <section className={css.panel} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy !== null}>
-            <aside className={css.nav}>
-              <div className={css.navTitle} id={titleId}>{t('label')}</div>
-              <div className={css.navList}>
-                {(['all', 'active', 'paused', 'done'] as const).map(id => (
-                  <button
-                    key={id}
-                    type="button"
-                    className={`${css.navCell}${filter === id ? ` ${css.navActive}` : ''}`}
-                    aria-current={filter === id ? 'true' : undefined}
-                    onClick={() => { selectFilter(id) }}
-                  >
-                    <span>{t(`filter.${id}`)}</span>
-                    <span className={css.count}>{counts[id]}</span>
-                  </button>
-                ))}
-              </div>
-              <div className={css.navHint}>{t('navHint')}</div>
-            </aside>
-            <main className={css.content}>
-              <header className={css.header}>
-                <div>
-                  <h2>{creating ? t('createTitle') : t(`filter.${filter}`)}</h2>
-                  <p>{creating ? t('createSubtitle') : t('headerSummary', { count: visibleJobs.length })}</p>
-                </div>
-                <div className={css.headerActions}>
-                  {!creating && (
-                    <button type="button" className={css.primaryButton} onClick={beginCreate}>
-                      <IconPlusOutline16 />
-                      {t('newTask')}
-                    </button>
-                  )}
-                  <button ref={closeButton} type="button" className={css.iconButton} aria-label={t('close')} onClick={close}>
-                    <IconCloseOutline16 size={16} />
-                  </button>
-                </div>
-              </header>
-              {(error !== null || notice !== null) && (
-                <div className={error !== null ? css.error : css.notice} role={error !== null ? 'alert' : 'status'}>
-                  {error ?? notice}
-                </div>
+    <div className={css.rootInner}>
+      <div className={css.bar}>
+        <div className={css.filterMode} role="tablist" aria-label={t('label')}>
+          {TAB_ORDER.map(id => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              id={id === filter ? titleId : undefined}
+              className={`${css.filterBtn}${filter === id ? ` ${css.filterBtnActive}` : ''}${id === 'create' ? ` ${css.filterBtnCreate}` : ''}`}
+              aria-selected={filter === id}
+              onClick={() => { selectTab(id) }}
+            >
+              {id === 'create' && editing ? t('filter.edit') : t(`filter.${id}`)}
+              {id !== 'create' && (
+                <span className={css.count}>{counts[id]}</span>
               )}
-              <div className={css.body}>
-                {creating ? (
-                  <form className={css.form} onSubmit={(event) => { event.preventDefault(); void submitCreate() }}>
-                    <label className={css.field}>
-                      <span>{t('fieldPrompt')}</span>
-                      <textarea
-                        value={draft.prompt}
-                        rows={4}
-                        placeholder={t('promptPlaceholder')}
-                        onChange={event => { setDraft(current => ({ ...current, prompt: event.target.value })); setError(null) }}
-                      />
-                    </label>
-                    <fieldset className={css.fieldset}>
-                      <legend>{t('fieldScheduleType')}</legend>
-                      <div className={css.segmented}>
-                        {(['cron', 'at'] as const).map(kind => (
-                          <button
-                            key={kind}
-                            type="button"
-                            className={draft.kind === kind ? css.segmentActive : undefined}
-                            aria-pressed={draft.kind === kind}
-                            onClick={() => { setDraft(current => ({ ...current, kind })); setError(null) }}
-                          >
-                            {t(`kind.${kind}`)}
-                          </button>
-                        ))}
-                      </div>
-                    </fieldset>
-                    {draft.kind === 'cron' ? (
-                      <div className={css.fieldGrid}>
-                        <label className={css.field}>
-                          <span>{t('fieldCron')}</span>
-                          <input value={draft.cron} spellCheck={false} onChange={event => { setDraft(current => ({ ...current, cron: event.target.value })); setError(null) }} />
-                          <small>{t('cronHint')}</small>
-                        </label>
-                        <label className={css.field}>
-                          <span>{t('fieldTimeZone')}</span>
-                          <input value={draft.timeZone} spellCheck={false} onChange={event => { setDraft(current => ({ ...current, timeZone: event.target.value })); setError(null) }} />
-                          <small>{t('timeZoneHint')}</small>
-                        </label>
-                      </div>
-                    ) : (
-                      <label className={css.field}>
-                        <span>{t('fieldAt')}</span>
-                        <input type="datetime-local" value={draft.at} onChange={event => { setDraft(current => ({ ...current, at: event.target.value })); setError(null) }} />
-                        <small>{t('atHint')}</small>
-                      </label>
-                    )}
-                    <div className={css.fieldGrid}>
-                      <label className={css.field}>
-                        <span>{t('fieldWorkspace')}</span>
-                        <select
-                          value={draft.cwd}
-                          onChange={event => { setDraft(current => ({ ...current, cwd: event.target.value })); setError(null) }}
-                        >
-                          <option value="">{t('workspaceDefault')}</option>
-                          {workspaces.map(workspace => (
-                            <option key={workspace.workspaceId} value={workspace.path}>
-                              {workspace.title || workspace.path}
-                            </option>
-                          ))}
-                          {draft.cwd && !workspaces.some(workspace => workspace.path === draft.cwd) && (
-                            <option value={draft.cwd}>{draft.cwd}</option>
-                          )}
-                        </select>
-                        <small>{t('workspaceHint')}</small>
-                      </label>
-                      <label className={css.field}>
-                        <span>{t('fieldModel')}</span>
-                        <select
-                          value={draft.modelKey}
-                          disabled={modelsState === 'loading'}
-                          onChange={event => { setDraft(current => ({ ...current, modelKey: event.target.value })); setError(null) }}
-                        >
-                          <option value="">{t('modelDefault')}</option>
-                          {modelOptions.map(option => (
-                            <option key={option.key} value={option.key}>{option.label}</option>
-                          ))}
-                        </select>
-                        <small>
-                          {modelsState === 'loading' ? t('modelLoading')
-                            : modelsState === 'error' ? t('modelUnavailable')
-                              : t('modelHint')}
-                        </small>
-                      </label>
-                    </div>
-                    <div className={css.formActions}>
-                      <button type="button" className={css.secondaryButton} onClick={cancelCreate}>{t('cancel')}</button>
-                      <button type="submit" className={css.primaryButton} disabled={busy === 'create'}>{busy === 'create' ? t('creating') : t('create')}</button>
-                    </div>
-                  </form>
+            </button>
+          ))}
+        </div>
+        <span className={css.meta}>
+          {creating ? (
+            editing ? t('editSubtitle') : t('createSubtitle')
+          ) : (
+            <>
+              <span className={css.metaPrimary}>{t('headerSummary', { count: visibleJobs.length })}</span>
+              <span className={css.metaSep} aria-hidden="true"> · </span>
+              <span className={css.metaHint}>{t('navHint')}</span>
+            </>
+          )}
+        </span>
+      </div>
+      {(error !== null || notice !== null) && (
+        <div className={error !== null ? css.error : css.notice} role={error !== null ? 'alert' : 'status'}>
+          {error ?? notice}
+        </div>
+      )}
+      <div className={`${css.body}${creating ? ` ${css.bodyPad}` : ''}`}>
+        {creating ? (
+          <form className={`${css.form} ${css.formStack}`} onSubmit={(event) => { event.preventDefault(); void submitForm() }}>
+            <div className={css.formSchedule}>
+              <SchedulePicker
+                kind={draft.kind}
+                cron={draft.cron}
+                timeZone={draft.timeZone}
+                at={draft.at}
+                t={t}
+                onKindChange={(kind) => {
+                  setDraft((current) => {
+                    if (kind === 'at' && !current.at.trim()) {
+                      return { ...current, kind, at: defaultAtLocal() }
+                    }
+                    return { ...current, kind }
+                  })
+                  setError(null)
+                }}
+                onChange={(patch) => {
+                  setDraft(current => ({ ...current, ...patch }))
+                  setError(null)
+                }}
+              />
+            </div>
+            <div className={css.fieldGrid}>
+              <label className={css.field}>
+                <span>{t('fieldWorkspace')}</span>
+                <WorkspaceSelect
+                  value={draft.cwd}
+                  defaultLabel={t('workspaceDefault')}
+                  workspaces={workspaces}
+                  extraOptions={
+                    draft.cwd && !workspaces.some(workspace => workspace.path === draft.cwd)
+                      ? [{ value: draft.cwd, label: draft.cwd }]
+                      : []
+                  }
+                  onChange={path => { setDraft(current => ({ ...current, cwd: path })); setError(null) }}
+                />
+                <small>{t('workspaceHint')}</small>
+              </label>
+              <label className={css.field}>
+                <span>{t('fieldModel')}</span>
+                <select
+                  value={draft.modelKey}
+                  disabled={modelsState === 'loading'}
+                  onChange={event => { setDraft(current => ({ ...current, modelKey: event.target.value })); setError(null) }}
+                >
+                  <option value="">{t('modelDefault')}</option>
+                  {modelOptions.map(option => (
+                    <option key={option.key} value={option.key}>{option.label}</option>
+                  ))}
+                </select>
+                <small>
+                  {modelsState === 'loading' ? t('modelLoading')
+                    : modelsState === 'error' ? t('modelUnavailable')
+                      : t('modelHint')}
+                </small>
+              </label>
+            </div>
+            <label className={css.field}>
+              <span>{t('fieldPrompt')}</span>
+              <textarea
+                value={draft.prompt}
+                rows={5}
+                placeholder={t('promptPlaceholder')}
+                onChange={event => { setDraft(current => ({ ...current, prompt: event.target.value })); setError(null) }}
+              />
+            </label>
+            <div className={css.formActions}>
+              <button type="button" className={css.btn} onClick={cancelCreate}>{t('cancel')}</button>
+              <button
+                type="submit"
+                className={`${css.btn} ${css.btnPrimary}`}
+                disabled={busy === 'create' || (editingId !== null && busy === `edit:${editingId}`)}
+              >
+                {editing
+                  ? (busy === `edit:${editingId}` ? t('saving') : t('save'))
+                  : (busy === 'create' ? t('creating') : t('create'))}
+              </button>
+            </div>
+          </form>
                 ) : list === null ? (
                   <div className={css.empty}>{t('loading')}</div>
                 ) : visibleJobs.length === 0 ? (
                   <div className={css.empty}>
-                    <span className={css.emptyIcon}><IconClockOutline16 size={24} /></span>
-                    <h3>{t('emptyTitle')}</h3>
-                    <p>{filter === 'all' ? t('emptyAll') : t('emptyFilter')}</p>
-                    {filter === 'all' && <button type="button" className={css.primaryButton} onClick={beginCreate}>{t('newTask')}</button>}
+                    {listFilter === 'all' ? t('emptyAll') : t('emptyFilter')}
                   </div>
                 ) : (
                   <div className={css.jobList}>
@@ -555,15 +609,16 @@ export function CronPanel({ connection, t, useSessions, useWorkspaces, wide }: C
                               <div className={css.jobActions}>
                                 {job.state === 'active' && (
                                   <>
-                                    <button type="button" className={css.secondaryButton} disabled={busy !== null} onClick={() => { void runAction('fire', job) }}>{t('runNow')}</button>
-                                    <button type="button" className={css.secondaryButton} disabled={busy !== null} onClick={() => { void runAction('pause', job) }}>{job.paused ? t('resume') : t('pause')}</button>
+                                    <button type="button" className={css.btn} disabled={busy !== null} onClick={() => { beginEdit(job) }}>{t('edit')}</button>
+                                    <button type="button" className={css.btn} disabled={busy !== null} onClick={() => { void runAction('fire', job) }}>{t('runNow')}</button>
+                                    <button type="button" className={css.btn} disabled={busy !== null} onClick={() => { void runAction('pause', job) }}>{job.paused ? t('resume') : t('pause')}</button>
                                   </>
                                 )}
                                 {confirmRemove === job.id ? (
                                   <span className={css.confirm}>
                                     <span>{t('confirmRemove')}</span>
                                     <button type="button" className={css.linkButton} onClick={() => { setConfirmRemove(null) }}>{t('cancel')}</button>
-                                    <button type="button" className={css.dangerButton} disabled={busy !== null} onClick={() => { void runAction('remove', job) }}>{t('confirm')}</button>
+                                    <button type="button" className={`${css.btn} ${css.btnDanger}`} disabled={busy !== null} onClick={() => { void runAction('remove', job) }}>{t('confirm')}</button>
                                   </span>
                                 ) : (
                                   <button type="button" className={css.dangerLink} onClick={() => { setConfirmRemove(job.id) }}>{t('remove')}</button>
@@ -576,11 +631,7 @@ export function CronPanel({ connection, t, useSessions, useWorkspaces, wide }: C
                     })}
                   </div>
                 )}
-              </div>
-            </main>
-          </section>
-        </div>
-      )}
-    </>
+      </div>
+    </div>
   )
 }

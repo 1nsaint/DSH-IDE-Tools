@@ -5,7 +5,9 @@ export {
 	listRemoteDirectory,
 	remoteStat,
 	remoteReadFile,
+	remoteReadFileBytes,
 	remoteWriteFile,
+	remoteMkdir,
 	remoteRemove,
 	remoteRename,
 } from "./ssh.js";

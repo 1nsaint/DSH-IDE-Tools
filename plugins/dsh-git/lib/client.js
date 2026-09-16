@@ -17,8 +17,8 @@ window.__ModuleLoader__.load({
 .dg_btn:disabled{opacity:.5;cursor:not-allowed}
 .dg_btnPrimary{background:transparent;color:var(--dsw-alias-state-business-primary);border-color:var(--dsw-alias-state-business-primary);border-width:2px}
 .dg_btnPrimary:hover:not(:disabled){background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent)}
-.dg_body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(220px,1fr) minmax(0,1.4fr);gap:0}
-.dg_list{overflow:auto;border-right:1px solid var(--dsw-alias-border-l2);padding:8px}
+.dg_body{flex:1;min-height:0;overflow:hidden}
+.dg_list{overflow:auto;padding:8px;min-height:0}
 .dg_row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:12px;font-family:var(--ds-font-family-code)}
 .dg_row:hover,.dg_rowActive{background:var(--dsw-alias-interactive-bg-hover)}
 .dg_badge{flex:none;width:28px;text-align:center;font-size:11px;color:var(--dsw-alias-label-tertiary)}
@@ -87,7 +87,7 @@ window.__ModuleLoader__.load({
 .dg_recentHash{flex:none;color:var(--dsw-alias-label-tertiary)}
 .dg_recentMsg{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dg_recentMeta{font-size:11px;color:var(--dsw-alias-label-tertiary);margin-top:2px}
-.dg_history{flex:1;min-height:0;display:grid;grid-template-columns:minmax(240px,0.9fr) minmax(0,1.4fr);gap:0}
+.dg_history{flex:1;min-height:0;overflow:hidden}
 .dg_historyList{overflow:auto;padding:10px 8px;background:var(--dsw-alias-bg-layer-1);display:flex;flex-direction:column;gap:2px}
 .dg_historyList .dg_recentRow{font-family:inherit;padding:10px 12px;border-radius:10px;gap:0}
 .dg_historyList .dg_recentRow:hover{background:color-mix(in srgb,var(--dsw-alias-interactive-bg-hover) 70%,transparent)}
@@ -95,16 +95,16 @@ window.__ModuleLoader__.load({
 .dg_historyList .dg_recentMsg{font-family:inherit;font-size:13px;font-weight:500;line-height:1.4;color:var(--dsw-alias-label-secondary);white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 .dg_historyList .dg_recentRowActive .dg_recentMsg{color:var(--dsw-alias-label-primary);font-weight:600}
 .dg_historyList .dg_recentMeta{font-family:var(--ds-font-family-code);font-size:11px;font-weight:400;letter-spacing:0.01em;color:var(--dsw-alias-label-tertiary);margin-top:4px;opacity:.9}
-.dg_historyDetail{min-height:0;display:flex;flex-direction:column;overflow:hidden;border-left:1px solid var(--dsw-alias-border-l2)}
+.dg_historyDetail{min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .dg_historyHead{padding:12px 14px;border-bottom:1px solid var(--dsw-alias-border-l2);flex-shrink:0}
 .dg_historySubject{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary);margin:0 0 6px;line-height:1.35}
 .dg_historyBody{font-size:12px;color:var(--dsw-alias-label-secondary);white-space:pre-wrap;margin:0 0 8px;line-height:1.45}
 .dg_historyStats{font-size:11px;color:var(--dsw-alias-label-tertiary);font-family:var(--ds-font-family-code)}
-.dg_historySplit{flex:1;min-height:0;display:grid;grid-template-columns:minmax(180px,0.9fr) minmax(0,1.2fr)}
-.dg_historyFiles{overflow:auto;border-right:1px solid var(--dsw-alias-border-l2);padding:8px}
+.dg_historySplit{flex:1;min-height:0;overflow:hidden}
+.dg_historyFiles{overflow:auto;padding:8px;min-height:0}
 @media (max-width:900px){
-.dg_history{grid-template-columns:1fr}
-.dg_historySplit{grid-template-columns:1fr}
+.dg_history{flex:none;min-height:0}
+.dg_historySplit{flex:none;min-height:0}
 }
 .dg_check{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary)}
 .dg_authBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 14px;border-bottom:1px solid var(--dsw-alias-border-l2);font-size:12px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1)}
@@ -157,7 +157,7 @@ window.__ModuleLoader__.load({
 .dg_remoteActions{display:flex;align-items:center;gap:6px;flex:none}
 .dg_filterInput{width:120px;height:28px;flex:none}
 @media (max-width:900px){
-.dg_body{grid-template-columns:1fr}
+.dg_body{flex:none;min-height:0}
 .dg_hub{overflow:auto;padding:10px 12px;-webkit-overflow-scrolling:touch}
 .dg_hubGrid{grid-template-columns:1fr;flex:none;min-height:0;gap:10px}
 .dg_hubColumn{flex:none;min-height:0}
@@ -191,6 +191,12 @@ window.__ModuleLoader__.load({
 				document.head.appendChild(t);
 			}
 			t.textContent = css;
+		}
+
+		function PaneSplit(props) {
+			const Split = typeof window !== "undefined" && window.__dshPaneResizer?.SplitPane;
+			if (Split) return React.createElement(Split, props);
+			return React.createElement("div", { className: props.className }, props.children);
 		}
 
 		const sessionRepoCache = new Map();
@@ -795,8 +801,8 @@ window.__ModuleLoader__.load({
 				if (!local.length) {
 					setPage("list");
 					await loadCloneTargets();
-					await loadRemoteRepos();
 				}
+				await loadRemoteRepos();
 			}, [refreshRepos, loadRemoteRepos, loadCloneTargets]);
 
 			const refreshAll = React.useCallback(async (pathOverride) => {
@@ -807,9 +813,16 @@ window.__ModuleLoader__.load({
 			}, [refreshAuth, refresh, maybeLoadRemotes, loadCloneTargets]);
 
 			React.useEffect(() => {
+				if (!connection) return;
 				ensureStyles();
 				refreshAll();
-			}, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+			}, [sessionId, connection]); // eslint-disable-line react-hooks/exhaustive-deps
+
+			React.useEffect(() => {
+				if (!connection || !auth?.hasHttpsToken || page !== "list") return;
+				if (remoteRepos.length || remoteBusy) return;
+				loadRemoteRepos();
+			}, [connection, auth?.hasHttpsToken, page, remoteRepos.length, remoteBusy, loadRemoteRepos]);
 
 			React.useEffect(() => {
 				const onAuthChanged = () => {
@@ -1885,7 +1898,8 @@ window.__ModuleLoader__.load({
 						signedIn && React.createElement(
 							"div",
 							{ className: "dg_remoteList" },
-							!remoteRepos.length && !remoteBusy && React.createElement("div", { className: "dg_hint" }, "Click Refresh to load your repos."),
+							!remoteRepos.length && remoteBusy && React.createElement("div", { className: "dg_hint" }, "Loading GitHub repos…"),
+							!remoteRepos.length && !remoteBusy && React.createElement("div", { className: "dg_hint" }, "No GitHub repos found. Use Refresh to reload."),
 							filteredRemotes.map((r) => {
 								const local = findLocalForRemote(r);
 								return React.createElement(
@@ -2478,8 +2492,14 @@ window.__ModuleLoader__.load({
 					),
 				),
 				page === "changes" && status?.isRepo && !remoteView && React.createElement(
-					"div",
-					{ className: "dg_body" },
+					PaneSplit,
+					{
+						className: "dg_body",
+						storageKey: "git.changes",
+						defaultRatio: 0.38,
+						minFirst: 200,
+						minSecond: 280,
+					},
 					React.createElement(
 						"div",
 						{ className: "dg_list" },
@@ -2655,8 +2675,14 @@ window.__ModuleLoader__.load({
 					busy || historyBusy ? "Loading history…" : "Open a local repo or a GitHub remote to see history.",
 				),
 				page === "history" && (status?.isRepo || remoteView) && React.createElement(
-					"div",
-					{ className: "dg_history" },
+					PaneSplit,
+					{
+						className: "dg_history",
+						storageKey: "git.history-commits",
+						defaultRatio: 0.34,
+						minFirst: 220,
+						minSecond: 320,
+					},
 					React.createElement(
 						"div",
 						{ className: "dg_list dg_historyList" },
@@ -2707,8 +2733,14 @@ window.__ModuleLoader__.load({
 							),
 						),
 						commitDetail && React.createElement(
-							"div",
-							{ className: "dg_historySplit" },
+							PaneSplit,
+							{
+								className: "dg_historySplit",
+								storageKey: "git.history-files",
+								defaultRatio: 0.36,
+								minFirst: 160,
+								minSecond: 280,
+							},
 							React.createElement(
 								"div",
 								{ className: "dg_historyFiles" },

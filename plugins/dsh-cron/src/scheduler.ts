@@ -37,6 +37,7 @@ export interface CronSchedulerOptions {
 
 export interface CronService {
   add(input: AddJobInput): AddJobResult
+  edit(id: string, input: AddJobInput): AddJobResult
   remove(id: string): boolean
   list(): readonly CronJob[]
   fireNow(id: string): Promise<'submitted' | 'not_found' | 'target_required'>
@@ -59,8 +60,12 @@ export class CronScheduler {
 
   service(): CronService {
     return {
-      add: input => this.addJob(input), remove: id => this.removeJob(id), list: () => this.listJobs(),
-      fireNow: id => this.fireNow(id), setPaused: (id, paused) => this.setPaused(id, paused),
+      add: input => this.addJob(input),
+      edit: (id, input) => this.editJob(id, input),
+      remove: id => this.removeJob(id),
+      list: () => this.listJobs(),
+      fireNow: id => this.fireNow(id),
+      setPaused: (id, paused) => this.setPaused(id, paused),
       setTarget: (id, target) => this.setTarget(id, target),
     }
   }
@@ -117,6 +122,43 @@ export class CronScheduler {
     return { job, deduplicated: false, nextOccurrences: this.preview(job, 3) }
   }
 
+  /** Update prompt / schedule / target on an active job. Preserves pause state and run history. */
+  editJob(id: string, input: AddJobInput): AddJobResult {
+    const job = this.options.store.get(id)
+    if (job === undefined || job.state === 'done') {
+      throw new Error(`not_found: job "${id}" is missing or completed`)
+    }
+    const prompt = input.prompt.trim()
+    if (prompt.length === 0) throw new Error('invalid_prompt: prompt must be non-blank')
+    const allowExistingAt = job.schedule.kind === 'at' ? job.schedule.at : undefined
+    const { schedule, nextAtMs, spec } = this.resolveSchedule(
+      input,
+      allowExistingAt === undefined ? undefined : { allowExistingAt },
+    )
+    const target = input.target ?? this.options.defaultTarget
+    if (target === undefined) throw new Error('missing_target: a fresh Session target cwd is required')
+    validateTarget(target)
+    if (input.concurrencyLimit !== undefined) {
+      const concurrencyLimit = input.concurrencyLimit
+      if (!Number.isSafeInteger(concurrencyLimit) || concurrencyLimit < 1 || concurrencyLimit > 1_000) {
+        throw new Error('invalid_concurrency: concurrencyLimit must be between 1 and 1000')
+      }
+      job.concurrencyLimit = concurrencyLimit
+    }
+    Object.assign(job, {
+      prompt,
+      schedule,
+      target,
+      nextAt: new Date(nextAtMs).toISOString(),
+    })
+    delete job.migrationIssue
+    if (spec !== null) this.specs.set(job.id, spec)
+    else this.specs.delete(job.id)
+    this.options.store.flush()
+    this.arm()
+    return { job, deduplicated: false, nextOccurrences: this.preview(job, 3) }
+  }
+
   removeJob(id: string): boolean {
     const removed = this.options.store.remove(id)
     if (removed) this.specs.delete(id)
@@ -156,7 +198,10 @@ export class CronScheduler {
     return 'submitted'
   }
 
-  private resolveSchedule(input: AddJobInput): { schedule: JobSchedule; nextAtMs: number; spec: CronSpec | null } {
+  private resolveSchedule(
+    input: AddJobInput,
+    opts?: { readonly allowExistingAt?: string },
+  ): { schedule: JobSchedule; nextAtMs: number; spec: CronSpec | null } {
     const hasCron = typeof input.cron === 'string' && input.cron.trim().length > 0
     const hasAt = typeof input.at === 'string' && input.at.trim().length > 0
     if (hasCron === hasAt) throw new Error('invalid_selector: exactly one of cron or at is required')
@@ -178,7 +223,16 @@ export class CronScheduler {
     if (!STRICT_AT.test(at)) throw new Error(`invalid_selector: at must be RFC 3339 with an explicit offset or Z, got "${at}"`)
     const atMs = Date.parse(at)
     if (Number.isNaN(atMs)) throw new Error(`invalid_selector: unparseable RFC 3339 time "${at}"`)
-    if (atMs <= now) throw new Error('not_future: at must be in the future')
+    if (atMs <= now) {
+      const existing = opts?.allowExistingAt
+      if (existing !== undefined) {
+        const existingMs = Date.parse(existing)
+        if (!Number.isNaN(existingMs) && Math.abs(atMs - existingMs) < 1_000) {
+          return { schedule: { kind: 'at', at: new Date(existingMs).toISOString() }, nextAtMs: existingMs, spec: null }
+        }
+      }
+      throw new Error('not_future: at must be in the future')
+    }
     return { schedule: { kind: 'at', at: new Date(atMs).toISOString() }, nextAtMs: atMs, spec: null }
   }
 

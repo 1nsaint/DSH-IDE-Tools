@@ -98,7 +98,7 @@ async function apply(ctx) {
     try {
       const frame = document.querySelector(".pI_x6G_frame");
       const mobile = typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches;
-      const hero = !!document.querySelector(".wSkVaW_root[data-phase=hero]");
+      const hero = !!document.querySelector('[class*="_root"][data-phase=hero]');
       // Hero layout keeps detailsCol at 0px — use the same fixed right drawer as mobile.
       const want = store.open && (mobile || hero);
       if (frame) {
@@ -1420,7 +1420,7 @@ async function apply(ctx) {
       },
       () => {
         const ReactDOM = require("react-dom");
-        const [hero, setHero] = import_react.default.useState(() => !!document.querySelector(".wSkVaW_root[data-phase=hero]"));
+        const [hero, setHero] = import_react.default.useState(() => !!document.querySelector('[class*="_root"][data-phase=hero]'));
         const [chrome, setChrome] = import_react.default.useState(null);
         const [open, setOpenState] = import_react.default.useState(store.open);
         import_react.default.useEffect(() => {
@@ -1429,7 +1429,7 @@ async function apply(ctx) {
           return () => store.listeners.delete(fn);
         }, []);
         import_react.default.useEffect(() => {
-          const check = () => setHero(!!document.querySelector(".wSkVaW_root[data-phase=hero]"));
+          const check = () => setHero(!!document.querySelector('[class*="_root"][data-phase=hero]'));
           check();
           const root = document.getElementById("root") || document.body;
           const mo = new MutationObserver(check);

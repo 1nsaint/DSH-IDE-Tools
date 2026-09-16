@@ -7,8 +7,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 
 const name = "dsh-git";
+const inject = ["connection", "webServer"];
 const RPC_CHANNEL = "/git";
 const execFileAsync = promisify(execFile);
 
@@ -1384,8 +1386,8 @@ async function publishToGithub(repoAbs, cfg, payload = {}) {
 }
 
 function registerRpc(ctx) {
-	const register = ctx.connection.rpc.handle;
-	return register(
+	return registerRpcChannel(
+		ctx,
 		RPC_CHANNEL,
 		async (endpoint, payload) => {
 			try {
@@ -2319,17 +2321,15 @@ function registerRpc(ctx) {
 			} catch (error) {
 				return transportError(error);
 			}
-		},
-		{ authority: "loopback" },
-	);
+		});
 }
 
 function apply(ctx) {
-	ctx.inject(["connection"], (connectionCtx) => {
+	ctx.inject(["connection", "webServer"], (connectionCtx) => {
 		connectionCtx.inject(["sessions"], (scope) => {
 			scope.effect(() => registerRpc(scope), "dsh-git: rpc");
 		});
 	});
 }
 
-export { apply, name };
+export { apply, name, inject };

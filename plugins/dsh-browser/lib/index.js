@@ -8,6 +8,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createReadStream } from "node:fs";
 import { statSync } from "node:fs";
+import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 
 // Relative import to dsh-tools package hosted in dsh-cron's node_modules or global dsh
 let defineTool;
@@ -24,6 +25,7 @@ try {
 }
 
 const name = "dsh-browser";
+const inject = ["connection", "webServer"];
 const RPC_CHANNEL = "/browser";
 const LIVE_PREFIX = "/api/browser-live";
 const GATE_PREFIX = "/api/browser-gate";
@@ -1336,9 +1338,7 @@ function patchCssRuleInTextRaw(cssText, selector, decls) {
 }
 
 function registerRpc(ctx) {
-	return ctx.connection.rpc.handle(
-		RPC_CHANNEL,
-		async (endpoint, payload) => {
+	return registerRpcChannel(ctx, RPC_CHANNEL, async (endpoint, payload) => {
 			try {
 				switch (endpoint) {
 					case "fetch": {
@@ -1449,9 +1449,7 @@ function registerRpc(ctx) {
 			} catch (error) {
 				return transportError(error);
 			}
-		},
-		{ authority: "loopback" }
-	);
+		});
 }
 
 async function runBrowserAction(scope, action, params = {}) {
@@ -1587,7 +1585,7 @@ function apply(ctx) {
 	ctx.inject(["tools"], (toolsScope) => {
 		toolsScope.effect(() => registerTools(toolsScope), "dsh-browser: tools");
 	});
-	ctx.inject(["connection"], (connScope) => {
+	ctx.inject(["connection", "webServer"], (connScope) => {
 		connScope.effect(() => registerRpc(connScope), "dsh-browser: rpc");
 		connScope.inject(["sessions", "webServer"], (scope) => {
 			scope.effect(() => registerLiveRoute(scope), "dsh-browser: live-server");
@@ -1596,4 +1594,4 @@ function apply(ctx) {
 	});
 }
 
-export { apply, name };
+export { apply, name, inject };

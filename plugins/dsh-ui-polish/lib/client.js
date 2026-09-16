@@ -5,15 +5,155 @@ window.__ModuleLoader__.load({
 	factory: (require) => {
 		const PLUGIN = "dsh-ui-polish";
 		const STYLE_ID = "dsh-ui-polish-css";
+		const React = require("react");
+
+		const PANE_STORAGE_PREFIX = "dsh-pane-resizer:";
+
+		function readPaneRatio(key, fallback) {
+			try {
+				const raw = localStorage.getItem(`${PANE_STORAGE_PREFIX}${key}`);
+				const v = raw === null ? NaN : parseFloat(raw);
+				if (Number.isFinite(v) && v >= 0.14 && v <= 0.86) return v;
+			} catch {
+				/* ignore */
+			}
+			return fallback;
+		}
+
+		function writePaneRatio(key, ratio) {
+			try {
+				localStorage.setItem(`${PANE_STORAGE_PREFIX}${key}`, String(ratio));
+			} catch {
+				/* ignore */
+			}
+		}
+
+		function SplitPane(props) {
+			const {
+				storageKey,
+				defaultRatio = 0.45,
+				minFirst = 180,
+				minSecond = 200,
+				className = "",
+				firstClassName = "",
+				secondClassName = "",
+				children,
+			} = props;
+			const kids = React.Children.toArray(children);
+			const hostRef = React.useRef(null);
+			const dragRef = React.useRef(null);
+			const [ratio, setRatio] = React.useState(() => readPaneRatio(storageKey, defaultRatio));
+			const [dividerDrag, setDividerDrag] = React.useState(false);
+
+			React.useEffect(() => {
+				writePaneRatio(storageKey, ratio);
+			}, [storageKey, ratio]);
+
+			const onDividerDown = (e) => {
+				if (e.button !== 0) return;
+				const host = hostRef.current;
+				if (!host) return;
+				e.preventDefault();
+				const rect = host.getBoundingClientRect();
+				if (rect.width < minFirst + minSecond + 24) return;
+				dragRef.current = { startX: e.clientX, startRatio: ratio, width: rect.width };
+				setDividerDrag(true);
+				host.classList.add("dsh-pane-splitDragging");
+				const onMove = (ev) => {
+					const d = dragRef.current;
+					if (!d) return;
+					const dx = ev.clientX - d.startX;
+					let next = d.startRatio + dx / d.width;
+					const minR = minFirst / d.width;
+					const maxR = 1 - minSecond / d.width;
+					next = Math.min(maxR, Math.max(minR, next));
+					setRatio(next);
+				};
+				const onUp = () => {
+					dragRef.current = null;
+					setDividerDrag(false);
+					host.classList.remove("dsh-pane-splitDragging");
+					document.removeEventListener("pointermove", onMove);
+					document.removeEventListener("pointerup", onUp);
+					document.removeEventListener("pointercancel", onUp);
+				};
+				document.addEventListener("pointermove", onMove);
+				document.addEventListener("pointerup", onUp);
+				document.addEventListener("pointercancel", onUp);
+			};
+
+			return React.createElement(
+				"div",
+				{
+					ref: hostRef,
+					className: `dsh-pane-split ${className}`.trim(),
+					style: { "--dsh-pane-a": `${(ratio * 100).toFixed(2)}%` },
+				},
+				React.createElement("div", { className: `dsh-pane-first ${firstClassName}`.trim() }, kids[0]),
+				React.createElement("div", {
+					className: "dsh-pane-divider" + (dividerDrag ? " dsh-pane-dividerDragging" : ""),
+					role: "separator",
+					"aria-orientation": "vertical",
+					"aria-valuenow": Math.round(ratio * 100),
+					tabIndex: 0,
+					onPointerDown: onDividerDown,
+				}),
+				React.createElement("div", { className: `dsh-pane-second ${secondClassName}`.trim() }, kids[1]),
+			);
+		}
+
+		if (typeof window !== "undefined") {
+			window.__dshPaneResizer = { SplitPane, readPaneRatio, writePaneRatio };
+		}
 
 		const css = `
+/* ---- Draggable column splits inside tool tabs (Containers, Git, …) ---- */
+.dsh-pane-split{
+  display:flex;flex-direction:row;flex:1 1 0;min-height:0;min-width:0;overflow:hidden;
+  --dsh-pane-a:45%;
+}
+.dsh-pane-split.dsh-pane-splitDragging,
+.dsh-pane-split.dsh-pane-splitDragging *{
+  cursor:col-resize!important;user-select:none!important;
+}
+.dsh-pane-first{
+  flex:0 0 var(--dsh-pane-a);min-width:0;min-height:0;overflow:hidden;
+  display:flex;flex-direction:column;
+}
+.dsh-pane-second{
+  flex:1 1 0;min-width:0;min-height:0;overflow:hidden;
+  display:flex;flex-direction:column;
+}
+.dsh-pane-divider{
+  flex:none;width:11px;cursor:col-resize;position:relative;touch-action:none;
+  background:transparent;
+}
+.dsh-pane-divider:after{
+  content:"";position:absolute;top:0;bottom:0;left:5px;width:1px;
+  background:var(--dsw-alias-border-l2);pointer-events:none;
+}
+.dsh-pane-divider:before{
+  content:"";position:absolute;top:0;bottom:0;left:3px;width:5px;
+  background:transparent;transition:background .12s;
+}
+.dsh-pane-divider:hover:before,
+.dsh-pane-divider.dsh-pane-dividerDragging:before{
+  background:color-mix(in srgb,var(--dsw-alias-state-business-primary,#5b9dff) 35%,transparent);
+}
+@media (max-width:900px){
+  .dsh-pane-split{flex-direction:column!important}
+  .dsh-pane-first{flex:1 1 0!important;max-height:45vh}
+  .dsh-pane-divider{display:none!important}
+  .dsh-pane-second{flex:1 1 0!important}
+}
+
 /* ---- Chat column: stock is 748px; a bit wider on large screens ---- */
-.wSkVaW_root{
+[class*="_root"]{
   --dsh-chat-content-width:min(920px,100%);
   --dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);
 }
 @media (min-width:1800px){
-  .wSkVaW_root{
+  [class*="_root"]{
     --dsh-chat-content-width:min(1040px,100%);
   }
 }
@@ -23,7 +163,7 @@ window.__ModuleLoader__.load({
  * collapsed-rail layout. One shared gutter; column + card same width.
  */
 @media (max-width:1200px){
-  .wSkVaW_root{
+  [class*="_root"]{
     --dsh-composer-side-clearance:8px;
     --dsh-chat-content-width:100%;
     --dsh-composer-card-max-width:100%;
@@ -32,15 +172,15 @@ window.__ModuleLoader__.load({
     padding-left:var(--dsh-composer-side-clearance)!important;
     padding-right:var(--dsh-composer-side-clearance)!important;
   }
-  .uV2eYG_root{
+  [class*="_root"]{
     box-sizing:border-box!important;
     width:100%!important;
     max-width:100%!important;
     padding-left:var(--dsh-composer-side-clearance)!important;
     padding-right:var(--dsh-composer-side-clearance)!important;
   }
-  .uV2eYG_card,
-  .uV2eYG_notice{
+  [class*="_card"],
+  [class*="_notice"]{
     max-width:100%!important;
     width:100%!important;
   }
@@ -52,42 +192,42 @@ window.__ModuleLoader__.load({
 
   /* Composer toolbar: keep + / mode / model / send on one row.
      Park the context meter in the card's top-right for space. */
-  .uV2eYG_card{
+  [class*="_card"]{
     position:relative!important;
   }
-  .uV2eYG_card .JObwrW_root{
+  [class*="_card"] .JObwrW_root{
     position:absolute!important;
     top:6px!important;
     right:8px!important;
     z-index:3;
     margin:0!important;
   }
-  .uV2eYG_card .uV2eYG_input,
-  .uV2eYG_card .uV2eYG_mirror,
-  .uV2eYG_card .uV2eYG_backdrop{
+  [class*="_card"] [class*="_input"],
+  [class*="_card"] [class*="_mirror"],
+  [class*="_card"] [class*="_backdrop"]{
     padding-right:40px!important;
   }
-  .uV2eYG_row{
+  [class*="_row"]{
     flex-wrap:nowrap!important;
     gap:6px!important;
     align-items:center!important;
   }
-  .uV2eYG_tools,
-  .uV2eYG_modes{
+  [class*="_tools"],
+  [class*="_modes"]{
     gap:6px!important;
     flex:none!important;
   }
-  .uV2eYG_trailing{
+  [class*="_trailing"]{
     flex:1 1 auto!important;
     min-width:0!important;
     gap:6px!important;
     justify-content:flex-end!important;
   }
-  .uV2eYG_trailing > *:not(.JObwrW_root):not(.uV2eYG_primary){
+  [class*="_trailing"] > *:not(.JObwrW_root):not([class*="_primary"]){
     min-width:0!important;
     max-width:min(148px,46vw)!important;
   }
-  .uV2eYG_select{
+  [class*="_select"]{
     max-width:min(148px,46vw)!important;
   }
   .Sh0Q9G_trigger{
@@ -161,7 +301,7 @@ window.__ModuleLoader__.load({
 
 /* ---- Hero workspace row: keep chips on one line without squashing ---- */
 @media (max-width:900px){
-  .wSkVaW_heroWorkspaceRow.dsh-hero-rowReady{
+  [class*="_heroWorkspaceRow"].dsh-hero-rowReady{
     flex-wrap:nowrap !important;
     align-items:center !important;
     gap:6px !important;
@@ -171,16 +311,16 @@ window.__ModuleLoader__.load({
     -webkit-overflow-scrolling:touch;
     scrollbar-width:none;
   }
-  .wSkVaW_heroWorkspaceRow.dsh-hero-rowReady::-webkit-scrollbar{display:none;height:0}
-  .wSkVaW_heroWorkspaceRow.dsh-hero-rowReady .pXSMma_workspace,
-  .wSkVaW_heroWorkspaceRow.dsh-hero-rowReady .cubgiG_seat{
+  [class*="_heroWorkspaceRow"].dsh-hero-rowReady::-webkit-scrollbar{display:none;height:0}
+  [class*="_heroWorkspaceRow"].dsh-hero-rowReady .pXSMma_workspace,
+  [class*="_heroWorkspaceRow"].dsh-hero-rowReady .cubgiG_seat{
     padding-left:8px !important;
     padding-right:8px !important;
     max-width:min(40vw, 148px);
     min-width:0;
     flex:0 1 auto;
   }
-  .wSkVaW_heroWorkspaceRow.dsh-hero-rowReady .cubgiG_seat{
+  [class*="_heroWorkspaceRow"].dsh-hero-rowReady .cubgiG_seat{
     max-width:min(36vw, 132px);
   }
   .dsh-hero-chips{
@@ -200,17 +340,57 @@ window.__ModuleLoader__.load({
   }
 }
 
-/* ---- Slimmer rail already partly in session-tabs; reinforce details drawer host ---- */
+/* ---- Slimmer collapsed sidebar rail (grid override lives in dsh-hero-tools) ---- */
 @media (max-width:900px){
   .pI_x6G_frame[data-dsh-details-drawer="1"] .pI_x6G_handle[data-side=details]{
     display:none !important;
   }
+  .pI_x6G_frame[data-sidebar-collapsed] .pI_x6G_sidebarCol{
+    overflow:hidden!important;
+  }
+}
+
+/* Composer @ / link chips: hover icon → remove (×) */
+[class*="_composerSeat"] [class*="_chip"] [class*="_icon"],
+[class*="_composerSeat"] [class*="_chip"] [class*="_marker"]{
+  position:relative;
+  flex:none;
+  cursor:pointer;
+}
+[class*="_composerSeat"] [class*="_chip"]:hover [class*="_icon"] svg,
+[class*="_composerSeat"] [class*="_chip"]:hover [class*="_marker"]{
+  opacity:0;
+}
+[class*="_composerSeat"] [class*="_chip"] [class*="_icon"]::after,
+[class*="_composerSeat"] [class*="_chip"] [class*="_marker"]::after{
+  content:"×";
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:15px;
+  line-height:1;
+  font-weight:600;
+  opacity:0;
+  color:var(--dsw-alias-state-error-primary);
+  pointer-events:none;
+  border-radius:4px;
+}
+[class*="_composerSeat"] [class*="_chip"]:hover [class*="_icon"]::after,
+[class*="_composerSeat"] [class*="_chip"]:hover [class*="_marker"]::after{
+  opacity:1;
+  pointer-events:auto;
+}
+[class*="_composerSeat"] [class*="_chip"]:hover [class*="_icon"]:hover::after,
+[class*="_composerSeat"] [class*="_chip"]:hover [class*="_marker"]:hover::after{
+  background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 14%,transparent);
 }
 
 /* Composer send + plugin primaries: accent outline, no solid fill */
 [class*="primaryButton"],
 
-.uV2eYG_primary,
+[class*="_primary"],
 .dg_btnPrimary,
 .db_btnPrimary,
 .dd_btnPrimary,
@@ -225,8 +405,8 @@ window.__ModuleLoader__.load({
 }
 [class*="primaryButton"] svg,
 [class*="primaryButton"] path,
-.uV2eYG_primary svg,
-.uV2eYG_primary path,
+[class*="_primary"] svg,
+[class*="_primary"] path,
 .dg_btnPrimary svg,
 .db_btnPrimary svg,
 .dd_btnPrimary svg,
@@ -236,8 +416,8 @@ window.__ModuleLoader__.load({
   fill:currentColor!important;
 }
 [class*="primaryButton"]:hover:not(:disabled),
-.uV2eYG_primary:hover:not(:disabled),
-.uV2eYG_primary:focus-visible:not(:disabled),
+[class*="_primary"]:hover:not(:disabled),
+[class*="_primary"]:focus-visible:not(:disabled),
 .dg_btnPrimary:hover:not(:disabled),
 .db_btnPrimary:hover:not(:disabled),
 .dd_btnPrimary:hover:not(:disabled),
@@ -249,7 +429,7 @@ window.__ModuleLoader__.load({
   color:var(--dsw-alias-state-business-primary)!important;
 }
 [class*="primaryButton"]:disabled,
-.uV2eYG_primary:disabled,
+[class*="_primary"]:disabled,
 .dg_btnPrimary:disabled,
 .db_btnPrimary:disabled,
 .dd_btnPrimary:disabled,
@@ -443,15 +623,15 @@ window.__ModuleLoader__.load({
 		function isSidebarExpanded() {
 			const frame = document.querySelector(".pI_x6G_frame");
 			if (frame && !frame.hasAttribute("data-sidebar-collapsed")) return true;
-			const root = document.querySelector(".hHd-Xa_root");
-			if (root && !root.classList.contains("hHd-Xa_collapsed")) return true;
+			const root = document.querySelector('[class*="_root"]');
+			if (root && ![...root.classList].some((c) => c.endsWith("_collapsed"))) return true;
 			return false;
 		}
 
 		function clickSidebarToggle() {
 			const btn =
-				document.querySelector("button.hHd-Xa_toggle") ||
-				document.querySelector(".hHd-Xa_toggle");
+				document.querySelector('button[class*="_toggle"]') ||
+				document.querySelector('[class*="_toggle"]');
 			if (btn instanceof HTMLElement) {
 				btn.click();
 				return true;
@@ -482,7 +662,7 @@ window.__ModuleLoader__.load({
 				if (!isTouchUi()) return;
 				if (e.pointerType && e.pointerType !== "touch" && e.pointerType !== "pen") return;
 				const el = e.target && e.target.closest
-					? e.target.closest("[title], [data-dsh-title], button.hHd-Xa_toggle, button.hHd-Xa_iconButton, button.hHd-Xa_newSession")
+					? e.target.closest('[title], [data-dsh-title], button[class*="_toggle"], button[class*="_iconButton"], button[class*="_newSession"]')
 					: null;
 				if (!(el instanceof HTMLElement)) return;
 				stripTitle(el);
@@ -496,7 +676,7 @@ window.__ModuleLoader__.load({
 			const onClick = (e) => {
 				if (!isTouchUi()) return;
 				const el = e.target && e.target.closest
-					? e.target.closest("button.hHd-Xa_toggle, button.hHd-Xa_iconButton, button.hHd-Xa_newSession, [data-dsh-title]")
+					? e.target.closest('button[class*="_toggle"], button[class*="_iconButton"], button[class*="_newSession"], [data-dsh-title]')
 					: null;
 				if (el instanceof HTMLElement) stripTitle(el);
 			};
@@ -521,11 +701,79 @@ window.__ModuleLoader__.load({
 		 * When the sidebar is expanded, brand / "New session" should collapse the
 		 * sidebar instead of navigating to the empty hero.
 		 */
+		function resolveActiveSessionId(sessions) {
+			try {
+				const snap = sessions?.list?.getSnapshot?.();
+				if (typeof snap?.current === "string" && snap.current) return snap.current;
+			} catch { /* ignore */ }
+			try {
+				const parsed = JSON.parse(localStorage.getItem("dsh.sessions.current") || "null");
+				return parsed?.sessionId || null;
+			} catch {
+				return null;
+			}
+		}
+
+		function composerEditorFor(conversation, sessions) {
+			const sessionId = resolveActiveSessionId(sessions);
+			if (!sessionId || !conversation?.input) return null;
+			try {
+				const shell = conversation.input.shell(sessionId);
+				return shell?.editor || null;
+			} catch {
+				return null;
+			}
+		}
+
+		/** Remove one reference-chip decorator node whose portal contains chipEl. */
+		function removeComposerReferenceChip(editor, chipEl) {
+			if (!editor?.update || !chipEl) return false;
+			let removed = false;
+			editor.update(() => {
+				const map = editor.getEditorState()?._nodeMap;
+				if (!map) return;
+				for (const node of map.values()) {
+					if (!node || typeof node.getType !== "function") continue;
+					if (node.getType() !== "reference-chip") continue;
+					const host = editor.getElementByKey(node.getKey());
+					if (!host) continue;
+					if (host === chipEl || host.contains(chipEl) || chipEl.contains(host)) {
+						node.remove();
+						removed = true;
+						break;
+					}
+				}
+			}, { discrete: true });
+			return removed;
+		}
+
+		function installComposerChipRemove(getConversation, getSessions) {
+			if (typeof document === "undefined") return () => {};
+
+			const onPointerDown = (e) => {
+				if (e.button !== 0) return;
+				const icon = e.target?.closest?.('[class*="_icon"], [class*="_marker"]');
+				if (!(icon instanceof HTMLElement)) return;
+				const chip = icon.closest('[class*="_chip"]');
+				if (!(chip instanceof HTMLElement)) return;
+				if (!chip.closest('[class*="_composerSeat"]')) return;
+				e.preventDefault();
+				e.stopPropagation();
+				const conversation = typeof getConversation === "function" ? getConversation() : getConversation;
+				const sessions = typeof getSessions === "function" ? getSessions() : getSessions;
+				const editor = composerEditorFor(conversation, sessions);
+				removeComposerReferenceChip(editor, chip);
+			};
+
+			document.addEventListener("pointerdown", onPointerDown, true);
+			return () => document.removeEventListener("pointerdown", onPointerDown, true);
+		}
+
 		function installBrandClosesSidebar(getLayout) {
 			if (typeof document === "undefined") return () => {};
 			const onClick = (e) => {
 				const brand = e.target && e.target.closest
-					? e.target.closest("button.hHd-Xa_brand")
+					? e.target.closest('button[class*="_brand"]')
 					: null;
 				if (!(brand instanceof HTMLElement)) return;
 				if (!isSidebarExpanded()) return;
@@ -547,21 +795,25 @@ window.__ModuleLoader__.load({
 			return () => document.removeEventListener("click", onClick, true);
 		}
 
-		const inject = ["layout"];
+		const inject = ["layout", "conversation", "sessions"];
 
 		function apply(ctx) {
 			ensureStyles();
 			const getLayout = () => ctx.layout;
+			const getConversation = () => ctx.get("conversation");
+			const getSessions = () => ctx.get("sessions");
 
 			ctx.effect(() => {
 				ensureStyles();
 				const stopTips = installTooltipGuard();
 				const stopBrand = installBrandClosesSidebar(getLayout);
 				const stopZh = installZhChromeEnglish();
+				const stopChipRemove = installComposerChipRemove(getConversation, getSessions);
 				return () => {
 					stopTips();
 					stopBrand();
 					stopZh();
+					stopChipRemove();
 				};
 			}, `${PLUGIN}: chrome`);
 		}
