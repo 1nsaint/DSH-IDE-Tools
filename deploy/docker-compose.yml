@@ -47,6 +47,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-${GEMINI_API_KEY:-}}
+      # Host Ollama for AI Metrics proxy (/ollama-metrics-api → this)
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://172.17.0.1:11434}
     group_add:
       - "${DOCKER_GID:-983}"
     volumes:

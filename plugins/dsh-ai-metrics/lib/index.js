@@ -1,6 +1,7 @@
 /**
- * Host half: same-origin proxy for /jetson-metrics-api/* → Jetson metrics-api,
- * plus centralized storage for metrics configuration in plugins-data/dsh-ai-metrics.json.
+ * Host half: same-origin proxies for metrics + plugins-data config store.
+ * - /jetson-metrics-api/* → Jetson metrics-api (optional)
+ * - /ollama-metrics-api/* → host Ollama (browser cannot hit :11434 directly — CORS)
  */
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -10,7 +11,10 @@ import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 const name = "dsh-ai-metrics";
 const inject = ["webServer", "connection"];
 const PROXY_PREFIX = "/jetson-metrics-api";
+const OLLAMA_PROXY_PREFIX = "/ollama-metrics-api";
 const DEFAULT_UPSTREAM = "http://192.168.0.146:8001";
+/** Docker→host bridge; override with OLLAMA_BASE_URL (e.g. http://192.168.0.50:11434). */
+const DEFAULT_OLLAMA_UPSTREAM = "http://172.17.0.1:11434";
 const RPC_CHANNEL = "/ai-metrics-config";
 
 function sendJson(res, status, body) {
@@ -89,10 +93,9 @@ function registerRpc(ctx) {
 		});
 }
 
-function apply(ctx) {
-	const upstreamBase = DEFAULT_UPSTREAM.replace(/\/+$/, "");
-
-	const handler = async (req, res) => {
+function makePrefixProxy(ctx, { prefix, upstreamBase, label, timeoutMs = 20_000 }) {
+	const base = String(upstreamBase || "").replace(/\/+$/, "");
+	return async (req, res) => {
 		try {
 			const method = (req.method || "GET").toUpperCase();
 			if (method !== "GET" && method !== "HEAD") {
@@ -100,13 +103,13 @@ function apply(ctx) {
 				return;
 			}
 			const url = new URL(req.url || "/", "http://localhost");
-			if (!url.pathname.startsWith(PROXY_PREFIX)) {
+			if (!url.pathname.startsWith(prefix)) {
 				sendJson(res, 404, { ok: false, error: "not found" });
 				return;
 			}
-			const suffix = url.pathname.slice(PROXY_PREFIX.length) || "/";
-			const target = new URL(suffix + url.search, `${upstreamBase}/`);
-			if (target.origin !== new URL(upstreamBase).origin) {
+			const suffix = url.pathname.slice(prefix.length) || "/";
+			const target = new URL(suffix + url.search, `${base}/`);
+			if (target.origin !== new URL(base).origin) {
 				sendJson(res, 400, { ok: false, error: "refusing proxy escape" });
 				return;
 			}
@@ -114,8 +117,7 @@ function apply(ctx) {
 			const upstream = await fetch(target, {
 				method,
 				headers: { accept: "application/json" },
-				// /api/ai/active on Jetson can exceed 8s under load; 20s avoids false 502s.
-				signal: AbortSignal.timeout(20_000),
+				signal: AbortSignal.timeout(timeoutMs),
 			});
 			const buf = Buffer.from(await upstream.arrayBuffer());
 			res.writeHead(upstream.status, {
@@ -130,19 +132,43 @@ function apply(ctx) {
 			res.end(buf);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			ctx.logger?.warn?.(`[${name}] jetson metrics proxy failed: ${message}`);
+			ctx.logger?.warn?.(`[${name}] ${label} proxy failed: ${message}`);
 			sendJson(res, 502, { ok: false, error: "upstream metrics unreachable", detail: message });
 		}
 	};
+}
+
+function apply(ctx) {
+	const jetsonUpstream = (process.env.JETSON_METRICS_URL || DEFAULT_UPSTREAM).replace(/\/+$/, "");
+	const ollamaUpstream = (process.env.OLLAMA_BASE_URL || DEFAULT_OLLAMA_UPSTREAM).replace(/\/+$/, "");
 
 	ctx.effect(
 		() =>
 			ctx.webServer.register({
 				kind: "prefix",
 				path: PROXY_PREFIX,
-				handler,
+				handler: makePrefixProxy(ctx, {
+					prefix: PROXY_PREFIX,
+					upstreamBase: jetsonUpstream,
+					label: "jetson metrics",
+				}),
 			}),
 		`${name}: jetson-metrics proxy`,
+	);
+
+	ctx.effect(
+		() =>
+			ctx.webServer.register({
+				kind: "prefix",
+				path: OLLAMA_PROXY_PREFIX,
+				handler: makePrefixProxy(ctx, {
+					prefix: OLLAMA_PROXY_PREFIX,
+					upstreamBase: ollamaUpstream,
+					label: "ollama metrics",
+					timeoutMs: 8_000,
+				}),
+			}),
+		`${name}: ollama-metrics proxy`,
 	);
 
 	ctx.inject(["connection", "webServer"], (scope) => {

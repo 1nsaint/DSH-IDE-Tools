@@ -919,7 +919,7 @@ window.__ModuleLoader__.load({
 					value: cfg.url,
 					onChange: (e) => set({ url: e.target.value }),
 					placeholder: cfg.adapter === "ollama"
-						? "http://192.168.0.146:11434"
+						? "/ollama-metrics-api  (or http://HOST:11434)"
 						: cfg.adapter === "prometheus"
 							? "http://host:8080/metrics"
 							: "/jetson-metrics-api/api/ai/active",
