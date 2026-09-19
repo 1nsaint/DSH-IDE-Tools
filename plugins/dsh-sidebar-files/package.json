@@ -1,6 +1,6 @@
 {
 	"name": "dsh-sidebar-files",
-	"version": "0.3.27",
+	"version": "0.3.36",
 	"description": "Workspaces Sessions \u2194 Files; file-mode search; Live Server; drag into chat.",
 	"type": "module",
 	"main": "lib/index.js",

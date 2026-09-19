@@ -82,9 +82,18 @@ export const IconCloseOutline16 = ({ size = 16, className }: IconProps): ReactEl
   </svg>
 )
 
+/** Compact list glyph for "all tasks". */
+export const IconListOutline16 = ({ size = 16, className }: IconProps): ReactElement => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+    <path d="M3.25 4.25h9.5a.75.75 0 0 0 0-1.5H3.25a.75.75 0 0 0 0 1.5Z" fill="currentColor" />
+    <path d="M3.25 8.75h9.5a.75.75 0 0 0 0-1.5H3.25a.75.75 0 0 0 0 1.5Z" fill="currentColor" />
+    <path d="M3.25 13.25h9.5a.75.75 0 0 0 0-1.5H3.25a.75.75 0 0 0 0 1.5Z" fill="currentColor" />
+  </svg>
+)
+
 /** Compact plus glyph for the create action. */
 export const IconPlusOutline16 = ({ size = 16, className }: IconProps): ReactElement => (
-  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
     <path d="M8 2.25a.75.75 0 0 1 .75.75v4.25H13a.75.75 0 0 1 0 1.5H8.75V13a.75.75 0 0 1-1.5 0V8.75H3a.75.75 0 0 1 0-1.5h4.25V3A.75.75 0 0 1 8 2.25Z" fill="currentColor" />
   </svg>
 )

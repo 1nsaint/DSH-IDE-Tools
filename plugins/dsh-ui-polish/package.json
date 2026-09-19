@@ -1,6 +1,6 @@
 {
   "name": "dsh-ui-polish",
-  "version": "0.1.11",
+  "version": "0.1.20",
   "description": "Cross-cutting UI polish: wider chat, mobile composer, outline send button, settings scrollbars, sticky-tooltip fix, sidebar brand.",
   "type": "module",
   "main": "lib/index.js",

@@ -12,7 +12,7 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-typert-protocol": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.5-rc.2",
     "dsh-automation": "link:__DSH_LINK_PREFIX__/plugins/dsh-automation",
     "dsh-cron": "link:__DSH_LINK_PREFIX__/plugins/dsh-cron",
     "dsh-notify": "link:__DSH_LINK_PREFIX__/plugins/dsh-notify",
@@ -43,6 +43,8 @@
     "dsh-plugin-list-filter": "link:__DSH_LINK_PREFIX__/plugins/dsh-plugin-list-filter",
     "dsh-ui-polish": "link:__DSH_LINK_PREFIX__/plugins/dsh-ui-polish",
     "dsh-runtime-clock": "link:__DSH_LINK_PREFIX__/plugins/dsh-runtime-clock",
-    "dsh-split-view": "link:__DSH_LINK_PREFIX__/plugins/dsh-split-view"
+    "dsh-split-view": "link:__DSH_LINK_PREFIX__/plugins/dsh-split-view",
+    "dsh-local-agent": "link:__DSH_LINK_PREFIX__/plugins/dsh-local-agent",
+    "dsh-mcp-manager": "link:__DSH_LINK_PREFIX__/plugins/dsh-mcp-manager"
   }
 }

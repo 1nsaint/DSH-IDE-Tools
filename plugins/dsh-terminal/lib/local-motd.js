@@ -35,24 +35,11 @@ function shortPath(cwd) {
  * @returns {string}
  */
 export function buildLocalMotd(opts) {
-	const { ctx, sessionId, cwd, cols = 80, geminiKeySet = false, geminiInstalled = false } = opts;
+	const { ctx, sessionId, cwd, cols = 80 } = opts;
 	const label = workspaceLabel(ctx, sessionId, cwd);
 	const path = shortPath(cwd);
 	const nodeVer = process.version;
 	const width = Math.min(Math.max(cols, 52), 100);
-
-	const geminiLines = geminiInstalled
-		? [
-				" * Gemini: run  gemini  → choose Login with Google (Pro / Code Assist)",
-				"   Ctrl+click (or Cmd+click) the auth URL → paste code back in the terminal",
-			]
-		: [
-				" * Gemini CLI: Commands → Install Gemini CLI (once, under ~/.local)",
-				"   then  gemini  → Login with Google · Ctrl+click auth link · paste code",
-			];
-	if (geminiKeySet) {
-		geminiLines.push(" * Optional API key loaded (Settings / compose) — or use Google login above");
-	}
 
 	const lines = [
 		"DeepSeek Harness — local terminal",
@@ -60,8 +47,6 @@ export function buildLocalMotd(opts) {
 		` * Workspace: ${label}  (${path})`,
 		` * Node ${nodeVer} · true color · npm prefix ~/.local (persists on /workspace)`,
 		" * Commands sidebar — insert snippets at the prompt (Enter to run)",
-		"",
-		...geminiLines,
 		"",
 	];
 

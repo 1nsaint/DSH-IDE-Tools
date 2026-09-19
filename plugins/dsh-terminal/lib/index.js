@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { isDsshPath, openSshShell } from "../../dsh-ssh-workspace/lib/ssh.js";
 import { parseDsshPath } from "../../dsh-ssh-workspace/lib/config.js";
 import { buildLocalMotd, localMotdEnabled } from "./local-motd.js";
-import { buildLocalPtyEnv, geminiCliInstalled, resolveGeminiEnv } from "./terminal-env.js";
+import { buildLocalPtyEnv } from "./terminal-env.js";
 import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 
 const name = "dsh-terminal";
@@ -24,6 +24,8 @@ const ASSETS = {
 	"xterm.js": { file: "xterm.js", mime: "application/javascript" },
 	"xterm.css": { file: "xterm.css", mime: "text/css" },
 	"addon-fit.js": { file: "addon-fit.js", mime: "application/javascript" },
+	"addon-canvas.js": { file: "addon-canvas.js", mime: "application/javascript" },
+	"addon-webgl.js": { file: "addon-webgl.js", mime: "application/javascript" },
 };
 
 function loadPty() {
@@ -141,7 +143,11 @@ function spawnLocalPty(pty, shell, cols, rows, cwd, ctx) {
 			);
 		}
 		const env = await buildLocalPtyEnv(ctx);
-		return pty.spawn(shell, ["-l"], {
+		// Do NOT use login shells (`-l`): /etc/profile resets PATH and drops
+		// ~/.local/bin even when we pass it in env. Interactive non-login keeps
+		// the PTY env PATH so npm -g CLIs (gemini, …) resolve by name.
+		const args = shell.includes("bash") ? ["-i"] : [];
+		return pty.spawn(shell, args, {
 			name: "xterm-256color",
 			cols,
 			rows,
@@ -227,16 +233,8 @@ function registerRpc(ctx) {
 						}
 						const shell = process.env.DSH_TERMINAL_SHELL || process.env.SHELL || "/bin/bash";
 						const termId = randomUUID();
-						const geminiEnv = await resolveGeminiEnv(ctx);
 						const localBanner = localMotdEnabled()
-							? buildLocalMotd({
-									ctx,
-									sessionId,
-									cwd,
-									cols,
-									geminiKeySet: Boolean(geminiEnv.GEMINI_API_KEY),
-									geminiInstalled: geminiCliInstalled(),
-								})
+							? buildLocalMotd({ ctx, sessionId, cwd, cols })
 							: "";
 						const proc = await spawnLocalPty(pty, shell, cols, rows, cwd, ctx);
 						const entry = {

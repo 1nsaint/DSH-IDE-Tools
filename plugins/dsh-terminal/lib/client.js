@@ -207,11 +207,11 @@ window.__ModuleLoader__.load({
 		function colorizePlainLine(line) {
 			if (!line) return line;
 
+			// Rich TUI output (agy, vim, etc.) — never rewrite (prompt matcher can false-hit).
+			if (hasAnsi(line)) return line;
+
 			const promptColored = colorizeShellPrompt(line);
 			if (promptColored) return promptColored;
-
-			// Rich TUI output (Gemini, vim, etc.) — do not touch.
-			if (hasAnsi(line)) return line;
 
 			if (/^Welcome to /i.test(line) || /^DeepSeek Harness/i.test(line)) {
 				const acc = getWorkspaceAccentStyles();
@@ -342,12 +342,11 @@ window.__ModuleLoader__.load({
 .dt_tabLabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px}
 .dt_tabClose{
   display:inline-flex;align-items:center;justify-content:center;
-  width:16px;height:16px;padding:0;border:none;border-radius:3px;
-  background:transparent;color:#7a8088;cursor:pointer;font-size:13px;line-height:1;flex:none;
-  opacity:0;
+  width:18px;height:18px;padding:0;border:none;border-radius:4px;
+  background:transparent;color:#9aa0a6;cursor:pointer;font-size:14px;line-height:1;flex:none;
+  opacity:1;
 }
-.dt_tab:hover .dt_tabClose,.dt_tabActive .dt_tabClose{opacity:1}
-.dt_tabClose:hover{background:#2a2d34;color:#e8eaed}
+.dt_tabClose:hover,.dt_tabClose:focus-visible{background:#2a2d34;color:#e8eaed}
 .dt_tabAdd{
   display:inline-flex;align-items:center;justify-content:center;
   width:34px;height:100%;border:none;border-right:1px solid #2a2d34;
@@ -358,7 +357,11 @@ window.__ModuleLoader__.load({
   display:flex;align-items:center;gap:8px;padding:0 10px;flex:none;
   border-left:1px solid #2a2d34;
 }
-.dt_meta{font-size:11px;color:#8b919a;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dt_meta{font-size:11px;color:#8b919a;max-width:min(280px,28vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:720px){
+  .dt_meta{display:none}
+  .dt_actions{padding:0 6px;gap:6px}
+}
 .dt_btn{
   height:24px;padding:0 10px;border-radius:4px;border:1px solid #3a3d45;
   background:transparent;color:#c8ccd2;font-size:11px;cursor:pointer;
@@ -476,6 +479,25 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 			return result.value;
 		}
 
+		/** Serialize PTY writes per term — parallel RPC calls reorder keystrokes over SSH. */
+		const writeChains = new Map();
+		function writePty(connection, termId, data) {
+			const prev = writeChains.get(termId) || Promise.resolve();
+			const next = prev
+				.then(() => callRpc(connection, "write", { termId, data }))
+				.catch((err) => {
+					throw err;
+				});
+			writeChains.set(
+				termId,
+				next.then(
+					() => {},
+					() => {},
+				),
+			);
+			return next;
+		}
+
 		let xtermReady = null;
 
 		function injectCss(content, id) {
@@ -502,7 +524,10 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 		}
 
 		async function ensureXterm(connection) {
-			if (window.Terminal && (window.FitAddon?.FitAddon || typeof window.FitAddon === "function")) return;
+			const hasFit = window.FitAddon?.FitAddon || typeof window.FitAddon === "function";
+			const hasCanvas = window.CanvasAddon?.CanvasAddon || typeof window.CanvasAddon === "function";
+			const hasWebgl = window.WebglAddon?.WebglAddon || typeof window.WebglAddon === "function";
+			if (window.Terminal && hasFit && hasCanvas && hasWebgl) return;
 			if (xtermReady) {
 				try {
 					await xtermReady;
@@ -512,15 +537,19 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 				}
 			}
 			xtermReady = (async () => {
-				const [js, cssAsset, fit] = await Promise.all([
+				const [js, cssAsset, fit, canvas, webgl] = await Promise.all([
 					callRpc(connection, "asset", { name: "xterm.js" }),
 					callRpc(connection, "asset", { name: "xterm.css" }),
 					callRpc(connection, "asset", { name: "addon-fit.js" }),
+					callRpc(connection, "asset", { name: "addon-canvas.js" }),
+					callRpc(connection, "asset", { name: "addon-webgl.js" }),
 				]);
 				if (!js?.content) throw new Error("xterm.js asset empty");
 				injectCss(cssAsset.content, "dsh-terminal-xterm-css");
 				await loadScriptText(js.content, "dsh-terminal-xterm-js");
 				await loadScriptText(fit.content, "dsh-terminal-fit-js");
+				await loadScriptText(canvas.content, "dsh-terminal-canvas-js");
+				await loadScriptText(webgl.content, "dsh-terminal-webgl-js");
 				if (!window.Terminal) throw new Error("xterm.js failed to load");
 				if (!(window.FitAddon?.FitAddon || typeof window.FitAddon === "function")) {
 					throw new Error("FitAddon failed to load");
@@ -538,6 +567,61 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 			if (window.FitAddon?.FitAddon) return window.FitAddon.FitAddon;
 			if (typeof window.FitAddon === "function") return window.FitAddon;
 			throw new Error("FitAddon missing");
+		}
+
+		function CanvasCtor() {
+			if (window.CanvasAddon?.CanvasAddon) return window.CanvasAddon.CanvasAddon;
+			if (typeof window.CanvasAddon === "function") return window.CanvasAddon;
+			return null;
+		}
+
+		function WebglCtor() {
+			if (window.WebglAddon?.WebglAddon) return window.WebglAddon.WebglAddon;
+			if (typeof window.WebglAddon === "function") return window.WebglAddon;
+			return null;
+		}
+
+		/** Prefer integer device pixels so ▄▀ custom glyphs abut (fractional DPR → hairlines). */
+		function terminalFontSize(desired = 13) {
+			const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+			const snapped = Math.round(desired * dpr) / dpr;
+			return Math.max(11, Math.round(snapped * 1000) / 1000);
+		}
+
+		function loadPreferredRenderer(term) {
+			const Webgl = WebglCtor();
+			if (Webgl) {
+				try {
+					const webgl = new Webgl();
+					term.loadAddon(webgl);
+					webgl.onContextLoss?.(() => {
+						try {
+							webgl.dispose();
+						} catch {
+							/* ignore */
+						}
+						const Canvas = CanvasCtor();
+						if (Canvas) {
+							try {
+								term.loadAddon(new Canvas());
+							} catch {
+								/* DOM fallback */
+							}
+						}
+					});
+					return;
+				} catch {
+					/* try canvas */
+				}
+			}
+			const Canvas = CanvasCtor();
+			if (Canvas) {
+				try {
+					term.loadAddon(new Canvas());
+				} catch {
+					/* DOM fallback — logos may show hairline gaps */
+				}
+			}
 		}
 
 		function newPaneKey() {
@@ -603,9 +687,37 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 			} catch { /* ignore */ }
 		}
 
-		function termStorageKey(_sessionId, paneKey, wsCwd) {
+		function termStorageKey(_sessionId, paneKey, wsCwd, surface = "default") {
 			const scope = wsCwd || "none";
-			return `${TERM_STORAGE_PREFIX}${scope}:${paneKey}`;
+			const surf = String(surface || "default").replace(/[^a-z0-9_-]/gi, "") || "default";
+			return `${TERM_STORAGE_PREFIX}${surf}:${scope}:${paneKey}`;
+		}
+
+		/** True when this pane can own PTY I/O (not hidden behind Chat / another split column). */
+		function isTerminalHostForeground(host) {
+			if (!host || !host.isConnected) return false;
+			if (host.classList.contains("dt_hostHidden")) return false;
+			if (host.clientWidth < 8 || host.clientHeight < 8) return false;
+			if (host.closest("[hidden]")) return false;
+			const heroView = host.closest(".dsh-hero-tool-view");
+			if (heroView?.hidden) return false;
+			try {
+				const st = getComputedStyle(host);
+				if (st.display === "none" || st.visibility === "hidden") return false;
+				const toolHost = host.closest(".dsh-hero-tool-host");
+				if (toolHost) {
+					const th = getComputedStyle(toolHost);
+					if (th.display === "none" || th.visibility === "hidden") return false;
+				}
+				const right = host.closest(".dsplit_rightHost");
+				if (right) {
+					const rh = getComputedStyle(right);
+					if (rh.display === "none" || rh.visibility === "hidden") return false;
+				}
+			} catch {
+				/* ignore */
+			}
+			return true;
 		}
 
 		function loadStoredTermId(key) {
@@ -956,6 +1068,7 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 			onInjector,
 			layoutKey,
 			paneKey,
+			surface,
 		}) {
 			const hostRef = React.useRef(null);
 			const bindHostRef = React.useCallback((node) => {
@@ -967,12 +1080,15 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 			const termIdRef = React.useRef(null);
 			const closedRef = React.useRef(false);
 			const genRef = React.useRef(0);
+			const lastSizeRef = React.useRef({ cols: 0, rows: 0 });
 			const statusRef = React.useRef(onStatus);
 			const onInjectorRef = React.useRef(onInjector);
 			const sessionIdRef = React.useRef(sessionId);
+			const surfaceRef = React.useRef(surface || "default");
 			statusRef.current = onStatus;
 			onInjectorRef.current = onInjector;
 			sessionIdRef.current = sessionId;
+			surfaceRef.current = surface || "default";
 
 			const publishInjector = React.useCallback((inj) => {
 				onInjectorRef.current?.(inj);
@@ -985,17 +1101,34 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 					const termInst = termRef.current;
 					if (!host || !fitAddon || !termInst || !host.isConnected) return false;
 					if (host.clientWidth < 8 || host.clientHeight < 8) return false;
+					if (!isTerminalHostForeground(host)) return false;
+					const prev = lastSizeRef.current;
 					fitAddon.fit();
+					const cols = termInst.cols;
+					const rows = termInst.rows;
 					const id = termIdRef.current;
-					if (id && !closedRef.current && connection) {
+					if (
+						id
+						&& !closedRef.current
+						&& connection
+						&& (cols !== prev.cols || rows !== prev.rows)
+					) {
+						lastSizeRef.current = { cols, rows };
 						callRpc(connection, "resize", {
 							termId: id,
-							cols: termInst.cols,
-							rows: termInst.rows,
+							cols,
+							rows,
 						}).catch(() => {});
+					} else {
+						lastSizeRef.current = { cols, rows };
 					}
 					termInst.refresh(0, Math.max(0, termInst.rows - 1));
-					if (focus) termInst.focus();
+					if (focus) {
+						const ae = typeof document !== "undefined" ? document.activeElement : null;
+						const otherTermFocused =
+							ae?.classList?.contains("xterm-helper-textarea") && !host.contains(ae);
+						if (!otherTermFocused) termInst.focus();
+					}
 					return true;
 				} catch {
 					return false;
@@ -1020,7 +1153,7 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 			React.useEffect(() => {
 				if (!connection || !active) return undefined;
 				const wsCwd = workspaceCwd || "";
-				const storageKey = termStorageKey(sessionId, paneKey, wsCwd);
+				const storageKey = termStorageKey(sessionId, paneKey, wsCwd, surfaceRef.current);
 				if (!sessionId && !wsCwd) return undefined;
 				let cancelled = false;
 
@@ -1030,7 +1163,7 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 							const id = termIdRef.current;
 							if (!id || closedRef.current || !connection) return false;
 							const payload = execute && !/[\r\n]$/.test(text) ? `${text}\r` : text;
-							callRpc(connection, "write", { termId: id, data: payload }).catch((err) => {
+							writePty(connection, id, payload).catch((err) => {
 								statusRef.current?.({
 									phase: "error",
 									meta: err?.message || String(err),
@@ -1125,12 +1258,15 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 							cursorBlink: true,
 							cursorStyle: "bar",
 							fontFamily: 'Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-							fontSize: 13,
-							// Ink/Gemini HalfLinePaddedBox (▄▀) needs tight line metrics.
+							fontSize: terminalFontSize(14),
+							// Half-block logos (agy ▄▀): snap font to integer device px so
+							// WebGL/canvas glyphs abut. Keep letterSpacing at 0 — negative
+							// values close hairlines but squash the mark sideways vs WT.
 							lineHeight: 1,
 							letterSpacing: 0,
-							customGlyphs: false,
-							convertEol: true,
+							customGlyphs: true,
+							// Keep LF as LF — TUIs (agy) position with CSI; CRLF conversion skews art.
+							convertEol: false,
 							theme: themeWithWorkspaceAccent(
 								hostRef.current?.closest?.(".dt_root") || hostRef.current,
 							),
@@ -1144,6 +1280,7 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 						const fit = new (FitCtor())();
 						term.loadAddon(fit);
 						term.open(hostRef.current);
+						loadPreferredRenderer(term);
 						const accentEl = hostRef.current?.closest?.(".dt_root") || hostRef.current;
 						setTerminalAccentElement(accentEl);
 						applyWorkspaceTerminalTheme(term, accentEl);
@@ -1204,7 +1341,7 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 						term.onData((data) => {
 							const id = termIdRef.current;
 							if (!id || closedRef.current) return;
-							callRpc(connection, "write", { termId: id, data }).catch((err) => {
+							writePty(connection, id, data).catch((err) => {
 								statusRef.current?.({
 									phase: "error",
 									meta: err?.message || String(err),
@@ -1261,7 +1398,7 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 						}
 					}
 				};
-			}, [connection, restartToken, paneKey, workspaceCwd, keepServerOnUnmount, sessionId, active]);
+			}, [connection, restartToken, paneKey, workspaceCwd, keepServerOnUnmount, sessionId, active, surface]);
 
 			React.useEffect(() => {
 				if (!connection) return undefined;
@@ -1271,10 +1408,12 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 					const term = termRef.current;
 					if (!id || !term || closedRef.current) return;
 					if (!active) return;
+					// Hero+split can mount two TerminalViews; only the visible owner may drain the PTY buffer.
+					if (!isTerminalHostForeground(hostRef.current)) return;
 					try {
 						const res = await callRpc(connection, "read", { termId: id });
 						if (!alive) return;
-						if (res.data) term.write(colorizeTerminalOutput(res.data));
+						if (res.data) term.write(res.data);
 						if (res.closed) {
 							closedRef.current = true;
 							statusRef.current?.((prev) => ({
@@ -1295,7 +1434,7 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 					alive = false;
 					clearInterval(iv);
 				};
-			}, [connection, sessionId, active]);
+			}, [connection, sessionId, active, surface]);
 
 			React.useEffect(() => {
 				if (!active) return undefined;
@@ -1470,7 +1609,8 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 			);
 		}
 
-		function TerminalView({ sessionId, connection }) {
+		function TerminalView({ sessionId, connection, surface = "session" }) {
+			const mountSurface = surface || "session";
 			const initial = React.useMemo(
 				() => {
 					const s = resolveTerminalScope(sessionId);
@@ -1600,13 +1740,18 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 			};
 
 			const closePane = (key) => {
-				const sk = termStorageKey(sessionId, key, scope.wsCwd);
+				const sk = termStorageKey(sessionId, key, scope.wsCwd, mountSurface);
 				const tid = loadStoredTermId(sk);
 				if (tid && connection) callRpc(connection, "close", { termId: tid }).catch(() => {});
 				saveStoredTermId(sk, "");
 				paneInjectorHandlers.current.delete(key);
 				setPanes((prev) => {
-					if (prev.length <= 1) return prev;
+					// Last tab: reopen a fresh shell (same as Restart) instead of leaving no terminal.
+					if (prev.length <= 1) {
+						const only = prev[0];
+						if (!only) return [{ key: newPaneKey(), restart: 0 }];
+						return [{ ...only, restart: (only.restart || 0) + 1 }];
+					}
 					const idx = prev.findIndex((p) => p.key === key);
 					const next = prev.filter((p) => p.key !== key);
 					if (activeKey === key) {
@@ -1623,7 +1768,7 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 			};
 
 			const restartActive = () => {
-				const sk = termStorageKey(sessionId, activeKey, scope.wsCwd);
+				const sk = termStorageKey(sessionId, activeKey, scope.wsCwd, mountSurface);
 				const tid = loadStoredTermId(sk);
 				if (tid && connection) callRpc(connection, "close", { termId: tid }).catch(() => {});
 				saveStoredTermId(sk, "");
@@ -1669,10 +1814,11 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 								},
 							},
 								React.createElement("span", { className: "dt_tabLabel" }, label),
-								panes.length > 1 && React.createElement("span", {
+								React.createElement("span", {
 									className: "dt_tabClose",
 									role: "button",
-									title: "Close",
+									title: panes.length > 1 ? "Close terminal" : "Restart shell",
+									"aria-label": panes.length > 1 ? "Close terminal" : "Restart shell",
 									onClick: (e) => {
 										e.stopPropagation();
 										closePane(p.key);
@@ -1699,6 +1845,7 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 						React.createElement("button", {
 							type: "button",
 							className: "dt_btn",
+							title: "Kill this shell and open a fresh one (picks up PATH / npm CLIs)",
 							onClick: restartActive,
 						}, "Restart"),
 					),
@@ -1717,6 +1864,7 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 								restartToken: p.restart || 0,
 								layoutKey,
 								paneKey: p.key,
+								surface: mountSurface,
 								onStatus: (value) => setPaneStatus(p.key, value),
 								onInjector: getPaneInjector(p.key),
 							})),
@@ -1746,7 +1894,7 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 				id: "terminal",
 				order: 8,
 				label: () => "Terminal",
-				inject: (sessionId) => ({ sessionId, connection }),
+				inject: (sessionId) => ({ sessionId, connection, surface: "session" }),
 			}, TerminalView)), `${PLUGIN}: tab`);
 
 			ctx.effect(() => {
@@ -1763,6 +1911,7 @@ body.dt_cmdResizing,body.dt_cmdResizing *{cursor:col-resize!important;user-selec
 				return window.__dshHeroToolRegistry.register("terminal", (opts) =>
 					React.createElement(TerminalView, {
 						connection,
+						surface: opts?.surface || "hero",
 						sessionId: opts?.sessionId
 							|| (() => {
 								try {

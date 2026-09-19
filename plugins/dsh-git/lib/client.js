@@ -114,7 +114,7 @@ window.__ModuleLoader__.load({
 .dg_modeToggle button.dg_modeOn{background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 14%,transparent);color:var(--dsw-alias-state-business-primary);font-weight:600}
 .dg_modeToggle button:hover:not(:disabled):not(.dg_modeOn){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dg_modeToggle button:disabled{opacity:.45;cursor:not-allowed}
-.dg_authOk{color:var(--dsw-alias-state-success-primary)}
+.dg_authOk{color:var(--dsw-alias-state-business-primary)}
 .dg_remoteList{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:10px 2px 4px}
 .dg_remoteRow{position:relative;display:flex;align-items:center;gap:8px;padding:12px 10px 8px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}
 .dg_remoteRow:hover{background:var(--dsw-alias-interactive-bg-hover)}
@@ -144,7 +144,23 @@ window.__ModuleLoader__.load({
 .dg_pathHint{font-size:11px;font-family:var(--ds-font-family-code);color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:360px}
 .dg_localRow{cursor:pointer}
 .dg_localRow .dg_btn{cursor:pointer}
+.dg_localRow{align-items:flex-start}
+.dg_remoteHead{display:flex;align-items:flex-start;gap:8px;width:100%;min-width:0}
+.dg_remoteHeadMain{flex:1;min-width:0}
+.dg_remoteHead .dg_remoteActions{align-self:flex-start;flex-shrink:0}
 .dg_submoduleList{margin-top:6px;padding-left:10px;border-left:2px solid var(--dsw-alias-border-l2);display:flex;flex-direction:column;gap:3px;width:100%;box-sizing:border-box}
+.dg_submoduleBlock{margin-top:6px;width:100%;box-sizing:border-box}
+.dg_submoduleToggle{
+  display:flex;align-items:center;gap:6px;width:100%;padding:4px 6px;margin:0;
+  border:0;border-radius:6px;background:transparent;
+  color:var(--dsw-alias-label-secondary);font-size:11px;font-weight:600;
+  cursor:pointer;text-align:left;font-family:inherit;
+}
+.dg_submoduleToggle:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dg_submoduleToggle:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#5b9dff);outline-offset:1px}
+.dg_submoduleToggleChev{
+  flex:none;width:12px;font-size:10px;line-height:1;color:var(--dsw-alias-label-tertiary);
+}
 .dg_submoduleRow{display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:6px;background:var(--dsw-alias-bg-layer-2);font-size:11px}
 .dg_submoduleRow:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dg_submoduleIcon{color:var(--dsw-alias-label-tertiary);font-family:var(--ds-font-family-code);flex:none}
@@ -158,7 +174,7 @@ window.__ModuleLoader__.load({
 .dg_filterInput{width:120px;height:28px;flex:none}
 @media (max-width:900px){
 .dg_body{flex:none;min-height:0}
-.dg_hub{overflow:auto;padding:10px 12px;-webkit-overflow-scrolling:touch}
+.dg_hub{overflow:auto;-webkit-overflow-scrolling:touch}
 .dg_hubGrid{grid-template-columns:1fr;flex:none;min-height:0;gap:10px}
 .dg_hubColumn{flex:none;min-height:0}
 .dg_remoteList{flex:none;max-height:none;overflow:visible}
@@ -176,10 +192,7 @@ window.__ModuleLoader__.load({
 .dg_submoduleMeta{flex:1 1 auto}
 }
 @media (max-width:480px){
-.dg_hub{padding:8px 10px}
 .dg_remoteRow{padding:10px}
-.dg_btn{padding:0 8px}
-.dg_authBar{padding:8px 10px}
 }
 `;
 		function ensureStyles() {
@@ -302,6 +315,25 @@ window.__ModuleLoader__.load({
 			window.dispatchEvent(new CustomEvent("dsh:git-auth-changed"));
 		}
 
+		const FILES_CHANGED_EVENT = "dsh-sf-files-changed";
+
+		function treeRootForRepo(repoPath, parentHint) {
+			const repo = String(repoPath || "").replace(/\/+$/, "");
+			const hint = String(parentHint || "").replace(/\/+$/, "");
+			if (hint && (repo === hint || repo.startsWith(`${hint}/`))) return hint;
+			const i = repo.lastIndexOf("/");
+			return i > 0 ? repo.slice(0, i) : repo;
+		}
+
+		function notifySidebarFilesChanged(changedPath, treeRoot) {
+			if (typeof window === "undefined" || typeof changedPath !== "string" || !changedPath) return;
+			const detail = { path: changedPath.replace(/\/+$/, "") || changedPath };
+			if (typeof treeRoot === "string" && treeRoot.trim()) {
+				detail.root = treeRoot.replace(/\/+$/, "") || treeRoot.trim();
+			}
+			window.dispatchEvent(new CustomEvent(FILES_CHANGED_EVENT, { detail }));
+		}
+
 		function GitView({ sessionId, connection }) {
 			const [repoPath, setRepoPath] = React.useState(() => loadRepoPath(sessionId));
 			const [repos, setRepos] = React.useState([]);
@@ -362,6 +394,19 @@ window.__ModuleLoader__.load({
 			const [prPreview, setPrPreview] = React.useState(null);
 			const [diffMode, setDiffMode] = React.useState("worktree"); // worktree | staged
 			const [showPrPanel, setShowPrPanel] = React.useState(false);
+			/** Repo paths whose submodule list is expanded in the hub (default: all collapsed). */
+			const [expandedSubmoduleRepos, setExpandedSubmoduleRepos] = React.useState(() => new Set());
+
+			const toggleSubmoduleList = React.useCallback((path, ev) => {
+				ev?.stopPropagation?.();
+				if (!path) return;
+				setExpandedSubmoduleRepos((prev) => {
+					const next = new Set(prev);
+					if (next.has(path)) next.delete(path);
+					else next.add(path);
+					return next;
+				});
+			}, []);
 
 			React.useEffect(() => {
 				setRepoPath(loadRepoPath(sessionId));
@@ -915,6 +960,10 @@ window.__ModuleLoader__.load({
 						setPage("changes");
 						setInfo(`Cloned to ${value.repoPath} — open the Code tab / sidebar under that workspace folder to edit files.`);
 						await refresh(value.repoPath);
+						notifySidebarFilesChanged(
+							value.repoPath,
+							treeRootForRepo(value.repoPath, cloneTargetPath),
+						);
 					}
 				} catch (err) {
 					setError(err?.message || String(err));
@@ -960,6 +1009,7 @@ window.__ModuleLoader__.load({
 					setInfo(`Initialized git repo at ${repo}`);
 					await refreshRepos();
 					await openLocalRepo(repo);
+					notifySidebarFilesChanged(repo, treeRootForRepo(repo, parent));
 				} catch (err) {
 					setError(err?.message || String(err));
 				} finally {
@@ -1743,12 +1793,55 @@ window.__ModuleLoader__.load({
 									React.createElement(
 										"div",
 										{ className: "dg_remoteMeta" },
-										React.createElement("div", { className: "dg_remoteName" }, r.name),
-										React.createElement("div", { className: "dg_remoteDesc" }, r.path || ""),
-										Array.isArray(r.submodules) && r.submodules.length > 0 && React.createElement(
+										React.createElement(
 											"div",
-											{ className: "dg_submoduleList" },
-											r.submodules.map((sub) =>
+											{ className: "dg_remoteHead" },
+											React.createElement(
+												"div",
+												{ className: "dg_remoteHeadMain" },
+												React.createElement("div", { className: "dg_remoteName" }, r.name),
+												React.createElement("div", { className: "dg_remoteDesc" }, r.path || ""),
+											),
+											React.createElement(
+												"div",
+												{ className: "dg_remoteActions" },
+												React.createElement("button", {
+													type: "button",
+													className: "dg_btn dg_btnPrimary",
+													disabled: busy,
+													onClick: (ev) => {
+														ev.stopPropagation();
+														openLocalRepo(r.path);
+													},
+												}, "Open"),
+											),
+										),
+										Array.isArray(r.submodules) && r.submodules.length > 0 && (() => {
+											const subsOpen = expandedSubmoduleRepos.has(r.path);
+											const subLabel = `${r.submodules.length} submodule${r.submodules.length > 1 ? "s" : ""}`;
+											return React.createElement(
+												"div",
+												{ className: "dg_submoduleBlock" },
+												React.createElement(
+													"button",
+													{
+														type: "button",
+														className: "dg_submoduleToggle",
+														"aria-expanded": subsOpen,
+														"aria-label": subsOpen ? `Hide ${subLabel}` : `Show ${subLabel}`,
+														onClick: (ev) => toggleSubmoduleList(r.path, ev),
+													},
+													React.createElement(
+														"span",
+														{ className: "dg_submoduleToggleChev", "aria-hidden": true },
+														subsOpen ? "▾" : "▸",
+													),
+													React.createElement("span", null, subLabel),
+												),
+												subsOpen && React.createElement(
+													"div",
+													{ className: "dg_submoduleList" },
+													r.submodules.map((sub) =>
 												React.createElement(
 													"div",
 													{
@@ -1798,22 +1891,10 @@ window.__ModuleLoader__.load({
 															},
 															"Open",
 														),
-												),
-											),
-										),
-									),
-									React.createElement(
-										"div",
-										{ className: "dg_remoteActions" },
-										React.createElement("button", {
-											type: "button",
-											className: "dg_btn dg_btnPrimary",
-											disabled: busy,
-											onClick: (ev) => {
-												ev.stopPropagation();
-												openLocalRepo(r.path);
-											},
-										}, "Open"),
+													),
+												)),
+											);
+										})(),
 									),
 								),
 							),

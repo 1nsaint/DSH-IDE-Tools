@@ -4,7 +4,7 @@
  * @module
  */
 
-import { useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './CronPanel.module.css'
@@ -12,7 +12,9 @@ import {
   IconCheckOutline14,
   IconChevronDownOutline16,
   IconClockOutline16,
+  IconListOutline16,
   IconPauseOutline16,
+  IconPlusOutline16,
 } from './icons.tsx'
 import { callRpc } from './rpc.ts'
 import type { CronAddWire, CronEditWire, CronFireWire, CronJobWire, CronListWire, CronRemoveWire, CronUpdateWire } from './wire.ts'
@@ -28,6 +30,21 @@ type Filter = 'all' | 'active' | 'paused' | 'done'
 type TabId = 'create' | Filter
 
 const TAB_ORDER: readonly TabId[] = ['create', 'all', 'active', 'paused', 'done']
+
+function tabIcon(id: TabId): ReactNode {
+  switch (id) {
+    case 'create':
+      return <IconPlusOutline16 size={15} className={css.filterIcon} />
+    case 'all':
+      return <IconListOutline16 size={15} className={css.filterIcon} />
+    case 'active':
+      return <IconClockOutline16 size={15} className={css.filterIcon} />
+    case 'paused':
+      return <IconPauseOutline16 size={15} className={css.filterIcon} />
+    case 'done':
+      return <IconCheckOutline14 size={14} className={css.filterIcon} />
+  }
+}
 type ScheduleKind = 'cron' | 'at'
 
 interface ModelOption {
@@ -440,22 +457,28 @@ export function CronScheduleView({ connection, t, useSessions, useWorkspaces }: 
     <div className={css.rootInner}>
       <div className={css.bar}>
         <div className={css.filterMode} role="tablist" aria-label={t('label')}>
-          {TAB_ORDER.map(id => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              id={id === filter ? titleId : undefined}
-              className={`${css.filterBtn}${filter === id ? ` ${css.filterBtnActive}` : ''}${id === 'create' ? ` ${css.filterBtnCreate}` : ''}`}
-              aria-selected={filter === id}
-              onClick={() => { selectTab(id) }}
-            >
-              {id === 'create' && editing ? t('filter.edit') : t(`filter.${id}`)}
-              {id !== 'create' && (
-                <span className={css.count}>{counts[id]}</span>
-              )}
-            </button>
-          ))}
+          {TAB_ORDER.map(id => {
+            const label = id === 'create' && editing ? t('filter.edit') : t(`filter.${id}`)
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                id={id === filter ? titleId : undefined}
+                className={`${css.filterBtn}${filter === id ? ` ${css.filterBtnActive}` : ''}${id === 'create' ? ` ${css.filterBtnCreate}` : ''}`}
+                aria-selected={filter === id}
+                aria-label={id === 'create' ? label : `${label} ${counts[id]}`}
+                title={id === 'create' ? label : `${label} (${counts[id]})`}
+                onClick={() => { selectTab(id) }}
+              >
+                {tabIcon(id)}
+                <span className={css.filterLabel}>{label}</span>
+                {id !== 'create' && (
+                  <span className={css.count}>{counts[id]}</span>
+                )}
+              </button>
+            )
+          })}
         </div>
         <span className={css.meta}>
           {creating ? (

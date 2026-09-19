@@ -210,6 +210,10 @@ window.__ModuleLoader__.load({
   flex:none;position:relative;z-index:5;padding:12px 28px 0 20px;box-sizing:border-box;
   border-bottom:1px solid transparent;pointer-events:auto;
 }
+[class*="_root"][data-dsh-tool-tab="1"] .dsh-hero-header[class*="_header"]{
+  padding-left:12px;
+  padding-right:12px;
+}
 .dsh-hero-header [class*="_titleRow"]{display:flex;align-items:center;gap:12px;min-width:0;width:100%}
 .dsh-hero-header [class*="_titleCluster"]{display:flex;align-items:center;gap:8px;min-width:0;flex:1 1 auto}
 .dsh-hero-header .dsh-hero-title{
@@ -987,8 +991,10 @@ window.__ModuleLoader__.load({
 			let toolHost = root.querySelector(":scope > .dsh-hero-tool-host");
 			if (!toolHost) {
 				toolHost = document.createElement("div");
-				toolHost.className = "dsh-hero-tool-host";
+				toolHost.className = "dsh-hero-tool-host dsh-tool-surface";
 				toolHost.setAttribute("data-dsh-hero-tool-host", "1");
+			} else {
+				toolHost.classList.add("dsh-tool-surface");
 			}
 
 			placeChrome(root, headerHost, toolHost);

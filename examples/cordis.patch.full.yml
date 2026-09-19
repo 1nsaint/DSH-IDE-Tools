@@ -66,6 +66,10 @@
         granularity: hour
     - id: dsh-split-view
       name: dsh-split-view
+    - id: dsh-local-agent
+      name: dsh-local-agent
+    - id: dsh-mcp-manager
+      name: dsh-mcp-manager
 - id: web
   config:
     searchProvider: multi-search

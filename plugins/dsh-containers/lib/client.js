@@ -189,34 +189,50 @@ window.__ModuleLoader__.load({
 				viewCache.showTestEnv = showTestEnv;
 			}, [selected, logs, envMode, showTestEnv]);
 
-			const refresh = React.useCallback(async () => {
+			/** @param {{ silent?: boolean }} [opts] silent = background poll: keep controls usable, don't clobber allowlist draft */
+			const refresh = React.useCallback(async (opts = {}) => {
 				if (!connection) return;
-				setBusy(true);
-				setError("");
+				const silent = !!opts.silent;
+				if (!silent) {
+					setBusy(true);
+					setError("");
+				}
 				try {
 					const res = await callRpc(connection, "list", { hostId, env: envMode });
 					const next = res.containers || [];
 					setItems(next);
 					if (Array.isArray(res.hosts) && res.hosts.length) setHosts(res.hosts);
-					if (res.hostId) setHostId(res.hostId);
-					setAllowText((res.allowPrefixes || []).join(", "));
+					if (res.hostId) {
+						setHostId((prev) => (prev === res.hostId ? prev : res.hostId));
+					}
+					if (!silent) {
+						setAllowText((res.allowPrefixes || []).join(", "));
+					}
 					setSelected((prev) => {
 						const want = prev || viewCache.selected;
 						if (!want) return prev;
-						return next.find((c) => c.id === want.id || c.name === want.name) || null;
+						const match = next.find((c) => c.id === want.id || c.name === want.name);
+						// Keep same object identity when possible so selection UI doesn't flicker.
+						if (!match) return null;
+						if (prev && prev.id === match.id && prev.status === match.status
+							&& prev.cpu === match.cpu && prev.mem === match.mem) {
+							return prev;
+						}
+						return match;
 					});
+					if (silent) setError("");
 				} catch (err) {
 					setError(err?.message || String(err));
-					setItems([]);
+					if (!silent) setItems([]);
 				} finally {
-					setBusy(false);
+					if (!silent) setBusy(false);
 				}
 			}, [connection, hostId, envMode]);
 
 			React.useEffect(() => {
 				ensureStyles();
 				refresh();
-				const iv = setInterval(() => { refresh(); }, 15000);
+				const iv = setInterval(() => { refresh({ silent: true }); }, 15000);
 				return () => clearInterval(iv);
 			}, [refresh]);
 
@@ -323,7 +339,12 @@ window.__ModuleLoader__.load({
 						title: "Register / manage test environments",
 						onClick: () => setShowTestEnv((v) => !v),
 					}, showTestEnv ? "▾ Test envs" : "▸ Test envs"),
-					React.createElement("button", { type: "button", className: "dc_btn", disabled: busy, onClick: refresh }, busy ? "Refreshing…" : "Refresh"),
+					React.createElement("button", {
+						type: "button",
+						className: "dc_btn",
+						disabled: busy,
+						onClick: () => { refresh(); },
+					}, busy ? "Refreshing…" : "Refresh"),
 					typeof window !== "undefined" && typeof window.__dshSettingsGear === "function"
 						? window.__dshSettingsGear(React, { section: "containers", title: "Containers settings" })
 						: React.createElement("button", {

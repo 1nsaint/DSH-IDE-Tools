@@ -37,26 +37,51 @@ function ensureLocalNpmLayout() {
 }
 
 const BASHRC_MARKER = "# dsh-terminal: user-local npm (~/.local/bin)";
+const PROFILE_MARKER = "# dsh-terminal: user-local npm PATH (login shells)";
 
-/** Login shells source /etc/profile and wipe PTY PATH — persist fix on $HOME volume. */
+const PATH_SNIPPET = `export NPM_CONFIG_PREFIX="\${NPM_CONFIG_PREFIX:-$HOME/.local}"
+[ -d "$HOME/.local/bin" ] && PATH="$HOME/.local/bin:\${PATH}"
+export PATH
+`;
+
+/**
+ * Login PTYs (`bash -l`) source /etc/profile, which resets PATH and drops the
+ * env we pass to node-pty. Debian/Ubuntu login bash does not read ~/.bashrc
+ * unless ~/.profile does — so put the PATH fix in ~/.profile (persisted on
+ * /workspace) and keep a matching ~/.bashrc snippet for non-login shells.
+ */
 function ensureWorkspaceShellProfile() {
 	const home = homeDir();
 	const bashrc = join(home, ".bashrc");
-	const snippet = `
+	const profile = join(home, ".profile");
+	const bashrcBlock = `
 ${BASHRC_MARKER}
-export NPM_CONFIG_PREFIX="\${NPM_CONFIG_PREFIX:-$HOME/.local}"
-[ -d "$HOME/.local/bin" ] && PATH="$HOME/.local/bin:$PATH"
+${PATH_SNIPPET}`;
+	const profileBlock = `
+${PROFILE_MARKER}
+${PATH_SNIPPET}# Load ~/.bashrc for interactive bash (standard Debian/Ubuntu pattern).
+if [ -n "\${BASH_VERSION:-}" ] && [ -f "$HOME/.bashrc" ]; then
+  . "$HOME/.bashrc"
+fi
 `;
 	try {
 		if (existsSync(bashrc)) {
 			const text = readFileSync(bashrc, "utf8");
-			if (text.includes(BASHRC_MARKER)) return;
-			appendFileSync(bashrc, snippet);
+			if (!text.includes(BASHRC_MARKER)) appendFileSync(bashrc, bashrcBlock);
 		} else {
-			appendFileSync(
-				bashrc,
-				`# Added by dsh-terminal plugin\n${snippet.trim()}\n`,
-			);
+			appendFileSync(bashrc, `# Added by dsh-terminal plugin\n${bashrcBlock.trim()}\n`);
+		}
+	} catch {
+		/* ignore */
+	}
+	try {
+		if (existsSync(profile)) {
+			const text = readFileSync(profile, "utf8");
+			if (!text.includes(PROFILE_MARKER) && !text.includes(BASHRC_MARKER)) {
+				appendFileSync(profile, profileBlock);
+			}
+		} else {
+			appendFileSync(profile, `# Added by dsh-terminal plugin\n${profileBlock.trim()}\n`);
 		}
 	} catch {
 		/* ignore */
@@ -141,6 +166,11 @@ export async function buildLocalPtyEnv(ctx) {
 		/** Container/web PTY: no in-container browser — Gemini uses auth-code flow (URL on your PC, paste code). */
 		NO_BROWSER: "true",
 		GEMINI_CLI_TRUST_WORKSPACE: "true",
+		// Image defaults XDG_* to /tmp (ephemeral). Point at the workspace volume so
+		// OAuth tokens / CLI config survive restarts and match ~/.gemini under HOME.
+		XDG_CONFIG_HOME: join(homeDir(), ".config"),
+		XDG_DATA_HOME: join(homeDir(), ".local", "share"),
+		XDG_CACHE_HOME: join(homeDir(), ".cache"),
 	};
 }
 

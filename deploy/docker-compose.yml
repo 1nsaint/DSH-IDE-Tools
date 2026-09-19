@@ -1,0 +1,121 @@
+# Turnkey DeepSeek Harness + DSH IDE Tools (plugins baked into the image).
+#
+# For humans OR agent IDEs (Antigravity, Cursor, …):
+#   1. Clone this repo
+#   2. cd deploy && cp .env.example .env   # edit LLM + DOCKER_GID
+#   3. Optional TLS: see certs/README.md
+#   4. docker compose -f docker-compose.yml up -d --build
+#   5. Open http://127.0.0.1:3080
+#
+# First boot copies plugins + Cordis profile into ./data — already wired.
+# Recreate harness+https together after rebuilds.
+
+services:
+  harness:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        DSH_VERSION: ${DSH_VERSION:-0.1.5-rc.2}
+    image: dsh-ide-tools-harness:local
+    container_name: dsh-ide-tools
+    restart: unless-stopped
+    ports:
+      - "${DSH_PORT:-3080}:3080"
+      - "${DSH_HTTPS_PORT:-3443}:3443"
+    command:
+      - --profile
+      - web
+      - --patch
+      - /opt/dsh-ide-tools/web.cordis.patch.yml
+      - --no-open
+      - --trusted-host
+      - 127.0.0.1
+      - 127.0.0.1:${DSH_PORT:-3080}
+      - localhost
+      - localhost:${DSH_PORT:-3080}
+      - ${DSH_LAN_HOST:-127.0.0.1}
+      - ${DSH_LAN_HOST:-127.0.0.1}:${DSH_PORT:-3080}
+    environment:
+      DSH_TELEMETRY_DISABLED: "1"
+      HOME: /workspace
+      DOCKER_HOST: unix:///var/run/docker.sock
+      CONTAINERS_ROOT: /containers
+      CONTAINERS_HOST_ROOT: ${CONTAINERS_HOST_ROOT:-}
+      OPENAI_API_BASE_URL: ${OPENAI_API_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-${GEMINI_API_KEY:-}}
+    group_add:
+      - "${DOCKER_GID:-983}"
+    volumes:
+      - ./data:/home/node/.dsh
+      - ./workspace:/workspace
+      # Friend's compose stacks (same idea as ProDesk ~/Containers)
+      - ${CONTAINERS_HOST_ROOT:-../..}:/containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Optional SSH keys for remote workspaces
+      # - ${HOME}/.ssh:/home/node/.ssh:ro
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=512m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3080/').then(r => process.exit(r.status === 401 || r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
+
+  automation:
+    image: dsh-ide-tools-harness:local
+    container_name: dsh-ide-tools-automation
+    restart: unless-stopped
+    command:
+      - --profile
+      - automation
+      - worker
+    environment:
+      DSH_TELEMETRY_DISABLED: "1"
+      HOME: /workspace
+      DOCKER_HOST: unix:///var/run/docker.sock
+      OPENAI_API_BASE_URL: ${OPENAI_API_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    group_add:
+      - "${DOCKER_GID:-983}"
+    volumes:
+      - ./data:/home/node/.dsh
+      - ./workspace:/workspace
+      - ${CONTAINERS_HOST_ROOT:-../..}:/containers
+      - /var/run/docker.sock:/var/run/docker.sock
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=512m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      harness:
+        condition: service_healthy
+
+  https:
+    image: nginx:alpine
+    container_name: dsh-ide-tools-https
+    restart: unless-stopped
+    network_mode: "service:harness"
+    volumes:
+      - ./nginx-ssl.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      harness:
+        condition: service_healthy

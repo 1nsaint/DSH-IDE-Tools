@@ -2,34 +2,34 @@
 
 These plugins target [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (Cordis web profile).
 
-## Quick install (Docker — recommended)
+## Quick install (turnkey Docker — recommended for friends / agents)
+
+Plugins + Cordis profile are **built into the image** and copied into `./data` on first boot.
 
 ```bash
 git clone https://github.com/1nsaint/DSH-IDE-Tools.git
 cd DSH-IDE-Tools/deploy
 cp .env.example .env
-# Edit .env — set DOCKER_GID=$(getent group docker | cut -d: -f3)
+# Edit .env — DOCKER_GID, OPENAI_API_BASE_URL, OPENAI_API_KEY, CONTAINERS_HOST_ROOT
 
-../scripts/install-ide-tools.sh --dsh-home ./data
-# Self-signed TLS for the HTTPS sidecar (once):
-( cd certs && openssl req -x509 -nodes -newkey rsa:2048 -days 825 \
-    -keyout key.pem -out cert.pem -subj "/CN=localhost" \
-    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" )
-docker compose -f docker-compose.example.yml up -d --build
+# Optional HTTPS sidecar certs (once) — see certs/README.md. HTTP :3080 works without them.
+docker compose -f docker-compose.yml up -d --build
 ```
 
-Open **http://127.0.0.1:3080** (or **https://127.0.0.1:3443**) → **Settings → Models** → configure your LLM.
+Open **http://127.0.0.1:3080**. Agent-oriented steps: [`deploy/AGENTS.md`](../deploy/AGENTS.md).
 
-Compose starts three services: Web UI, HTTPS sidecar, and Automation worker. From another PC on the LAN use `http://<host-lan-ip>:3080`. After recreating the UI container, always recreate **harness and https** together.
+After plugin updates: `git pull` then `docker compose -f docker-compose.yml up -d --build --force-recreate`.
 
-After plugin updates, re-run the install script and recreate the container:
+## Legacy install (host-side `install-ide-tools.sh`)
+
+Only needed if you bind-mount plugins from the host (ProDesk-style) instead of using the baked image:
 
 ```bash
+cd DSH-IDE-Tools/deploy
+cp .env.example .env
 ../scripts/install-ide-tools.sh --dsh-home ./data
-docker compose -f docker-compose.example.yml up -d --force-recreate
+docker compose -f docker-compose.yml up -d --build
 ```
-
-See [`docs/FAQ.md`](FAQ.md) for Cordis, pnpm, Docker socket security, and data volumes.
 
 ## Quick install (existing Harness)
 

@@ -44,6 +44,11 @@ window.__ModuleLoader__.load({
 		const WS_SWITCH_ICON = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg>';
 		// Single outline chat bubble shown in place of the workspace folder icon while in Sessions (chat) mode.
 		const CHAT_BUBBLE_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+		// Lucide "terminal" (ISC) — https://lucide.dev/icons/terminal — standard >_ prompt, no window chrome.
+		const SSH_REMOTE_ICON =
+			'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+			+ '<path d="M12 19h8"/><path d="m4 17 6-6-6-6"/>'
+			+ "</svg>";
 
 		const css = `
 .dsh-sf-chatIcon{
@@ -56,16 +61,37 @@ window.__ModuleLoader__.load({
   pointer-events:none;
 }
 .dsh-sf-chatIcon svg{display:block;width:15px;height:15px}
-/* Sessions mode: keep stock folder node intact for React, hide it visually,
-   and show our own bubble sibling instead (never mutate folder.innerHTML). */
-[class*="_groupSection"][data-dsh-sf-mode="sessions"] > [class*="_projectRow"] > .dsh-sf-chatIcon{
+.dsh-sf-chatIcon.dsh-sf-chatIconHidden{display:none!important}
+/* Remote workspaces: hide stock folder entirely; show accent-colored >_ mark. */
+[class*="_projectRow"][data-dsh-sf-remote="1"] > [class*="_folder"]{
+  display:none !important;
+}
+.dsh-sf-sshFolderIcon{
+  display:none;
+  flex:0 0 auto;
+  align-items:center;
+  justify-content:center;
+  width:18px;height:18px;
+  color:var(--dsh-ws-folder-color, currentColor);
+  opacity:0.92;
+  pointer-events:none;
+}
+.dsh-sf-sshFolderIcon svg{display:block;width:16px;height:16px}
+[class*="_projectRow"][data-dsh-sf-remote="1"] > .dsh-sf-sshFolderIcon{
   display:inline-flex;
 }
-[class*="_groupSection"][data-dsh-sf-mode="sessions"] > [class*="_projectRow"] > [class*="_folder"]{
+/* Chats mode: local = bubble instead of folder; remote = SSH >_ mark. */
+[class*="_groupSection"][data-dsh-sf-mode="sessions"] > [class*="_projectRow"]:not([data-dsh-sf-remote="1"]) > .dsh-sf-chatIcon{
+  display:inline-flex;
+}
+[class*="_groupSection"][data-dsh-sf-mode="sessions"] > [class*="_projectRow"]:not([data-dsh-sf-remote="1"]) > [class*="_folder"]{
   width:0 !important;min-width:0 !important;max-width:0 !important;
   height:0 !important;margin:0 !important;padding:0 !important;
   overflow:hidden !important;opacity:0 !important;
   pointer-events:none !important;border:0 !important;
+}
+[class*="_groupSection"][data-dsh-sf-mode="sessions"] > [class*="_projectRow"][data-dsh-sf-remote="1"] > .dsh-sf-chatIcon{
+  display:none!important;
 }
 [class*="_groupSection"][data-dsh-sf-mode="files"] [class*="_sessionRow"],
 [class*="_groupSection"][data-dsh-sf-mode="files"] [class*="_sessionOverflowButton"]{
@@ -591,6 +617,14 @@ html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1
 		function workspaceCwd(w) {
 			const p = w?.path || w?.cwd;
 			return typeof p === "string" && p ? p : null;
+		}
+
+		function syncRowFolderAccent(row, folderEl) {
+			if (!row) return;
+			const v = folderEl?.style?.getPropertyValue("--dsh-ws-folder-color")?.trim()
+				|| (folderEl ? getComputedStyle(folderEl).getPropertyValue("--dsh-ws-folder-color") : "")?.trim();
+			if (v) row.style.setProperty("--dsh-ws-folder-color", v);
+			else row.style.removeProperty("--dsh-ws-folder-color");
 		}
 
 		function isRemotePath(p) {
@@ -2493,6 +2527,7 @@ html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1
 				const isCurrent = !!currentWs && currentWs.key === ws.key;
 				row.dataset.dshSfCurrent = isCurrent ? "1" : "0";
 				row.dataset.dshSfCwd = ws.cwd;
+				row.dataset.dshSfRemote = isRemotePath(ws.cwd) ? "1" : "0";
 				if (view === "files") wireWorkspaceRowDrop(row);
 				let zone = row.querySelector(":scope > .dsh-sf-wsZone");
 				if (!zone || !zone.isConnected) {
@@ -2520,16 +2555,44 @@ html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1
 					console.warn("[dsh-sidebar-files] folder restore failed", err);
 				}
 				let chatIcon = row.querySelector(":scope > .dsh-sf-chatIcon");
+				const remoteWs = isRemotePath(ws.cwd);
 				if (!chatIcon || !chatIcon.isConnected) {
 					if (chatIcon) chatIcon.remove();
 					chatIcon = document.createElement("span");
 					chatIcon.className = "dsh-sf-chatIcon";
 					chatIcon.setAttribute("aria-hidden", "true");
-					chatIcon.innerHTML = CHAT_BUBBLE_ICON;
 					const folderEl = row.querySelector(':scope > [class*="_folder"]');
 					if (folderEl) row.insertBefore(chatIcon, folderEl);
 					else if (zone.nextSibling) row.insertBefore(chatIcon, zone.nextSibling);
 					else row.appendChild(chatIcon);
+				}
+				chatIcon.classList.toggle("dsh-sf-chatIconHidden", remoteWs);
+				if (remoteWs) {
+					chatIcon.innerHTML = "";
+				} else {
+					chatIcon.innerHTML = CHAT_BUBBLE_ICON;
+				}
+				chatIcon.classList.remove("dsh-sf-sshFolderIcon");
+				const folderEl = row.querySelector(':scope > [class*="_folder"]');
+				row.querySelector(":scope > .dsh-sf-sshMark")?.remove();
+				syncRowFolderAccent(row, folderEl);
+				let sshFolderIcon = row.querySelector(":scope > .dsh-sf-sshFolderIcon");
+				if (remoteWs) {
+					if (!sshFolderIcon || !sshFolderIcon.isConnected) {
+						if (sshFolderIcon) sshFolderIcon.remove();
+						sshFolderIcon = document.createElement("span");
+						sshFolderIcon.className = "dsh-sf-sshFolderIcon";
+						sshFolderIcon.setAttribute("aria-hidden", "true");
+						if (folderEl) folderEl.insertAdjacentElement("beforebegin", sshFolderIcon);
+						else if (chatIcon.nextSibling) row.insertBefore(sshFolderIcon, chatIcon.nextSibling);
+						else row.appendChild(sshFolderIcon);
+					} else if (folderEl && sshFolderIcon.nextElementSibling !== folderEl) {
+						folderEl.insertAdjacentElement("beforebegin", sshFolderIcon);
+					}
+					sshFolderIcon.innerHTML = SSH_REMOTE_ICON;
+				} else {
+					sshFolderIcon?.remove();
+					row.style.removeProperty("--dsh-ws-folder-color");
 				}
 				zone.dataset.wsKey = ws.key;
 				const zoneLabel = isCurrent
@@ -2673,7 +2736,7 @@ html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1
 		function apply(ctx) {
 			ensureStyles();
 			try {
-				document.documentElement.setAttribute("data-dsh-sidebar-files", "0.3.27");
+				document.documentElement.setAttribute("data-dsh-sidebar-files", "0.3.36");
 			} catch { /* ignore */ }
 			if (typeof window !== "undefined" && !window.__dshSfDropCleanup) {
 				window.__dshSfDropCleanup = true;

@@ -1,6 +1,6 @@
 {
   "name": "dsh-git",
-  "version": "0.6.2",
+  "version": "0.6.5",
   "description": "IDE-style Git tab: branches, stash, conflicts, undo/amend, PRs, hunk staging; GitHub sign-in, clone, publish, history.",
   "type": "module",
   "main": "lib/index.js",

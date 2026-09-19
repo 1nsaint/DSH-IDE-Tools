@@ -2,17 +2,18 @@
 
 Collection of plugins for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — IDE-style tabs and workbench chrome (Code, Git, Terminal, Containers, Database, Browser, files sidebar, workspaces, and more).
 
-## Quick start
+## Quick start (turnkey — friend / Antigravity agent)
+
+Plugins are **baked into the image** and seeded on first boot. No manual `install-ide-tools.sh` needed.
 
 ```bash
 git clone https://github.com/1nsaint/DSH-IDE-Tools.git
 cd DSH-IDE-Tools/deploy
-cp .env.example .env   # set DOCKER_GID
-../scripts/install-ide-tools.sh --dsh-home ./data
-docker compose -f docker-compose.example.yml up -d --build
+cp .env.example .env   # DOCKER_GID + OPENAI_API_* + CONTAINERS_HOST_ROOT
+docker compose -f docker-compose.yml up -d --build
 ```
 
-Open **http://127.0.0.1:3080** → **Settings → Models** → add your LLM.
+Open **http://127.0.0.1:3080**. Agent install brief: [`deploy/AGENTS.md`](deploy/AGENTS.md).
 
 Full details: [`docs/INSTALL.md`](docs/INSTALL.md) · [`docs/FAQ.md`](docs/FAQ.md)
 

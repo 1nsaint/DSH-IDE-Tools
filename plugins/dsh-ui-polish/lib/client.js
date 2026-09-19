@@ -168,11 +168,50 @@ window.__ModuleLoader__.load({
     --dsh-chat-content-width:100%;
     --dsh-composer-card-max-width:100%;
   }
+  /* Tool tabs (Git, Code, …): full width — do not apply chat column gutters. */
+  [class*="_root"][data-dsh-tool-tab="1"]{
+    padding-left:0!important;
+    padding-right:0!important;
+  }
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_scrollBody"],
+  [class*="_root"][data-dsh-tool-tab="1"] .Md3f7G_scroll,
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] > div{
+    padding-left:0!important;
+    padding-right:0!important;
+    max-width:none!important;
+  }
+  /* CRITICAL: never put chat gutters on plugin tool roots — [class*=_root]
+     matches .dg_root / Cron CzXJtG_root / rootInner / picker roots / etc. */
+  :is(.dg_root,.dc_root,.db_root,.dd_root,.dte_root,.dt_root,.dsh-code-tab-root){
+    padding-left:0!important;
+    padding-right:0!important;
+    max-width:none!important;
+    width:100%!important;
+    box-sizing:border-box!important;
+  }
+  /* Hashed *_root inside tool panes (Cron, pickers, …). Higher specificity
+     than the chat gutter rule below so nested roots stay flush. */
+  .dsh-tool-surface [class*="_root"],
+  .dsh-hero-tool-view [class*="_root"],
+  .dsh-hero-tool-host [class*="_root"],
+  .dsh-tool-surface [class*="rootInner"],
+  .dsh-hero-tool-view [class*="rootInner"]{
+    padding-left:0!important;
+    padding-right:0!important;
+    max-width:none!important;
+    box-sizing:border-box!important;
+  }
   .Md3f7G_scroll{
     padding-left:var(--dsh-composer-side-clearance)!important;
     padding-right:var(--dsh-composer-side-clearance)!important;
   }
-  [class*="_root"]{
+  /*
+   * Chat session root ONLY — direct under centerCol. Bare [class*=_root] also
+   * matches CSS-module roots like _root_1nxmc_1 (Settings dropdowns) and was
+   * forcing width:100%, crushing labels off the left edge.
+   */
+  [class*="_centerCol"] > div > div > [class*="_root"]:not([data-dsh-tool-tab="1"]){
     box-sizing:border-box!important;
     width:100%!important;
     max-width:100%!important;
@@ -207,7 +246,8 @@ window.__ModuleLoader__.load({
   [class*="_card"] [class*="_backdrop"]{
     padding-right:40px!important;
   }
-  [class*="_row"]{
+  /* Scope to composer card rows — bare [class*=_row] hits Settings / theme rows. */
+  [class*="_card"] [class*="_row"]{
     flex-wrap:nowrap!important;
     gap:6px!important;
     align-items:center!important;
@@ -227,7 +267,8 @@ window.__ModuleLoader__.load({
     min-width:0!important;
     max-width:min(148px,46vw)!important;
   }
-  [class*="_select"]{
+  /* Do NOT use [class*=_select] — it matches themeCube._selected in Settings. */
+  [class*="_trailing"] [class*="_select"]{
     max-width:min(148px,46vw)!important;
   }
   .Sh0Q9G_trigger{
@@ -297,6 +338,31 @@ window.__ModuleLoader__.load({
     -webkit-overflow-scrolling:touch;
     overscroll-behavior:contain;
   }
+  /* Undo any leaked chat-gutter / composer attribute selectors. */
+  .VOzbGW_panel [class*="_root"]{
+    width:auto !important;
+    max-width:none !important;
+    padding-left:unset !important;
+    padding-right:unset !important;
+  }
+  .VOzbGW_panel [class*="rowText"]{
+    flex:1 1 auto !important;
+    min-width:0 !important;
+    max-width:none !important;
+  }
+  .VOzbGW_panel [class*="cubeRow"]{
+    display:flex !important;
+    flex-wrap:nowrap !important;
+    gap:8px !important;
+    width:100% !important;
+  }
+  .VOzbGW_panel [class*="themeCube"],
+  .VOzbGW_panel [class*="cubeRow"] > *{
+    flex:1 1 0 !important;
+    min-width:0 !important;
+    max-width:none !important;
+    width:auto !important;
+  }
 }
 
 /* ---- Hero workspace row: keep chips on one line without squashing ---- */
@@ -347,6 +413,222 @@ window.__ModuleLoader__.load({
   }
   .pI_x6G_frame[data-sidebar-collapsed] .pI_x6G_sidebarCol{
     overflow:hidden!important;
+  }
+}
+
+/*
+ * ---- Tool tabs: full-bleed column (any width) + compact density when panel is narrow ----
+ */
+[class*="_centerCol"]{
+  container-type:inline-size;
+  container-name:dsh-center-col;
+}
+.dsh-hero-tool-host,
+[class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"]{
+  container-type:inline-size;
+  container-name:dsh-tool-panel;
+}
+/* Tool plugin roots: span the center column; no chat/split side gutters. */
+:is(.dg_root,.dc_root,.db_root,.dd_root,.dte_root,.dt_root,.dsh-code-tab-root,[data-dsh-cron-root]){
+  width:100%!important;
+  max-width:none!important;
+  min-width:0!important;
+  box-sizing:border-box!important;
+  padding-left:0!important;
+  padding-right:0!important;
+}
+[class*="_root"][data-dsh-tool-tab="1"] [class*="_scrollBody"],
+[class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"],
+[class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] > div,
+[class*="_root"][data-dsh-tool-tab="1"] .dsh-hero-tool-host,
+[class*="_root"][data-dsh-tool-tab="1"] .dsh-hero-tool-view,
+[class*="_viewArea"]:has(:is(.dg_root,.dc_root,.db_root,.dd_root,.dte_root,.dsh-code-tab-root)),
+[class*="_viewArea"]:has(:is(.dg_root,.dc_root,.db_root,.dd_root,.dte_root,.dsh-code-tab-root)) > div,
+.dsplit_rightBody:has(:is(.dg_root,.dc_root,.db_root,.dd_root,.dte_root,.dsh-code-tab-root)),
+.dsplit_rightFrame:has(:is(.dg_root,.dc_root,.db_root,.dd_root,.dte_root,.dsh-code-tab-root)){
+  padding-left:0!important;
+  padding-right:0!important;
+  max-width:none!important;
+}
+[class*="_root"][data-dsh-tool-tab="1"] .Md3f7G_scroll,
+[class*="_viewArea"]:has(:is(.dg_root,.dc_root,.db_root,.dd_root,.dte_root,.dsh-code-tab-root)) .Md3f7G_scroll,
+.dsplit_rightBody:has(:is(.dg_root,.dc_root,.db_root,.dd_root,.dte_root,.dsh-code-tab-root)){
+  padding-left:0!important;
+  padding-right:0!important;
+}
+@media (max-width:900px){
+  /* dsh-split-view adds 12px scroll gutters on mobile — drop them for tool panes. */
+  [class*="_root"][data-dsh-tool-tab="1"] .Md3f7G_scroll,
+  [class*="_root"][data-dsh-split="1"][data-dsh-tool-tab="1"] .Md3f7G_scroll,
+  [class*="_viewArea"]:has(:is(.dg_root,.dc_root,.db_root,.dd_root,.dte_root,.dsh-code-tab-root)) .Md3f7G_scroll,
+  [class*="_root"][data-dsh-split="1"] .dsplit_rightBody:has(:is(.dg_root,.dc_root,.db_root,.dd_root,.dte_root,.dsh-code-tab-root)){
+    padding-left:0!important;
+    padding-right:0!important;
+  }
+}
+[class*="_root"][data-dsh-tool-tab="1"] .dsh-hero-tool-host,
+[class*="_root"][data-dsh-tool-tab="1"] .dsh-hero-tool-view,
+.dsh-hero-tool-host,
+.dsh-hero-tool-view{
+  max-width:none!important;
+  box-sizing:border-box!important;
+}
+@container dsh-center-col (max-width:720px){
+  .dsh-tool-surface,
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] > div,
+  .dsh-hero-tool-view > *{
+    --dsh-t-pad-x:4px;
+    --dsh-t-pad-x-end:10px;
+    --dsh-t-bar-pad:10px;
+    --dsh-t-pad-y:6px;
+    --dsh-t-card-pad:8px;
+    --dsh-t-gap:6px;
+    --dsh-t-btn-h:28px;
+    --dsh-t-input-h:28px;
+    --dsh-t-font:11px;
+    --dsh-t-font-sm:10px;
+    --dsh-t-radius:6px;
+  }
+  /* Hero title / tabs: keep side breathing room (do not flush to 0). */
+  [class*="_root"][data-dsh-tool-tab="1"] .dsh-hero-header,
+  .dsh-hero-header[class*="_header"]{
+    padding:8px var(--dsh-t-bar-pad,10px) 0!important;
+  }
+  /* Tool chrome bars: modest inset so Local/GitHub controls are not edge-glued. */
+  :is(.dg_root,.dc_root,.db_root,.dd_root) > [class*="authBar"],
+  :is(.dg_root,.dc_root,.db_root,.dd_root) > [class~="dg_bar"],
+  :is(.dg_root,.dc_root,.db_root,.dd_root) > [class~="dc_bar"],
+  :is(.dg_root,.dc_root,.db_root,.dd_root) > [class~="dd_bar"],
+  :is(.dg_root,.dc_root,.db_root,.dd_root) > [class~="db_bar"],
+  .dsh-tool-surface [class*="authBar"],
+  .dsh-tool-surface [class~="dg_bar"],
+  .dsh-tool-surface [class~="dc_bar"],
+  .dsh-tool-surface [class~="dd_bar"],
+  .dsh-tool-surface [class~="db_bar"],
+  [class*="_viewArea"] [class*="authBar"],
+  [class*="_viewArea"] [class~="dg_bar"]{
+    padding-left:var(--dsh-t-bar-pad,10px)!important;
+    padding-right:var(--dsh-t-bar-pad,10px)!important;
+  }
+  /*
+   * Outer wrappers: near-flush. Nested setup→hub→column and cron
+   * rootInner→bodyPad→panel were each adding 8–16px and crushing cards.
+   */
+  .dsh-tool-surface [class~="dg_setup"],
+  .dsh-tool-surface [class~="dg_hub"],
+  .dsh-tool-surface [class*="hubTop"],
+  .dsh-tool-surface [class*="bodyPad"],
+  .dsh-tool-surface [class*="formStack"],
+  .dsh-tool-surface [class*="formSchedule"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class~="dg_setup"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class~="dg_hub"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class*="bodyPad"]{
+    padding-left:var(--dsh-t-pad-x,4px)!important;
+    padding-right:var(--dsh-t-pad-x-end,10px)!important;
+  }
+  .dsh-tool-surface [class~="dg_hub"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class~="dg_hub"]{
+    padding-top:var(--dsh-t-pad-y,6px)!important;
+    padding-bottom:var(--dsh-t-pad-y,6px)!important;
+  }
+  .dsh-tool-surface [class*="hubGrid"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class*="hubGrid"]{
+    gap:8px!important;
+  }
+  /* Cards / panels: keep modest internal padding only. */
+  .dsh-tool-surface [class*="hubColumn"],
+  .dsh-tool-surface [class*="remoteRow"],
+  .dsh-tool-surface [class*="initBox"],
+  .dsh-tool-surface [class*="_panel"],
+  .dsh-tool-surface [class~="M_Ug7q_panel"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class*="hubColumn"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class*="remoteRow"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class*="_panel"]{
+    padding-left:var(--dsh-t-card-pad,8px)!important;
+    padding-right:var(--dsh-t-card-pad,8px)!important;
+  }
+  .dsh-tool-surface [class*="remoteList"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class*="remoteList"]{
+    padding-left:0!important;
+    padding-right:0!important;
+  }
+  .dsh-tool-surface [class~="dg_btn"],
+  .dsh-tool-surface [class~="dc_btn"],
+  .dsh-tool-surface [class~="dd_btn"],
+  .dsh-tool-surface [class~="db_btn"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class~="dg_btn"]{
+    height:var(--dsh-t-btn-h,28px)!important;
+    min-height:var(--dsh-t-btn-h,28px)!important;
+    padding-left:8px!important;
+    padding-right:8px!important;
+    font-size:var(--dsh-t-font,11px)!important;
+    border-radius:var(--dsh-t-radius,6px)!important;
+  }
+  .dsh-tool-surface [class*="btnSm"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class*="btnSm"]{
+    height:22px!important;
+    min-height:22px!important;
+    font-size:var(--dsh-t-font-sm,10px)!important;
+  }
+  .dsh-tool-surface [class*="modeToggle"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="modeToggle"]{
+    height:var(--dsh-t-btn-h,28px)!important;
+  }
+  .dsh-tool-surface [class*="modeToggle"] button,
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="modeToggle"] button{
+    font-size:var(--dsh-t-font,11px)!important;
+    padding-left:10px!important;
+    padding-right:10px!important;
+  }
+  .dsh-tool-surface [class~="dg_select"],
+  .dsh-tool-surface [class~="dg_input"],
+  .dsh-tool-surface [class*="filterInput"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class~="dg_select"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class~="dg_input"]{
+    height:var(--dsh-t-input-h,28px)!important;
+    min-height:var(--dsh-t-input-h,28px)!important;
+    font-size:var(--dsh-t-font,11px)!important;
+  }
+  .dsh-tool-surface [class*="remoteName"],
+  .dsh-tool-surface [class*="sectionTitle"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class*="remoteName"]{
+    font-size:12px!important;
+  }
+  .dsh-tool-surface [class*="remoteDesc"],
+  .dsh-tool-surface [class~="dg_meta"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class*="remoteDesc"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class~="dg_meta"]{
+    font-size:var(--dsh-t-font-sm,10px)!important;
+  }
+  .dsh-tool-surface [class*="authBar"],
+  .dsh-tool-surface [class~="dg_bar"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class*="authBar"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class~="dg_bar"]{
+    gap:var(--dsh-t-gap,6px)!important;
+    font-size:var(--dsh-t-font,11px)!important;
+  }
+  /* Cron filter strip — match chrome bar inset (bar only, not the tablist). */
+  .dsh-tool-surface [class*="rootInner"] > [class$="_bar"],
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] [class*="rootInner"] > [class$="_bar"]{
+    padding-left:var(--dsh-t-bar-pad,10px)!important;
+    padding-right:var(--dsh-t-bar-pad,10px)!important;
+  }
+}
+@container dsh-center-col (max-width:480px){
+  .dsh-tool-surface,
+  [class*="_root"][data-dsh-tool-tab="1"] [class*="_viewArea"] > div,
+  .dsh-hero-tool-view > *{
+    --dsh-t-pad-x:2px;
+    --dsh-t-pad-x-end:10px;
+    --dsh-t-bar-pad:8px;
+    --dsh-t-card-pad:6px;
+    --dsh-t-btn-h:26px;
+    --dsh-t-input-h:26px;
+    --dsh-t-font:10px;
+  }
+  [class*="_root"][data-dsh-tool-tab="1"] .dsh-hero-header,
+  .dsh-hero-header[class*="_header"]{
+    padding:6px var(--dsh-t-bar-pad,8px) 0!important;
   }
 }
 

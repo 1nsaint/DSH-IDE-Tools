@@ -1,7 +1,7 @@
 {
   "name": "dsh-split-view",
-  "version": "0.2.5",
-  "description": "Split workbench — hero root-level panes when tool tabs hide scrollBody.",
+  "version": "0.2.11",
+  "description": "Split workbench — pass surface=split so Terminal gets its own PTY.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

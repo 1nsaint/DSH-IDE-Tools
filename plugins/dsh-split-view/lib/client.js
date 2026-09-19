@@ -5,11 +5,103 @@ window.__ModuleLoader__.load({
 	factory: (require) => {
 		const React = require("react");
 		const ReactDOM = require("react-dom");
+		let ReactDOMClient = null;
+		try {
+			ReactDOMClient = require("react-dom/client");
+		} catch {
+			ReactDOMClient = null;
+		}
 		const PLUGIN = "dsh-split-view";
 		const STORAGE_KEY = "dsh-split-view.v1";
-		const DEFAULT_RIGHT = "Browser";
+		const DEFAULT_RIGHT = "Code";
 		const MIN_RATIO = 0.22;
 		const MAX_RATIO = 0.78;
+		const SPLIT_EVENT = "dsh-split-view:change";
+
+		/**
+		 * Shared hero/session split state.
+		 * SplitChrome must NOT live only under conversation.input.dock — that slot
+		 * error-boundaries (data-slot-error) and unmounts, leaving empty .dsplit_rightHost
+		 * orphans with data-dsh-split=1 and no React portals.
+		 */
+		const splitStore = {
+			enabled: false,
+			ratio: 0.5,
+			rightLabel: DEFAULT_RIGHT,
+			sessionId: null,
+			listeners: new Set(),
+			subscribe(fn) {
+				this.listeners.add(fn);
+				return () => this.listeners.delete(fn);
+			},
+			emit() {
+				for (const fn of this.listeners) {
+					try {
+						fn(this.snapshot());
+					} catch {
+						/* ignore */
+					}
+				}
+				try {
+					window.dispatchEvent(new CustomEvent(SPLIT_EVENT, { detail: this.snapshot() }));
+				} catch {
+					/* ignore */
+				}
+			},
+			snapshot() {
+				return {
+					enabled: this.enabled,
+					ratio: this.ratio,
+					rightLabel: this.rightLabel,
+					sessionId: this.sessionId,
+				};
+			},
+			set(partial) {
+				let changed = false;
+				for (const [k, v] of Object.entries(partial)) {
+					if (this[k] !== v) {
+						this[k] = v;
+						changed = true;
+					}
+				}
+				if (changed) this.emit();
+			},
+		};
+
+		function portalApi() {
+			const createPortal = ReactDOM?.createPortal || ReactDOM?.default?.createPortal;
+			return typeof createPortal === "function" ? createPortal.bind(ReactDOM?.default || ReactDOM) : null;
+		}
+
+		/** Fallback when createPortal is missing — keep a createRoot per host element. */
+		const hostRoots = new WeakMap();
+
+		/** Catch tool-panel render crashes so they don't kill the whole split inject. */
+		class PanelErrorBoundary extends React.Component {
+			constructor(props) {
+				super(props);
+				this.state = { error: null };
+			}
+			static getDerivedStateFromError(error) {
+				return { error };
+			}
+			componentDidCatch() {
+				/* already stored */
+			}
+			render() {
+				if (this.state.error) {
+					const msg = this.state.error instanceof Error
+						? this.state.error.message
+						: String(this.state.error);
+					return React.createElement(
+						"div",
+						{ className: "dsplit_empty" },
+						`Split panel crashed: ${msg}`,
+					);
+				}
+				return this.props.children;
+			}
+		}
 
 		/** Tab label → registry id (Chat / Trajectory are left-window only). */
 		const LABEL_TO_PANEL = {
@@ -206,8 +298,10 @@ window.__ModuleLoader__.load({
 }
 
 /*
- * Hero: left tools live in .dsh-hero-tool-host (scrollBody is hidden on non-Chat).
- * Split must be a root-level grid — not inside the hidden scrollBody.
+ * Hero: left tools live in .dsh-hero-tool-host (scrollBody/body hidden on non-Chat).
+ * Split is a root-level grid. 0.1.5 nests Chat under root > _body > _scrollBody —
+ * never apply the session 3-col grid inside that nested scrollBody (it shrinks Chat
+ * to ~50% of the already-split left column).
  */
 [class*="_root"][data-phase=hero][data-dsh-split="1"]{
   display:grid!important;
@@ -227,22 +321,42 @@ window.__ModuleLoader__.load({
 [class*="_root"][data-phase=hero][data-dsh-split="1"] > [data-dsh-hero-header-host]:not(header){
   display:contents!important;
 }
+/* Left column: tool host OR body (0.1.5+) OR legacy direct scrollBody */
 [class*="_root"][data-phase=hero][data-dsh-split="1"] > .dsh-hero-tool-host,
+[class*="_root"][data-phase=hero][data-dsh-split="1"] > [class*="_body"],
 [class*="_root"][data-phase=hero][data-dsh-split="1"] > [class*="_scrollBody"]{
   grid-column:1;
   grid-row:2;
   min-width:0!important;
   min-height:0!important;
   overflow:hidden!important;
-  height:auto!important;
+  align-self:stretch!important;
+  height:100%!important;
   max-height:none!important;
+  width:100%!important;
+  max-width:100%!important;
+  box-sizing:border-box;
 }
-[class*="_root"][data-phase=hero][data-dsh-split="1"] > [class*="_scrollBody"]{
+[class*="_root"][data-phase=hero][data-dsh-split="1"] > [class*="_body"]{
   display:flex!important;
   flex-direction:column!important;
+}
+/* Nested scrollBody must fill the left column — NOT become another split grid */
+[class*="_root"][data-phase=hero][data-dsh-split="1"] [class*="_scrollBody"]{
+  display:flex!important;
+  flex-direction:column!important;
+  justify-content:center!important; /* stock hero centers the composer stack */
   grid-template-columns:none!important;
   grid-template-rows:none!important;
+  flex:1 1 0!important;
+  width:100%!important;
+  max-width:100%!important;
+  min-width:0!important;
+  min-height:0!important;
+  height:100%!important;
+  overflow:hidden!important;
 }
+[class*="_root"][data-phase=hero][data-dsh-split="1"][data-dsh-tool-tab="1"] > [class*="_body"],
 [class*="_root"][data-phase=hero][data-dsh-split="1"][data-dsh-tool-tab="1"] > [class*="_scrollBody"]{
   display:none!important;
 }
@@ -260,6 +374,9 @@ window.__ModuleLoader__.load({
 [class*="_root"][data-phase=hero][data-dsh-split="1"] > .dsplit_rightHost{
   grid-column:3;
   grid-row:2;
+  min-height:0!important;
+  height:100%!important;
+  align-self:stretch!important;
   border-left:1px solid var(--dsw-alias-border-l2);
 }
 [class*="_root"][data-phase=hero][data-dsh-split="1"] [class*="_scrollBody"] > .dsplit_dividerHost,
@@ -267,8 +384,26 @@ window.__ModuleLoader__.load({
   display:none!important;
 }
 [class*="_root"][data-phase=hero][data-dsh-split="1"] [class*="_composerSeat"]{
-  grid-column:unset;
-  grid-row:unset;
+  grid-column:unset!important;
+  grid-row:unset!important;
+  /* Content-sized (stock is flex:0 0 auto). flex:1 made the seat fill the pane and
+     pinned the InputBar to the top despite scrollBody justify-content:center. */
+  flex:0 0 auto!important;
+  width:100%!important;
+  max-width:100%!important;
+  min-width:0!important;
+  height:auto!important;
+  align-self:stretch!important;
+  box-sizing:border-box;
+}
+[class*="_root"][data-phase=hero][data-dsh-split="1"] [class*="_composerSeat"] > *,
+[class*="_root"][data-phase=hero][data-dsh-split="1"] [class*="_composerStack"],
+[class*="_root"][data-phase=hero][data-dsh-split="1"] [class*="_composerHero"]{
+  width:100%!important;
+  max-width:min(var(--dsh-composer-card-max-width,920px),100%)!important;
+  box-sizing:border-box;
+  margin-left:auto;
+  margin-right:auto;
 }
 [class*="_root"][data-dsh-split="1"] [class*="_composerSeat"]{
   grid-column:1;grid-row:2;
@@ -659,6 +794,30 @@ window.__ModuleLoader__.load({
 			root.style.removeProperty("--dsh-split-right");
 		}
 
+		function safeInsertBefore(parent, node, ref) {
+			if (!parent || !node) return;
+			try {
+				if (ref && ref.parentNode === parent) parent.insertBefore(node, ref);
+				else if (node.parentNode !== parent) parent.appendChild(node);
+			} catch {
+				try {
+					if (node.parentNode !== parent) parent.appendChild(node);
+				} catch {
+					/* ignore */
+				}
+			}
+		}
+
+		function placeAfter(parent, node, after) {
+			if (!parent || !node) return;
+			if (after && after.parentNode === parent) {
+				if (after.nextSibling === node) return; // already placed — avoid MutationObserver churn
+				safeInsertBefore(parent, node, after.nextSibling);
+			} else if (node.parentNode !== parent) {
+				parent.appendChild(node);
+			}
+		}
+
 		function ensureHosts() {
 			const root = sessionRoot();
 			if (!root) return null;
@@ -667,8 +826,10 @@ window.__ModuleLoader__.load({
 				root.querySelector(':scope > [class*="_scrollBody"]')
 				|| body?.querySelector(':scope > [class*="_scrollBody"]')
 				|| root.querySelector('[class*="_scrollBody"]');
-			if (!scrollBody) return null;
 			const hero = isHeroPhase(root);
+			// Hero split mounts on the root (tool-host + scrollBody siblings). scrollBody may be
+			// display:none on tool tabs — still preferred as an order anchor, but not required.
+			if (!scrollBody && !hero) return null;
 			const header = findSessionHeader(root);
 			const toolHost = root.querySelector(":scope > .dsh-hero-tool-host");
 			/** Session: hosts live inside scrollBody. Hero: siblings of tool-host/scrollBody on root. */
@@ -676,7 +837,7 @@ window.__ModuleLoader__.load({
 
 			let divider =
 				(hero && root.querySelector(":scope > .dsplit_dividerHost"))
-				|| scrollBody.querySelector(":scope > .dsplit_dividerHost")
+				|| scrollBody?.querySelector(":scope > .dsplit_dividerHost")
 				|| root.querySelector(".dsplit_dividerHost");
 			if (!divider) {
 				divider = document.createElement("div");
@@ -687,7 +848,7 @@ window.__ModuleLoader__.load({
 
 			let rightHost =
 				(hero && root.querySelector(":scope > .dsplit_rightHost"))
-				|| scrollBody.querySelector(":scope > .dsplit_rightHost")
+				|| scrollBody?.querySelector(":scope > .dsplit_rightHost")
 				|| root.querySelector(".dsplit_rightHost");
 			if (!rightHost) {
 				rightHost = document.createElement("div");
@@ -695,36 +856,40 @@ window.__ModuleLoader__.load({
 			}
 
 			if (hero) {
-				// Pull hosts out of the (often hidden) scrollBody onto the root.
-				const anchor = scrollBody.nextSibling;
-				if (divider.parentElement !== root || rightHost.parentElement !== root) {
-					root.insertBefore(divider, anchor);
-					root.insertBefore(rightHost, divider.nextSibling);
-				}
-				// Order: header(s), toolHost, scrollBody, divider, rightHost
-				if (toolHost && toolHost.nextSibling !== scrollBody) {
-					root.insertBefore(toolHost, scrollBody);
-				}
-				if (scrollBody.nextSibling !== divider) {
-					root.insertBefore(divider, scrollBody.nextSibling);
-				}
-				if (divider.nextSibling !== rightHost) {
-					root.insertBefore(rightHost, divider.nextSibling);
+				// Do NOT reparent React-managed nodes (toolHost/body/scrollBody). Only place our
+				// hosts after the left content anchor. 0.1.5+: prefer _body (scrollBody is nested).
+				const toolVisible = toolHost && (() => {
+					try {
+						return window.getComputedStyle(toolHost).display !== "none";
+					} catch {
+						return true;
+					}
+				})();
+				const leftAnchor =
+					(toolVisible && toolHost)
+					|| (body && body.parentNode === root ? body : null)
+					|| (scrollBody && scrollBody.parentNode === root ? scrollBody : null)
+					|| null;
+				if (divider.parentElement !== root) root.appendChild(divider);
+				if (rightHost.parentElement !== root) root.appendChild(rightHost);
+				if (leftAnchor) {
+					placeAfter(root, divider, leftAnchor);
+					placeAfter(root, rightHost, divider);
 				}
 			} else {
 				const composer = scrollBody.querySelector('[class*="_composerSeat"]');
 				if (divider.parentElement !== scrollBody) {
-					if (composer) scrollBody.insertBefore(divider, composer);
+					if (composer && composer.parentNode === scrollBody) safeInsertBefore(scrollBody, divider, composer);
 					else scrollBody.appendChild(divider);
 				}
 				if (rightHost.parentElement !== scrollBody) {
-					if (composer) scrollBody.insertBefore(rightHost, composer);
+					if (composer && composer.parentNode === scrollBody) safeInsertBefore(scrollBody, rightHost, composer);
 					else scrollBody.appendChild(rightHost);
-				} else if (composer && rightHost.nextSibling !== composer) {
-					scrollBody.insertBefore(rightHost, composer);
+				} else if (composer && composer.parentNode === scrollBody && rightHost.nextSibling !== composer) {
+					safeInsertBefore(scrollBody, rightHost, composer);
 				}
-				if (divider.nextSibling !== rightHost) {
-					scrollBody.insertBefore(divider, rightHost);
+				if (rightHost.parentNode === scrollBody && divider.nextSibling !== rightHost) {
+					safeInsertBefore(scrollBody, divider, rightHost);
 				}
 			}
 
@@ -761,13 +926,16 @@ window.__ModuleLoader__.load({
 			// Order: titleRow (existing), tabs (existing), gap, right tabs
 			const stockTabs = header.querySelector('[class*="_tabs"]');
 			if (headerGap.parentElement !== header) {
-				if (stockTabs?.nextSibling) header.insertBefore(headerGap, stockTabs.nextSibling);
-				else header.appendChild(headerGap);
+				if (stockTabs && stockTabs.parentNode === header) {
+					placeAfter(header, headerGap, stockTabs);
+				} else {
+					header.appendChild(headerGap);
+				}
 			}
 			if (tabsAnchor.parentElement !== header) {
-				header.insertBefore(tabsAnchor, headerGap.nextSibling);
+				placeAfter(header, tabsAnchor, headerGap);
 			} else if (tabsAnchor.previousSibling !== headerGap) {
-				header.insertBefore(tabsAnchor, headerGap.nextSibling);
+				placeAfter(header, tabsAnchor, headerGap);
 			}
 
 			return { root, scrollBody, toolHost, mountParent, divider, rightHost, tabsAnchor, headerGap, header, hero };
@@ -795,19 +963,26 @@ window.__ModuleLoader__.load({
 			const labels = readStockTabs();
 
 			React.useEffect(() => {
+				let timer = 0;
+				const schedule = () => {
+					window.clearTimeout(timer);
+					timer = window.setTimeout(() => bump((n) => n + 1), 150);
+				};
 				const t = window.setTimeout(() => bump((n) => n + 1), 200);
-				const obs = new MutationObserver(() => bump((n) => n + 1));
+				const obs = new MutationObserver(schedule);
 				const root = sessionRoot();
 				if (root) {
+					// Attributes only — childList+subtree re-fires on every portal paint and freezes UI.
 					obs.observe(root, {
 						subtree: true,
-						childList: true,
+						childList: false,
 						attributes: true,
 						attributeFilter: ["data-dsh-tab-label", "aria-selected"],
 					});
 				}
 				return () => {
 					window.clearTimeout(t);
+					window.clearTimeout(timer);
 					obs.disconnect();
 				};
 			}, []);
@@ -867,7 +1042,7 @@ window.__ModuleLoader__.load({
 			let body;
 			if (panelId && factory) {
 				try {
-					body = factory({ sessionId: sessionId || resolveSessionId() });
+					body = factory({ sessionId: sessionId || resolveSessionId(), surface: "split" });
 				} catch (err) {
 					body = React.createElement(
 						"div",
@@ -900,7 +1075,11 @@ window.__ModuleLoader__.load({
 							onCloseSplit,
 						})
 					: null,
-				React.createElement("div", { className: "dsplit_rightBody" }, body),
+				React.createElement(
+					"div",
+					{ className: "dsplit_rightBody" },
+					React.createElement(PanelErrorBoundary, { key: activeLabel }, body),
+				),
 			);
 		}
 
@@ -909,44 +1088,110 @@ window.__ModuleLoader__.load({
 			const dragging = React.useRef(false);
 			const liveRatio = React.useRef(ratio);
 			liveRatio.current = ratio;
-
-			// Mount / unmount hosts — do NOT depend on ratio (that remounted listeners mid-drag).
+			const createPortal = portalApi();
 			React.useEffect(() => {
 				ensureStyles();
 				const root = sessionRoot();
-				if (!root) return;
+				if (!root) return undefined;
 				if (!enabled) {
 					root.removeAttribute("data-dsh-split");
 					root.removeAttribute("data-dsh-split-body-tabs");
 					clearHosts(root);
 					setHosts(null);
-					return;
+					return undefined;
 				}
 				root.setAttribute("data-dsh-split", "1");
 				applyRatio(liveRatio.current);
-				const next = ensureHosts();
-				if (next?.tabsAnchor) root.removeAttribute("data-dsh-split-body-tabs");
-				else root.setAttribute("data-dsh-split-body-tabs", "1");
-				setHosts(next);
 
-				const obs = new MutationObserver(() => {
-					if (!sessionRoot()?.hasAttribute("data-dsh-split")) return;
-					if (dragging.current) return;
-					const h = ensureHosts();
+				let cancelled = false;
+				let mutating = false;
+				let debounceTimer = 0;
+
+				const syncHosts = (force) => {
+					if (cancelled || dragging.current) return;
+					if (mutating && !force) return;
+					mutating = true;
+					let h = null;
+					try {
+						h = ensureHosts();
+					} catch (err) {
+						console.warn("[dsh-split-view] ensureHosts failed", err);
+						h = null;
+					} finally {
+						// Let our own DOM writes settle before observing again.
+						queueMicrotask(() => { mutating = false; });
+					}
 					const r = sessionRoot();
 					if (r) {
 						if (h?.tabsAnchor) r.removeAttribute("data-dsh-split-body-tabs");
 						else r.setAttribute("data-dsh-split-body-tabs", "1");
 					}
-					setHosts((prev) =>
-						prev?.rightHost === h?.rightHost && prev?.tabsAnchor === h?.tabsAnchor && prev?.divider === h?.divider
-							? prev
-							: h,
-					);
+					setHosts((prev) => {
+						if (
+							prev
+							&& h
+							&& prev.rightHost === h.rightHost
+							&& prev.tabsAnchor === h.tabsAnchor
+							&& prev.divider === h.divider
+							&& prev.scrollBody === h.scrollBody
+							&& prev.toolHost === h.toolHost
+							&& prev.header === h.header
+						) {
+							return prev;
+						}
+						return h;
+					});
+				};
+
+				syncHosts(true);
+
+				// Only react when our hosts disappear or the shell re-parents — NOT on every
+				// subtree mutation (portals/React would infinite-loop and freeze the page).
+				const obs = new MutationObserver((records) => {
+					if (cancelled || mutating || dragging.current) return;
+					let needs = false;
+					for (const rec of records) {
+						if (rec.type !== "childList") continue;
+						for (const node of rec.removedNodes) {
+							if (!(node instanceof HTMLElement)) continue;
+							if (
+								node.classList?.contains("dsplit_rightHost")
+								|| node.classList?.contains("dsplit_dividerHost")
+								|| node.classList?.contains("dsplit_rightTabsAnchor")
+								|| node.classList?.contains("dsh-hero-tool-host")
+								|| [...(node.classList || [])].some((c) => c.includes("_scrollBody") || c.includes("_body") || c.includes("_header"))
+							) {
+								needs = true;
+								break;
+							}
+						}
+						if (needs) break;
+						// Our hosts detached / missing
+						if (!root.querySelector(":scope > .dsplit_rightHost") && !root.querySelector(".dsplit_rightHost")) {
+							needs = true;
+							break;
+						}
+					}
+					if (!needs) return;
+					window.clearTimeout(debounceTimer);
+					debounceTimer = window.setTimeout(() => syncHosts(false), 80);
 				});
-				obs.observe(root, { childList: true, subtree: true });
+				obs.observe(root, { childList: true, subtree: false });
+				// Also watch direct header for tab-anchor loss (header is row 1 child).
+				const header = findSessionHeader(root);
+				if (header) obs.observe(header, { childList: true, subtree: false });
+
 				return () => {
+					cancelled = true;
+					window.clearTimeout(debounceTimer);
 					obs.disconnect();
+					const r = sessionRoot();
+					if (r?.hasAttribute("data-dsh-split")) {
+						r.removeAttribute("data-dsh-split");
+						r.removeAttribute("data-dsh-split-body-tabs");
+						clearHosts(r);
+					}
+					setHosts(null);
 				};
 			}, [enabled]);
 
@@ -1043,7 +1288,9 @@ window.__ModuleLoader__.load({
 				};
 			}, [enabled, hosts, onRatio]);
 
-			if (!enabled || !hosts?.rightHost || !ReactDOM?.createPortal) return null;
+			if (!enabled || !hosts?.rightHost) {
+				return null;
+			}
 
 			const tabs = React.createElement(RightTabList, {
 				activeLabel: rightLabel,
@@ -1062,12 +1309,59 @@ window.__ModuleLoader__.load({
 					&& (isStackedSplit() || !!hosts?.root?.hasAttribute("data-dsh-split-body-tabs")),
 			});
 
-			return React.createElement(
-				React.Fragment,
-				null,
-				hosts.tabsAnchor?.isConnected ? ReactDOM.createPortal(tabs, hosts.tabsAnchor) : null,
-				ReactDOM.createPortal(bodyWithTabs, hosts.rightHost),
-			);
+			if (createPortal) {
+				return React.createElement(
+					React.Fragment,
+					null,
+					hosts.tabsAnchor?.isConnected ? createPortal(tabs, hosts.tabsAnchor) : null,
+					createPortal(bodyWithTabs, hosts.rightHost),
+				);
+			}
+
+			// Imperative createRoot fallback (rare — portal API missing).
+			return React.createElement(CreateRootHost, {
+				rightHost: hosts.rightHost,
+				tabsAnchor: hosts.tabsAnchor?.isConnected ? hosts.tabsAnchor : null,
+				tabs,
+				body: bodyWithTabs,
+			});
+		}
+
+		function CreateRootHost({ rightHost, tabsAnchor, tabs, body }) {
+			React.useEffect(() => {
+				if (!ReactDOMClient?.createRoot) return undefined;
+				const nodes = [];
+				if (tabsAnchor) {
+					let root = hostRoots.get(tabsAnchor);
+					if (!root) {
+						root = ReactDOMClient.createRoot(tabsAnchor);
+						hostRoots.set(tabsAnchor, root);
+					}
+					root.render(tabs);
+					nodes.push(tabsAnchor);
+				}
+				if (rightHost) {
+					let root = hostRoots.get(rightHost);
+					if (!root) {
+						root = ReactDOMClient.createRoot(rightHost);
+						hostRoots.set(rightHost, root);
+					}
+					root.render(body);
+					nodes.push(rightHost);
+				}
+				return () => {
+					for (const node of nodes) {
+						const root = hostRoots.get(node);
+						try {
+							root?.unmount();
+						} catch {
+							/* ignore */
+						}
+						hostRoots.delete(node);
+					}
+				};
+			}, [rightHost, tabsAnchor, tabs, body]);
+			return null;
 		}
 
 		function isSidebarCollapsed() {
@@ -1114,25 +1408,125 @@ window.__ModuleLoader__.load({
 			return clickSidebarToggle();
 		}
 
-		function SplitToggle({ sessionId, getLayout }) {
-			const saved = loadState() || {};
+		function useSplitStore() {
+			const [snap, setSnap] = React.useState(() => splitStore.snapshot());
+			React.useEffect(() => splitStore.subscribe(setSnap), []);
+			return snap;
+		}
+
+		function SplitChromeHost() {
+			const snap = useSplitStore();
+			const hero = useIsHero();
+			const actions = useHeroHeaderActions(hero);
 			const [desktop, setDesktop] = React.useState(() => isSplitDesktop());
-			const [enabled, setEnabled] = React.useState(() => saved.enabled === true);
-			const [ratio, setRatio] = React.useState(() =>
-				typeof saved.ratio === "number" ? saved.ratio : 0.5,
+			const active = snap.enabled && desktop;
+			const createPortal = portalApi();
+			const lastToggleAt = React.useRef(0);
+
+			React.useEffect(() => {
+				let mq;
+				try {
+					mq = window.matchMedia("(max-width: 900px)");
+				} catch {
+					return undefined;
+				}
+				const sync = () => setDesktop(!mq.matches);
+				sync();
+				if (typeof mq.addEventListener === "function") mq.addEventListener("change", sync);
+				else if (typeof mq.addListener === "function") mq.addListener(sync);
+				return () => {
+					if (typeof mq.removeEventListener === "function") mq.removeEventListener("change", sync);
+					else if (typeof mq.removeListener === "function") mq.removeListener(sync);
+				};
+			}, []);
+
+			// Leaving hero must close split so session chrome doesn't inherit orphan hosts.
+			React.useEffect(() => {
+				if (!hero && splitStore.enabled) setSplitEnabled(false);
+			}, [hero]);
+
+			const onHeroToggle = (e) => {
+				if (e?.button != null && e.button !== 0) return;
+				e?.preventDefault?.();
+				e?.stopPropagation?.();
+				const now = Date.now();
+				if (now - lastToggleAt.current < 350) return;
+				lastToggleAt.current = now;
+				setSplitEnabled(!active);
+			};
+
+			const heroBtn = hero && desktop
+				? React.createElement(
+					"button",
+					{
+						className: "fex-ibtn dsplit-toggle" + (active ? " active" : ""),
+						type: "button",
+						title: active ? "Close split window" : "Open split window",
+						"aria-label": active ? "Close split window" : "Open split window",
+						onClick: onHeroToggle,
+					},
+					splitIcon(),
+				)
+				: null;
+
+			return React.createElement(
+				PanelErrorBoundary,
+				null,
+				heroBtn && actions && createPortal ? createPortal(heroBtn, actions) : null,
+				React.createElement(SplitChrome, {
+					enabled: active,
+					ratio: snap.ratio,
+					rightLabel: snap.rightLabel,
+					sessionId: snap.sessionId,
+					onRatio: (ratio) => {
+						splitStore.set({ ratio });
+						saveState({ ratio, rightLabel: splitStore.rightLabel, enabled: splitStore.enabled });
+					},
+					onRightLabel: (rightLabel) => {
+						splitStore.set({ rightLabel });
+						saveState({ ratio: splitStore.ratio, rightLabel, enabled: splitStore.enabled });
+					},
+					onCloseSplit: () => {
+						splitStore.set({ enabled: false });
+						saveState({ enabled: false, ratio: splitStore.ratio, rightLabel: splitStore.rightLabel });
+					},
+				}),
 			);
-			const [rightLabel, setRightLabel] = React.useState(() =>
-				typeof saved.rightLabel === "string" ? saved.rightLabel : DEFAULT_RIGHT,
-			);
+		}
+
+		function setSplitEnabled(next, { getLayout, collapseSidebarOnOpen = false } = {}) {
+			if (next && !isSplitDesktop()) return;
+			if (next) {
+				let rightLabel = splitStore.rightLabel;
+				if (rightLabel === "Chat" || rightLabel === "Trajectory") {
+					rightLabel = DEFAULT_RIGHT;
+				}
+				if (collapseSidebarOnOpen && typeof getLayout !== "undefined") {
+					collapseSidebar(getLayout);
+				}
+				splitStore.set({ enabled: true, rightLabel });
+			} else {
+				splitStore.set({ enabled: false });
+			}
+			saveState({
+				enabled: next,
+				ratio: splitStore.ratio,
+				rightLabel: splitStore.rightLabel,
+			});
+		}
+
+		function SplitToggle({ sessionId, getLayout }) {
+			const snap = useSplitStore();
+			const [desktop, setDesktop] = React.useState(() => isSplitDesktop());
 			const collapsedForSplit = React.useRef(false);
 			const didInitCollapse = React.useRef(false);
-			const active = enabled && desktop;
+			const active = snap.enabled && desktop;
 
 			React.useEffect(() => {
 				ensureStyles();
-			}, []);
+				if (sessionId) splitStore.set({ sessionId });
+			}, [sessionId]);
 
-			// Desktop-only: hide/disable chrome under 900px; keep preference for when wide again.
 			React.useEffect(() => {
 				let mq;
 				try {
@@ -1157,7 +1551,6 @@ window.__ModuleLoader__.load({
 				};
 			}, [getLayout]);
 
-			// Restore-from-storage: if split was already on (desktop), collapse sidebar once.
 			React.useEffect(() => {
 				if (didInitCollapse.current) return;
 				didInitCollapse.current = true;
@@ -1169,43 +1562,34 @@ window.__ModuleLoader__.load({
 			}, [active, getLayout]);
 
 			React.useEffect(() => {
-				saveState({ enabled, ratio, rightLabel });
-				if (active) applyRatio(ratio);
-			}, [enabled, active, ratio, rightLabel]);
+				if (active) applyRatio(snap.ratio);
+			}, [active, snap.ratio]);
 
-			const setSplitEnabled = (next) => {
+			const onToggle = () => {
 				if (!isSplitDesktop()) return;
-				if (next) {
+				if (!active) {
 					collapsedForSplit.current = collapseSidebar(getLayout);
-				} else if (collapsedForSplit.current) {
-					expandSidebar(getLayout);
-					collapsedForSplit.current = false;
+					setSplitEnabled(true);
+				} else {
+					if (collapsedForSplit.current) {
+						expandSidebar(getLayout);
+						collapsedForSplit.current = false;
+					}
+					setSplitEnabled(false);
 				}
-				setEnabled(next);
 			};
 
+			if (!desktop) return null;
+
 			return React.createElement(
-				React.Fragment,
-				null,
-				desktop && React.createElement(
-					"button",
-					{
-						className: "fex-ibtn dsplit-toggle" + (active ? " active" : ""),
-						type: "button",
-						title: active ? "Close split window" : "Open split window",
-						onClick: () => setSplitEnabled(!active),
-					},
-					splitIcon(),
-				),
-				React.createElement(SplitChrome, {
-					enabled: active,
-					ratio,
-					rightLabel,
-					sessionId,
-					onRatio: setRatio,
-					onRightLabel: setRightLabel,
-					onCloseSplit: () => setSplitEnabled(false),
-				}),
+				"button",
+				{
+					className: "fex-ibtn dsplit-toggle" + (active ? " active" : ""),
+					type: "button",
+					title: active ? "Close split window" : "Open split window",
+					onClick: onToggle,
+				},
+				splitIcon(),
 			);
 		}
 
@@ -1231,126 +1615,24 @@ window.__ModuleLoader__.load({
 					setHost(null);
 					return undefined;
 				}
-				let raf = 0;
+				let timer = 0;
 				const sync = () => {
-					cancelAnimationFrame(raf);
-					raf = requestAnimationFrame(() => {
+					window.clearTimeout(timer);
+					timer = window.setTimeout(() => {
 						const el = document.querySelector("[data-dsh-hero-header-actions]");
 						setHost((prev) => (prev === el ? prev : el));
-					});
+					}, 100);
 				};
 				sync();
 				const root = document.getElementById("root") || document.body;
 				const mo = new MutationObserver(sync);
 				mo.observe(root, { childList: true, subtree: true });
 				return () => {
-					cancelAnimationFrame(raf);
+					window.clearTimeout(timer);
 					mo.disconnect();
 				};
 			}, [enabled]);
 			return host;
-		}
-
-		function HeroSplitToggle({ getLayout }) {
-			const hero = useIsHero();
-			const actions = useHeroHeaderActions(hero);
-			const saved = loadState() || {};
-			const [desktop, setDesktop] = React.useState(() => isSplitDesktop());
-			// Hero should not revive a previous session split — start closed.
-			const [enabled, setEnabled] = React.useState(false);
-			const [ratio, setRatio] = React.useState(() =>
-				typeof saved.ratio === "number" ? saved.ratio : 0.5,
-			);
-			const [rightLabel, setRightLabel] = React.useState(() => {
-				const label = typeof saved.rightLabel === "string" ? saved.rightLabel : DEFAULT_RIGHT;
-				return label === "Chat" || label === "Trajectory" ? DEFAULT_RIGHT : label;
-			});
-			const activeRef = React.useRef(false);
-			const lastToggleAt = React.useRef(0);
-			const active = enabled && desktop;
-			activeRef.current = active;
-
-			React.useEffect(() => { ensureStyles(); }, []);
-
-			React.useEffect(() => {
-				let mq;
-				try {
-					mq = window.matchMedia("(max-width: 900px)");
-				} catch {
-					return undefined;
-				}
-				const sync = () => setDesktop(!mq.matches);
-				sync();
-				if (typeof mq.addEventListener === "function") mq.addEventListener("change", sync);
-				else if (typeof mq.addListener === "function") mq.addListener(sync);
-				return () => {
-					if (typeof mq.removeEventListener === "function") mq.removeEventListener("change", sync);
-					else if (typeof mq.removeListener === "function") mq.removeListener(sync);
-				};
-			}, []);
-
-			React.useEffect(() => {
-				// Keep ratio/label; do not revive session split preference from hero.
-				// Never touch sidebar on hero — layout already treats hero specially.
-				saveState({ ratio, rightLabel });
-				if (active) applyRatio(ratio);
-			}, [enabled, active, ratio, rightLabel]);
-
-			React.useEffect(() => {
-				if (!hero && enabled) setEnabled(false);
-			}, [hero, enabled]);
-
-			if (!hero) return null;
-
-			const setSplitEnabled = (next) => {
-				if (!isSplitDesktop()) return;
-				if (next && (rightLabel === "Chat" || rightLabel === "Trajectory")) {
-					setRightLabel(DEFAULT_RIGHT);
-				}
-				setEnabled(next);
-				saveState({ enabled: next });
-			};
-
-			const onToggle = (e) => {
-				if (e?.button != null && e.button !== 0) return;
-				e?.preventDefault?.();
-				e?.stopPropagation?.();
-				const now = Date.now();
-				if (now - lastToggleAt.current < 350) return;
-				lastToggleAt.current = now;
-				setSplitEnabled(!activeRef.current);
-			};
-
-			const btn = desktop && React.createElement(
-				"button",
-				{
-					className: "fex-ibtn dsplit-toggle" + (active ? " active" : ""),
-					type: "button",
-					title: active ? "Close split window" : "Open split window",
-					"aria-label": active ? "Close split window" : "Open split window",
-					onClick: onToggle,
-				},
-				splitIcon(),
-			);
-
-			const portalBtn = btn && actions && ReactDOM?.createPortal
-				? ReactDOM.createPortal(btn, actions)
-				: null;
-
-			return React.createElement(
-				React.Fragment,
-				null,
-				portalBtn,
-				React.createElement(SplitChrome, {
-					enabled: active,
-					ratio,
-					rightLabel,
-					sessionId: null,
-					onRatio: setRatio,
-					onRightLabel: setRightLabel,
-					onCloseSplit: () => setSplitEnabled(false),
-				}),
-			);
 		}
 
 		function apply(ctx) {
@@ -1358,6 +1640,27 @@ window.__ModuleLoader__.load({
 			if (!slots) return;
 			const getLayout = () => ctx.layout;
 			ensureStyles();
+
+			// Seed store from storage (ratio/label). Session may restore enabled; hero starts closed.
+			const saved = loadState() || {};
+			if (typeof saved.ratio === "number") splitStore.ratio = saved.ratio;
+			if (typeof saved.rightLabel === "string" && saved.rightLabel !== "Chat" && saved.rightLabel !== "Trajectory") {
+				splitStore.rightLabel = saved.rightLabel;
+			}
+			const onHero = !!document.querySelector('[class*="_root"][data-phase=hero]');
+			if (saved.enabled === true && !onHero) splitStore.enabled = true;
+
+			// Scrub orphans from a previous crashed inject.
+			try {
+				const root = document.querySelector('[class*="_root"][data-dsh-split="1"]');
+				if (root && !splitStore.enabled) {
+					root.removeAttribute("data-dsh-split");
+					root.removeAttribute("data-dsh-split-body-tabs");
+					clearHosts(root);
+				}
+			} catch {
+				/* ignore */
+			}
 
 			ctx.effect(
 				() =>
@@ -1376,21 +1679,41 @@ window.__ModuleLoader__.load({
 				`${PLUGIN}: header toggle`,
 			);
 
-			ctx.effect(
-				() =>
-					slots.inject("conversation.input.dock", () =>
-						slots.register(
-							{
-								name: "conversation.input.dock",
-								id: "split-hero-toggle",
-								order: 1,
-								inject: () => ({ getLayout }),
-							},
-							HeroSplitToggle,
-						),
-					),
-				`${PLUGIN}: hero toggle`,
-			);
+			// Mount chrome + hero toggle via createRoot — NOT conversation.session (single slot)
+			// and NOT conversation.input.dock (error-boundaries orphan empty hosts).
+			ctx.effect(() => {
+				if (typeof document === "undefined" || !ReactDOMClient?.createRoot) return undefined;
+				let host = document.getElementById("dsh-split-chrome-root");
+				if (!host) {
+					host = document.createElement("div");
+					host.id = "dsh-split-chrome-root";
+					host.setAttribute("data-dsh-split-chrome", "1");
+					host.style.display = "contents";
+					(document.getElementById("root") || document.body).appendChild(host);
+				}
+				let root = hostRoots.get(host);
+				if (!root) {
+					root = ReactDOMClient.createRoot(host);
+					hostRoots.set(host, root);
+				}
+				root.render(React.createElement(SplitChromeHost));
+				return () => {
+					try {
+						root.unmount();
+					} catch {
+						/* ignore */
+					}
+					hostRoots.delete(host);
+					host.remove();
+					const sessionRootEl = document.querySelector('[class*="_root"][data-dsh-split="1"]');
+					if (sessionRootEl) {
+						sessionRootEl.removeAttribute("data-dsh-split");
+						sessionRootEl.removeAttribute("data-dsh-split-body-tabs");
+						clearHosts(sessionRootEl);
+					}
+					splitStore.set({ enabled: false });
+				};
+			}, `${PLUGIN}: chrome host root`);
 		}
 
 		return { apply, inject };
