@@ -29,8 +29,12 @@ Place this repo next to their other compose stacks, e.g.:
 5. TLS (once, for https sidecar): see `certs/README.md`. If certs are missing, HTTP on `:3080` still works.
 6. Start:
    `docker compose -f docker-compose.yml up -d --build`
-7. Wait until `harness` is healthy. Open `http://127.0.0.1:3080` (or LAN IP `:3080`).
-8. If models are empty, configure **Settings → Models** with the same base URL/key.
+7. Wait until `harness` is healthy.
+8. **Auth (0.1.5+):** open once with `?token=` — bare `:3080` shows “reopen the URL” / auth error.
+   - `docker compose logs harness 2>&1 | grep -oE 'http://[^ ]*token=[A-Za-z0-9_-]+' | head -1`
+   - Or after recreate: `echo "http://127.0.0.1:${DSH_PORT:-3080}/?token=$(cat data/run/dsh-web/token)"`
+   - From another PC, replace `127.0.0.1` with this host’s LAN IP.
+9. If models are empty, configure **Settings → Models** with the same base URL/key.
 
 ## What is already done in the image
 

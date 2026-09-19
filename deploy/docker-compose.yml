@@ -39,6 +39,7 @@ services:
     environment:
       DSH_TELEMETRY_DISABLED: "1"
       HOME: /workspace
+      DSH_WEB_TOKEN_FILE: /home/node/.dsh/run/dsh-web/token
       DOCKER_HOST: unix:///var/run/docker.sock
       CONTAINERS_ROOT: /containers
       CONTAINERS_HOST_ROOT: ${CONTAINERS_HOST_ROOT:-}
