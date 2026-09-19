@@ -1,6 +1,6 @@
 {
   "name": "dsh-local-agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local-model optimizations: tool profiles, result truncation, Jetson-friendly LLM timeouts.",
   "type": "module",
   "main": "lib/index.js",

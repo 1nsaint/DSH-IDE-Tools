@@ -257,14 +257,19 @@ export function settingsYamlPath() {
 	return join(home, "settings.yaml");
 }
 
-/** @returns {Promise<LocalAgentConfig>} */
-export async function loadConfig() {
+/** @returns {Promise<LocalAgentConfig | null>} null when no store file yet */
+export async function tryLoadConfig() {
 	try {
 		const raw = JSON.parse(await readFile(storePath(), "utf8"));
 		return normalizeConfig(raw);
 	} catch {
-		return defaultConfig();
+		return null;
 	}
+}
+
+/** @returns {Promise<LocalAgentConfig>} */
+export async function loadConfig() {
+	return (await tryLoadConfig()) ?? defaultConfig();
 }
 
 /** @param {LocalAgentConfig} cfg */

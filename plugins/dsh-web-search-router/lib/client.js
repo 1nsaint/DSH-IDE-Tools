@@ -47,6 +47,18 @@ window.__ModuleLoader__.load({
       return error && typeof error.message === "string" ? error.message : String(error);
     }
 
+    /** Unwrap Typert Result `{ ok, value }` or pass through a bare value. */
+    function unwrap(response) {
+      if (response && typeof response === "object" && "ok" in response) {
+        if (!response.ok) {
+          const err = response.error;
+          throw new Error(err?.message || "credentials request failed");
+        }
+        return response.value;
+      }
+      return response;
+    }
+
     function quotaText(source, usage) {
       if (!usage?.configured) return "Paste the same API key you use in n8n, then Save.";
       if (usage.cooldownUntil > Date.now()) return "In cooldown — temporarily skipped.";
@@ -78,13 +90,11 @@ window.__ModuleLoader__.load({
             placeholder: status?.configured ? "Configured — leave blank to keep" : "Paste API key",
             autoComplete: "new-password",
             onChange: (event) => setDraft(event.target.value),
-            disabled: busy
           }),
           React.createElement("button", {
             className: "cyh-search-btn",
             type: "button",
-            "aria-label": `Save ${source.name} API Key`,
-            disabled: busy || draft.trim().length === 0,
+            disabled: busy || !draft.trim(),
             onClick: async () => {
               const ok = await onSave(source.ref, draft.trim());
               if (ok) setDraft("");
@@ -93,15 +103,14 @@ window.__ModuleLoader__.load({
           status?.configured ? React.createElement("button", {
             className: "cyh-search-btn",
             type: "button",
-            "aria-label": `Clear ${source.name} API Key`,
-            disabled: busy || status?.writable === false,
+            disabled: busy,
             onClick: () => onRemove(source.ref)
           }, "Clear") : null
         )
       );
     }
 
-    function SearchSettingsPage({ api }) {
+    function SearchSettingsPage({ credentials }) {
       const [statuses, setStatuses] = React.useState({});
       const [usageStatuses, setUsageStatuses] = React.useState({});
       const [refreshedAt, setRefreshedAt] = React.useState(null);
@@ -111,21 +120,24 @@ window.__ModuleLoader__.load({
       const load = React.useCallback(async (refreshUsage = false) => {
         const refs = SOURCES.filter((source) => source.ref).map((source) => source.ref);
         try {
-          const [response, usageResponse] = await Promise.all([
-            api.credentials.describe({ refs }),
+          const [described, usageResponse] = await Promise.all([
+            credentials.describe(refs).then(unwrap),
             fetch(`/api/web-search-router/status${refreshUsage ? "?refresh=1" : ""}`, { cache: "no-store" })
           ]);
-          if (!response.result.ok) throw new Error(response.result.error.message);
           if (!usageResponse.ok) throw new Error("Could not read quota status");
           const usageData = await usageResponse.json();
           if (!usageData.ok) throw new Error(usageData.error || "Could not read quota status");
-          setStatuses(response.result.value.credentials || {});
+          // New remote: Record<ref, CredentialInfo>. Legacy: { credentials: ... }.
+          const next = described?.credentials && typeof described.credentials === "object"
+            ? described.credentials
+            : (described || {});
+          setStatuses(next);
           setUsageStatuses(Object.fromEntries((usageData.providers || []).map((provider) => [provider.id, provider])));
           setRefreshedAt(usageData.refreshedAt || Date.now());
         } catch (cause) {
           setError(messageOf(cause));
         }
-      }, [api]);
+      }, [credentials]);
 
       React.useEffect(() => { load(true); }, [load]);
 
@@ -133,8 +145,7 @@ window.__ModuleLoader__.load({
         setBusy(ref);
         setError(null);
         try {
-          const response = await api.credentials.set({ ref, value });
-          if (!response.result.ok) throw new Error(response.result.error.message);
+          unwrap(await credentials.set(ref, value));
           await load(true);
           return true;
         } catch (cause) {
@@ -149,8 +160,7 @@ window.__ModuleLoader__.load({
         setBusy(ref);
         setError(null);
         try {
-          const response = await api.credentials.unset({ ref });
-          if (!response.result.ok) throw new Error(response.result.error.message);
+          unwrap(await credentials.unset(ref));
           await load(false);
         } catch (cause) {
           setError(messageOf(cause));
@@ -195,16 +205,20 @@ window.__ModuleLoader__.load({
       );
     }
 
-    const inject = ["slots", "connection"];
+    const inject = ["slots", "remote.credentials"];
 
     function apply(ctx) {
       ensureStyle();
       ctx.effect(() => () => document.getElementById(STYLE_ID)?.remove(), "multi-search settings styles");
-      const api = ctx.get("connection")?.api;
-      if (!api?.credentials) return;
+      // Must use get() — reading ctx.remote requires inject "remote" and crashes otherwise.
+      const credentials = ctx.get("remote.credentials");
+      if (!credentials?.describe) {
+        console.warn("[dsh-web-search-router] remote.credentials unavailable — Web Search settings not registered");
+        return;
+      }
       ctx.slots.inject("settings.section", () => ctx.slots.register(
         { name: "settings.section", id: "web-search-router", order: 25, label: () => "Web Search" },
-        () => React.createElement(SearchSettingsPage, { api })
+        () => React.createElement(SearchSettingsPage, { credentials })
       ));
     }
 

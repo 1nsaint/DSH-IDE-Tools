@@ -198,8 +198,15 @@ window.__ModuleLoader__.load({
 [class*="_root"][data-dsh-split="1"] [data-slot="conversation.session"]{
   grid-column:1;
   grid-row:1;
-  min-width:0;min-height:0;overflow:hidden!important;
-  height:auto!important;flex:unset!important;
+  min-width:0;min-height:0;
+  /* Left cell is the chat scroller — stock Md3f7G_scroll hashes are gone */
+  overflow-x:hidden!important;
+  overflow-y:auto!important;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+  height:auto!important;
+  max-height:100%!important;
+  flex:unset!important;
 }
 [class*="_root"][data-dsh-split="1"] [class*="_viewArea"]{
   flex:1 1 0!important;min-height:0!important;height:100%!important;
@@ -211,40 +218,19 @@ window.__ModuleLoader__.load({
   --dsh-composer-card-max-width:min(calc(var(--dsh-chat-content-width) + 32px),100%);
   --dsh-composer-side-clearance:8px;
 }
-[class*="_root"][data-dsh-split="1"] [class*="_viewArea"]>div,
-[class*="_root"][data-dsh-split="1"] .Md3f7G_root{
-  height:100%!important;
-  min-height:0!important;
+/* Let message content grow so the left cell can scroll (do not pin height:100% + overflow:hidden) */
+[class*="_root"][data-dsh-split="1"] [class*="_viewArea"]>div{
+  height:auto!important;
+  min-height:min-content!important;
   min-width:0!important;
   max-width:100%!important;
   width:100%!important;
   box-sizing:border-box;
-  display:flex!important;
-  flex-direction:column!important;
-  overflow:hidden!important;
+  overflow:visible!important;
 }
-[class*="_root"][data-dsh-split="1"] .Md3f7G_scroll{
-  flex:1 1 0!important;
-  min-height:0!important;
-  min-width:0!important;
-  max-width:100%!important;
-  overflow-x:hidden!important;
-  overflow-y:auto!important;
-  box-sizing:border-box;
-}
-[class*="_root"][data-dsh-split="1"] .Md3f7G_column{
-  max-width:100%!important;
-  width:100%!important;
-  min-width:0!important;
-  box-sizing:border-box;
-}
-[class*="_root"][data-dsh-split="1"] .Md3f7G_flowItem,
-[class*="_root"][data-dsh-split="1"] .Md3f7G_callRow{
-  min-width:0!important;
-  max-width:100%!important;
-}
-[class*="_root"][data-dsh-split="1"] .Md3f7G_scroll .Sxvs8a_root,
-[class*="_root"][data-dsh-split="1"] .Md3f7G_scroll .Sxvs8a_body{
+[class*="_root"][data-dsh-split="1"] [class*="_viewArea"] [class*="_flowItem"],
+[class*="_root"][data-dsh-split="1"] [class*="_viewArea"] [class*="_callRow"],
+[class*="_root"][data-dsh-split="1"] [class*="_viewArea"] [class*="_column"]{
   min-width:0!important;
   max-width:100%!important;
   overflow-wrap:anywhere;
@@ -593,8 +579,11 @@ window.__ModuleLoader__.load({
     min-width:0!important;
     min-height:0!important;
     max-height:100%!important;
-    overflow:hidden!important;
+    overflow-x:hidden!important;
+    overflow-y:auto!important;
+    -webkit-overflow-scrolling:touch;
     overscroll-behavior:contain;
+    touch-action:pan-y;
   }
   [class*="_root"][data-dsh-split="1"] [class*="_composerSeat"]{
     grid-column:1;grid-row:2;
@@ -642,12 +631,9 @@ window.__ModuleLoader__.load({
     --dsh-chat-content-width:100%;
     --dsh-composer-card-max-width:100%;
   }
-  [class*="_root"][data-dsh-split="1"] .Md3f7G_scroll{
+  [class*="_root"][data-dsh-split="1"] [class*="_viewArea"]{
     padding-left:12px!important;
     padding-right:12px!important;
-    overscroll-behavior:contain;
-    touch-action:pan-y;
-    -webkit-overflow-scrolling:touch;
   }
   .dsplit_rightTabs.dsplit_tabsInBody,
   .dsplit_rightTabsRow.dsplit_tabsInBody{

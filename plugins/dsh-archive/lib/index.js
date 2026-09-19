@@ -4,8 +4,10 @@
  * Upstream Harness can archive sessions but has no unarchive / delete UI.
  * Loopback RPC (`/archive`): list / unarchive / permanent delete.
  *
- * 0.1.5 lesson: "delete" must wipe disk + projcache BEFORE unarchiving.
- * Unarchiving alone drops the archive flag and the chat reappears under Ungrouped.
+ * Delete must wipe disk + projcache BEFORE unarchiving, then emit
+ * `api-session/removed` so the client drops the cold summary. Otherwise
+ * unarchive only clears the archive filter and the chat flashes under
+ * Ungrouped until a full page refresh re-lists from disk.
  */
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -290,7 +292,15 @@ function registerArchiveRpc(getCtx) {
 					const scanned = await wipeSessionDirs(sessionId);
 					await scrubProjCache(sessionId);
 					forgetHeader(registry, sessionId);
-					// Unarchive only after wipe — otherwise chats bounce back to Ungrouped.
+					// Tell every connected client to drop the cold summary *before*
+					// unarchive — otherwise archived-sessions-changed unhides a
+					// ghost under Ungrouped until the next full list refresh.
+					try {
+						ctx.emit("api-session/removed", sessionId);
+					} catch {
+						/* best-effort: client may still need a refresh */
+					}
+					// Unarchive only after wipe + remove event.
 					await unarchiveSession(registry, sessionId);
 					const paths = [...(viaPersist.paths || []), ...(scanned.paths || [])];
 					return ok({

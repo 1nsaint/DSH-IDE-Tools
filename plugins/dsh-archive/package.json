@@ -1,6 +1,6 @@
 {
   "name": "dsh-archive",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Archived chats in Settings \u2014 list, restore (unarchive), and permanently delete sessions.",
   "type": "module",
   "main": "lib/index.js",

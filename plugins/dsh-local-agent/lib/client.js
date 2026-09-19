@@ -102,17 +102,31 @@ window.__ModuleLoader__.load({
 				setCfg((prev) => (prev ? { ...prev, [key]: value } : prev));
 			};
 
+			const persist = async (next, okMsg) => {
+				setSaving(true);
+				setStatus("");
+				try {
+					const data = await callRpc(connection, "setConfig", { config: next });
+					setCfg(data.config);
+					if (okMsg) setStatus(okMsg);
+				} catch (err) {
+					setStatus(err instanceof Error ? err.message : String(err));
+					await load();
+				} finally {
+					setSaving(false);
+				}
+			};
+
 			const setCategory = (id, on) => {
-				setCfg((prev) =>
-					prev
-						? {
-								...prev,
-								preset: "custom",
-								useCustomCategories: true,
-								categories: { ...prev.categories, [id]: on },
-							}
-						: prev,
-				);
+				if (!cfg) return;
+				const next = {
+					...cfg,
+					preset: "custom",
+					useCustomCategories: true,
+					categories: { ...cfg.categories, [id]: on },
+				};
+				setCfg(next);
+				void persist(next, "Saved.");
 			};
 
 			const applyPreset = async (preset) => {
@@ -193,12 +207,13 @@ window.__ModuleLoader__.load({
 					"div",
 					{ className: "rtSEdW_group" },
 					React.createElement("p", { className: "rtSEdW_groupHead" }, "Tool categories"),
-					!customMode &&
-						React.createElement(
-							"p",
-							{ className: "rtSEdW_intro", style: { marginBottom: 4 } },
-							"Checkboxes follow the profile above. Toggle any category to switch to custom.",
-						),
+					React.createElement(
+						"p",
+						{ className: "rtSEdW_intro", style: { marginBottom: 4 } },
+						customMode
+							? "Changes save immediately."
+							: "Checkboxes follow the profile above. Toggle any category to switch to Custom and save.",
+					),
 					React.createElement(
 						"ul",
 						{ className: "dla_catGrid", role: "list" },
@@ -212,7 +227,7 @@ window.__ModuleLoader__.load({
 									React.createElement("input", {
 										type: "checkbox",
 										checked: cats[c.id] !== false,
-										disabled: !customMode && cfg.preset !== "custom",
+										disabled: saving,
 										onChange: (e) => setCategory(c.id, e.target.checked),
 									}),
 									React.createElement(

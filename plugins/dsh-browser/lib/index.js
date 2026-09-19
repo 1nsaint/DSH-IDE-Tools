@@ -8,6 +8,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createReadStream } from "node:fs";
 import { statSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 
 // Relative import to dsh-tools package hosted in dsh-cron's node_modules or global dsh
@@ -31,6 +32,101 @@ const LIVE_PREFIX = "/api/browser-live";
 const GATE_PREFIX = "/api/browser-gate";
 const MAX_BYTES = 2_500_000;
 const MAX_GATE_BYTES = 8_000_000;
+
+/**
+ * Host → Browser-tab command queue.
+ *
+ * Agent tools run on the host; the live iframe only exists in the open UI.
+ * Host `connection.rpc` has no `.call`, so tools cannot reach the client
+ * directly. Instead tools enqueue here; the Browser client long-polls
+ * `agent.claim` / posts `agent.complete`.
+ *
+ * @type {Map<string, {
+ *   cmd: object,
+ *   claimed: boolean,
+ *   resolve: (v: unknown) => void,
+ *   reject: (e: Error) => void,
+ *   timer: NodeJS.Timeout,
+ * }>}
+ */
+const agentCommands = new Map();
+/** @type {Array<() => void>} */
+const agentClaimWaiters = [];
+
+function wakeClaimWaiters() {
+	while (agentClaimWaiters.length) {
+		const wake = agentClaimWaiters.shift();
+		try { wake?.(); } catch { /* ignore */ }
+	}
+}
+
+/**
+ * @param {object} cmd
+ * @param {number} [timeoutMs]
+ */
+function enqueueAgentCommand(cmd, timeoutMs = 45_000) {
+	const id = `cmd_${randomUUID()}`;
+	return new Promise((resolve, reject) => {
+		const entry = {
+			cmd: { id, ...cmd },
+			claimed: false,
+			resolve,
+			reject,
+			timer: setTimeout(() => {
+				agentCommands.delete(id);
+				reject(new Error(
+					"Timed out waiting for the Browser tab. Keep Harness open and leave Browser available (or use split view).",
+				));
+			}, timeoutMs),
+		};
+		agentCommands.set(id, entry);
+		wakeClaimWaiters();
+	});
+}
+
+function claimNextAgentCommand() {
+	for (const entry of agentCommands.values()) {
+		if (!entry.claimed) {
+			entry.claimed = true;
+			return entry.cmd;
+		}
+	}
+	return null;
+}
+
+/**
+ * @param {number} waitMs
+ */
+async function claimAgentCommand(waitMs) {
+	const immediate = claimNextAgentCommand();
+	if (immediate || waitMs <= 0) return immediate;
+	await new Promise((resolve) => {
+		const timer = setTimeout(() => {
+			const i = agentClaimWaiters.indexOf(wake);
+			if (i >= 0) agentClaimWaiters.splice(i, 1);
+			resolve();
+		}, waitMs);
+		const wake = () => {
+			clearTimeout(timer);
+			resolve();
+		};
+		agentClaimWaiters.push(wake);
+	});
+	return claimNextAgentCommand();
+}
+
+/**
+ * @param {string} id
+ * @param {unknown} result
+ */
+function completeAgentCommand(id, result) {
+	const entry = agentCommands.get(id);
+	if (!entry) return false;
+	clearTimeout(entry.timer);
+	agentCommands.delete(id);
+	entry.resolve(result);
+	return true;
+}
 
 const MIME = {
 	html: "text/html; charset=utf-8",
@@ -1434,14 +1530,31 @@ function registerRpc(ctx) {
 					case "navigate": {
 						const url = String(payload?.url || "").trim();
 						if (!url) throw new Error("url required");
-						const res = await ctx.connection.rpc.call("dsh-browser", "navigate", { url });
+						const res = await enqueueAgentCommand({ kind: "navigate", url });
 						return ok(res);
 					}
 					case "action": {
 						const action = String(payload?.action || "").trim();
 						if (!action) throw new Error("action required");
-						const res = await ctx.connection.rpc.call("dsh-browser", "action", payload);
+						const res = await enqueueAgentCommand({
+							kind: "action",
+							action,
+							selector: payload?.selector,
+							value: payload?.value,
+							timeoutMs: payload?.timeoutMs,
+						});
 						return ok(res);
+					}
+					case "agent.claim": {
+						const waitMs = Math.min(Math.max(Number(payload?.waitMs) || 0, 0), 25_000);
+						const command = await claimAgentCommand(waitMs);
+						return ok({ command });
+					}
+					case "agent.complete": {
+						const id = String(payload?.id || "").trim();
+						if (!id) throw new Error("id required");
+						const accepted = completeAgentCommand(id, payload?.result ?? { ok: false, error: "empty result" });
+						return ok({ accepted });
 					}
 					default:
 						return transportError(new Error(`unknown endpoint: ${endpoint}`));
@@ -1452,22 +1565,18 @@ function registerRpc(ctx) {
 		});
 }
 
-async function runBrowserAction(scope, action, params = {}) {
-	const rpc = scope.connection?.rpc || scope.get?.("connection")?.rpc;
-	if (!rpc?.call) {
-		throw new Error("connection RPC service unavailable");
-	}
-	const res = await rpc.call("dsh-browser", "action", { action, ...params });
-	return res;
+async function runBrowserAction(_scope, action, params = {}) {
+	return enqueueAgentCommand({
+		kind: "action",
+		action,
+		selector: params.selector,
+		value: params.value,
+		timeoutMs: params.timeoutMs,
+	});
 }
 
-async function runBrowserNavigate(scope, url) {
-	const rpc = scope.connection?.rpc || scope.get?.("connection")?.rpc;
-	if (!rpc?.call) {
-		throw new Error("connection RPC service unavailable");
-	}
-	const res = await rpc.call("dsh-browser", "navigate", { url });
-	return res;
+async function runBrowserNavigate(_scope, url) {
+	return enqueueAgentCommand({ kind: "navigate", url: String(url || "").trim() });
 }
 
 function registerTools(scope) {

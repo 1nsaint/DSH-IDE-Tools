@@ -1,7 +1,7 @@
 {
   "name": "dsh-browser",
-  "version": "0.6.25",
-  "description": "Gated Live browser + DevTools; Styles Save patches linked CSS rules.",
+  "version": "0.6.28",
+  "description": "Gated Live browser + DevTools; agent tools via host command queue.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

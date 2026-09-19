@@ -7,7 +7,7 @@ window.__ModuleLoader__.load({
 		const REF_SOURCE = "browser-dom";
 		const STORE_KEY = "dsh-browser.view.v1";
 		const OPEN_EVENT = "dsh-open-browser-url";
-		const BUILD = "0.6.27-inspect-no-auto-devtools";
+		const BUILD = "0.6.28-agent-cmd-queue";
 		const DT_SIZE = {
 			bottomMin: 160,
 			bottomMax: 720,
@@ -2196,54 +2196,82 @@ window.__ModuleLoader__.load({
 				return () => window.removeEventListener(OPEN_EVENT, onOpen);
 			}, `${PLUGIN}: open event`);
 
-			// Register RPC endpoints for browser automation from agent / backend
+			// Agent automation: long-poll host queue (host has no rpc.call → client).
 			ctx.effect(() => {
-				if (!connection?.rpc?.handle) return;
-				const unhandle = connection.rpc.handle(
-					"dsh-browser",
-					async (endpoint, payload) => {
-						if (endpoint === "navigate") {
-							const url = String(payload?.url || "").trim();
-							if (!url) return { ok: false, error: "url required" };
-							setPendingUrl(url);
-							switchToBrowserTab();
-							return { ok: true, url };
+				if (!connection?.rpc?.call) return;
+				let stopped = false;
+				const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+				async function runAction(cmd) {
+					const action = String(cmd.action || "").trim();
+					const selector = cmd.selector != null ? String(cmd.selector).trim() : undefined;
+					const value = cmd.value !== undefined ? String(cmd.value) : undefined;
+					const timeoutMs = typeof cmd.timeoutMs === "number" ? cmd.timeoutMs : 10000;
+					const actionId = "act_" + Math.random().toString(36).slice(2, 10);
+					switchToBrowserTab();
+					// Give the BrowserView a moment to mount after tab switch.
+					await sleep(120);
+					return new Promise((resolve) => {
+						let timer = null;
+						const onRes = (e) => {
+							if (timer) clearTimeout(timer);
+							window.removeEventListener("dsh-browser-action-response-" + actionId, onRes);
+							resolve(e.detail || { ok: false, error: "empty response" });
+						};
+						timer = setTimeout(() => {
+							window.removeEventListener("dsh-browser-action-response-" + actionId, onRes);
+							resolve({ ok: false, error: "action timed out after " + timeoutMs + "ms" });
+						}, timeoutMs);
+						window.addEventListener("dsh-browser-action-response-" + actionId, onRes);
+						window.dispatchEvent(new CustomEvent("dsh-browser-perform-action", {
+							detail: { actionId, action, selector, value },
+						}));
+					});
+				}
+
+				async function handleCommand(cmd) {
+					if (!cmd?.id) return;
+					let result;
+					try {
+						if (cmd.kind === "navigate") {
+							const url = String(cmd.url || "").trim();
+							if (!url) result = { ok: false, error: "url required" };
+							else {
+								setPendingUrl(url);
+								switchToBrowserTab();
+								result = { ok: true, url };
+							}
+						} else if (cmd.kind === "action") {
+							result = await runAction(cmd);
+						} else {
+							result = { ok: false, error: `unknown kind: ${cmd.kind}` };
 						}
-						if (endpoint === "action") {
-							const action = String(payload?.action || "").trim();
-							const selector = payload?.selector ? String(payload.selector).trim() : undefined;
-							const value = payload?.value !== undefined ? String(payload.value) : undefined;
-							const timeoutMs = typeof payload?.timeoutMs === "number" ? payload.timeoutMs : 10000;
-							const actionId = "act_" + Math.random().toString(36).slice(2, 10);
-
-							switchToBrowserTab();
-
-							return new Promise((resolve) => {
-								let timer = null;
-								const onRes = (e) => {
-									if (timer) clearTimeout(timer);
-									window.removeEventListener("dsh-browser-action-response-" + actionId, onRes);
-									resolve(e.detail || { ok: false, error: "empty response" });
-								};
-
-								timer = setTimeout(() => {
-									window.removeEventListener("dsh-browser-action-response-" + actionId, onRes);
-									resolve({ ok: false, error: "action timed out after " + timeoutMs + "ms" });
-								}, timeoutMs);
-
-								window.addEventListener("dsh-browser-action-response-" + actionId, onRes);
-								window.dispatchEvent(new CustomEvent("dsh-browser-perform-action", {
-									detail: { actionId, action, selector, value }
-								}));
-							});
-						}
-						return { ok: false, error: `unknown endpoint: ${endpoint}` };
+					} catch (err) {
+						result = { ok: false, error: err?.message || String(err) };
 					}
-				);
-				return () => {
-					if (typeof unhandle === "function") unhandle();
-				};
-			}, `${PLUGIN}: client rpc`);
+					try {
+						await callRpc(connection, "agent.complete", { id: cmd.id, result });
+					} catch (err) {
+						console.warn("[dsh-browser] agent.complete failed:", err);
+					}
+				}
+
+				(async () => {
+					while (!stopped) {
+						try {
+							const { command } = await callRpc(connection, "agent.claim", { waitMs: 20000 });
+							if (stopped) break;
+							if (command) await handleCommand(command);
+						} catch (err) {
+							if (stopped) break;
+							console.warn("[dsh-browser] agent.claim loop:", err?.message || err);
+							await sleep(1500);
+						}
+					}
+				})();
+
+				return () => { stopped = true; };
+			}, `${PLUGIN}: agent command poll`);
 
 			ctx.effect(() => inputTriggers.registerSource({
 				trigger: "@",

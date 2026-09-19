@@ -16,6 +16,7 @@ import {
 	syncJetsonStreamTimeout,
 	flattenTextContent,
 	truncateText,
+	tryLoadConfig,
 } from "./config.js";
 import { persistToolCache, formatToolResultStub } from "./tool-cache.js";
 
@@ -231,10 +232,6 @@ async function shrinkToolResultForModel(scope, exec, result, decision) {
  * @param {Record<string, unknown>} [cordisConfig]
  */
 export function apply(ctx, cordisConfig = {}) {
-	const merged = normalizeConfig({ ...defaultConfig(), ...cordisConfig });
-	activeConfig = merged;
-	void saveConfig(merged).catch(() => {});
-
 	ctx.inject(["tools", "connection", "webServer", "systemPrompt"], (scope) => {
 		scope.effect(() => registerRpc(scope), `${PLUGIN}: rpc`);
 
@@ -294,7 +291,22 @@ export function apply(ctx, cordisConfig = {}) {
 			});
 		}
 
-		void reloadConfig();
+		void (async () => {
+			try {
+				const stored = await tryLoadConfig();
+				if (stored) {
+					activeConfig = stored;
+				} else {
+					const merged = normalizeConfig({ ...defaultConfig(), ...cordisConfig });
+					activeConfig = merged;
+					await saveConfig(merged);
+				}
+			} catch (err) {
+				scope.logger?.warn?.(
+					`[${PLUGIN}] config load failed: ${err instanceof Error ? err.message : err}`,
+				);
+			}
+		})();
 
 		return () => {
 			for (const off of [offGuard, offAgents, offDisposed, offPost]) {
