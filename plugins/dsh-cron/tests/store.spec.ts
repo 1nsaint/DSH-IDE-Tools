@@ -56,6 +56,16 @@ describe('CronStore', () => {
     expect(warn).not.toHaveBeenCalled()
   })
 
+  it('defaults and persists standing instructions', () => {
+    const store = new CronStore(file, () => {})
+    store.load()
+    expect(store.standingInstructions()).toContain('PROGRESS.md')
+    store.setStandingInstructions('custom standing')
+    const reloaded = new CronStore(file, () => {})
+    reloaded.load()
+    expect(reloaded.standingInstructions()).toBe('custom standing')
+  })
+
   it('allocates collision-free ids and merges concurrent management writes', () => {
     const first = new CronStore(file, () => {})
     const second = new CronStore(file, () => {})

@@ -25,6 +25,28 @@ try {
 	}
 }
 
+let AttachmentId;
+let AttachmentError;
+async function loadAttachment() {
+	const candidates = [
+		"../../dsh-cron/node_modules/@deepseek-ai/dsh-attachment/lib/index.js",
+		"/home/node/.dsh/profiles/node_modules/@deepseek-ai/dsh-attachment/lib/index.js",
+		"/usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-attachment/lib/index.js",
+	];
+	for (const p of candidates) {
+		try {
+			const att = await import(p);
+			AttachmentId = att.AttachmentId;
+			AttachmentError = att.AttachmentError;
+			return;
+		} catch {
+			/* try next */
+		}
+	}
+	console.warn("[dsh-browser] could not import dsh-attachment");
+}
+await loadAttachment();
+
 const name = "dsh-browser";
 const inject = ["connection", "webServer"];
 const RPC_CHANNEL = "/browser";
@@ -194,6 +216,119 @@ function sessionCwd(ctx, sessionId) {
 		throw new Error("session has no workspace cwd");
 	}
 	return cwd;
+}
+
+/** Active agent session (for tool-time workspace → Live rewrites). */
+function currentInitiatorSession(scope) {
+	try {
+		const agents = scope?.get?.("agents") || scope?.agents;
+		const initiator = agents?.currentInitiator?.();
+		const session = initiator?.session;
+		if (!session) return null;
+		const id = session.id || session.header?.id;
+		const cwd = session.header?.cwd;
+		if (!id || typeof cwd !== "string" || !cwd) return null;
+		return { id: String(id), cwd: String(cwd), session };
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Turn file://, /workspace/…, or relative HTML paths into /api/browser-live/….
+ * Leaves real http(s) / live / gate URLs alone.
+ */
+async function resolveNavigateUrl(scope, raw) {
+	const original = String(raw || "").trim();
+	if (!original) throw new Error("url required");
+	if (original.includes("/api/browser-live/") || original.includes("/api/browser-gate/")) {
+		return original;
+	}
+	if (/^https?:\/\//i.test(original) && !/^https?:\/\/file[:/]/i.test(original)) {
+		return original;
+	}
+	if (original.startsWith("data:")) return original;
+
+	let pathish = original;
+	// Undo botched client normalize: https://file://… or https://file/…
+	if (/^https?:\/\/file:/i.test(pathish)) {
+		pathish = pathish.replace(/^https?:\/\//i, "");
+	} else if (/^https?:\/\/file\//i.test(pathish)) {
+		pathish = pathish.replace(/^https?:\/\/file/i, "file://");
+	}
+
+	if (/^file:/i.test(pathish)) {
+		try {
+			const u = new URL(pathish);
+			if (u.hostname && u.hostname !== "localhost" && u.hostname !== "") {
+				pathish = `/${u.hostname}${u.pathname || ""}`;
+			} else {
+				pathish = u.pathname || "/";
+			}
+		} catch {
+			pathish = pathish.replace(/^file:\/\/*/i, "/");
+		}
+	}
+
+	try {
+		pathish = decodeURIComponent(pathish);
+	} catch {
+		/* keep */
+	}
+	pathish = pathish.replace(/\\/g, "/").trim();
+	if (!pathish) throw new Error("empty path after normalizing file URL");
+
+	const cur = currentInitiatorSession(scope);
+	if (!cur) {
+		throw new Error(
+			"Workspace/file URLs need an active session. Open a http(s) URL, or keep the chat session open.",
+		);
+	}
+
+	let absCandidate = pathish;
+	if (!path.isAbsolute(absCandidate)) {
+		absCandidate = path.resolve(cur.cwd, absCandidate);
+	} else {
+		absCandidate = path.resolve(absCandidate);
+	}
+
+	let rel;
+	try {
+		rel = toRelUnderCwd(cur.cwd, absCandidate);
+	} catch {
+		// Agent often uses /workspace/<cwd-basename>/… while cwd is already that folder.
+		const base = path.basename(cur.cwd);
+		const marker = `/workspace/${base}/`;
+		const lower = absCandidate.toLowerCase();
+		const idx = lower.indexOf(marker.toLowerCase());
+		if (idx >= 0) {
+			rel = absCandidate.slice(idx + marker.length).replace(/^\/+/, "") || ".";
+			rel = toRelUnderCwd(cur.cwd, path.resolve(cur.cwd, rel));
+		} else if (lower.includes("/workspace/")) {
+			const after = absCandidate.slice(lower.indexOf("/workspace/") + "/workspace/".length);
+			rel = toRelUnderCwd(cur.cwd, path.resolve(cur.cwd, after));
+		} else {
+			throw new Error(`path escapes workspace: ${pathish}`);
+		}
+	}
+
+	let st;
+	const abs = resolveUnderCwd(cur.cwd, rel === "." ? "." : rel);
+	try {
+		st = await fs.stat(abs);
+	} catch {
+		throw new Error(`file not found: ${rel}`);
+	}
+	if (st.isDirectory()) {
+		rel = rel === "." ? "index.html" : `${rel.replace(/\/$/, "")}/index.html`;
+		try {
+			await fs.stat(resolveUnderCwd(cur.cwd, rel));
+		} catch {
+			throw new Error("directory has no index.html");
+		}
+	}
+
+	return liveUrlFor(cur.id, rel);
 }
 
 /** Resolve rel under workspace cwd; reject path escape. */
@@ -1448,7 +1583,24 @@ function registerRpc(ctx) {
 						if (!sessionId) throw new Error("sessionId required");
 						if (!filePath) throw new Error("path required");
 						const cwd = sessionCwd(ctx, sessionId);
-						let rel = toRelUnderCwd(cwd, filePath);
+						let rel;
+						try {
+							rel = toRelUnderCwd(cwd, filePath);
+						} catch {
+							const base = path.basename(cwd);
+							const marker = `/workspace/${base}/`;
+							const norm = filePath.replace(/\\/g, "/");
+							const lower = norm.toLowerCase();
+							const idx = lower.indexOf(marker.toLowerCase());
+							if (idx >= 0) {
+								rel = toRelUnderCwd(cwd, path.resolve(cwd, norm.slice(idx + marker.length)));
+							} else if (lower.includes("/workspace/")) {
+								const after = norm.slice(lower.indexOf("/workspace/") + "/workspace/".length);
+								rel = toRelUnderCwd(cwd, path.resolve(cwd, after));
+							} else {
+								throw new Error("path escapes workspace");
+							}
+						}
 						const abs = resolveUnderCwd(cwd, rel === "." ? "." : rel);
 						let st;
 						try {
@@ -1530,7 +1682,15 @@ function registerRpc(ctx) {
 					case "navigate": {
 						const url = String(payload?.url || "").trim();
 						if (!url) throw new Error("url required");
-						const res = await enqueueAgentCommand({ kind: "navigate", url });
+						let resolved = url;
+						try {
+							resolved = await resolveNavigateUrl(ctx, url);
+						} catch (err) {
+							if (!(/^https?:\/\//i.test(url) && !/^https?:\/\/file[:/]/i.test(url))) {
+								throw err;
+							}
+						}
+						const res = await enqueueAgentCommand({ kind: "navigate", url: resolved });
 						return ok(res);
 					}
 					case "action": {
@@ -1572,11 +1732,91 @@ async function runBrowserAction(_scope, action, params = {}) {
 		selector: params.selector,
 		value: params.value,
 		timeoutMs: params.timeoutMs,
-	});
+	}, action === "screenshot" ? 60_000 : 45_000);
 }
 
-async function runBrowserNavigate(_scope, url) {
-	return enqueueAgentCommand({ kind: "navigate", url: String(url || "").trim() });
+async function runBrowserNavigate(scope, url) {
+	const resolved = await resolveNavigateUrl(scope, url);
+	return enqueueAgentCommand({ kind: "navigate", url: resolved });
+}
+
+function imageRefFromSaved(ref) {
+	return {
+		attachmentId: AttachmentId(ref.attachmentId),
+		mediaType: ref.mediaType,
+		bytes: ref.bytes,
+		width: ref.width,
+		height: ref.height,
+		...ref.name === undefined ? {} : { name: ref.name },
+		...ref.originalDimensions === undefined
+			? {}
+			: { originalDimensions: { ...ref.originalDimensions } },
+	};
+}
+
+const IMAGE_VALUE_SCHEMA = {
+	type: "object",
+	additionalProperties: false,
+	required: true,
+	properties: {
+		attachmentId: { type: "string", required: true },
+		mediaType: {
+			type: "string",
+			enum: ["image/png", "image/jpeg", "image/webp", "image/gif"],
+			required: true,
+		},
+		bytes: { type: "integer", required: true },
+		width: { type: "integer", required: true },
+		height: { type: "integer", required: true },
+		name: { type: "string" },
+		originalDimensions: {
+			type: "object",
+			additionalProperties: false,
+			properties: {
+				width: { type: "integer", required: true },
+				height: { type: "integer", required: true },
+			},
+		},
+	},
+};
+
+function screenshotContent(value) {
+	const notes = Array.isArray(value.notes) && value.notes.length
+		? `\nnotes: ${value.notes.join("; ")}`
+		: "";
+	return [
+		{
+			type: "text",
+			text:
+				`<browser-screenshot>\n` +
+				`<url>${value.url || ""}</url>\n` +
+				`<title>${value.title || ""}</title>\n` +
+				`<type>image</type>\n` +
+				`<content>\n` +
+				`${value.image.mediaType} image, ${value.image.width}x${value.image.height} px, ${value.image.bytes} bytes` +
+				`${notes}\n` +
+				`</content>\n` +
+				`</browser-screenshot>`,
+		},
+		{
+			type: "image",
+			attachment: imageRefFromSaved(value.image),
+		},
+	];
+}
+
+async function assertImageCapableRoute(scope, exec) {
+	const routed = exec.agent?.session?.requestHeader?.()?.config;
+	const provider = routed?.provider ?? exec.agent?.options?.provider;
+	const model = routed?.model ?? exec.agent?.options?.model;
+	const llm = scope.get?.("llm") || scope.llm;
+	if (!provider || !model || !llm?.resolveModelInfo) return;
+	const active = await llm.resolveModelInfo(provider, model, exec.signal);
+	if (active.inputModalities && !active.inputModalities.includes("image")) {
+		throw new Error(
+			`browser_screenshot requires an image-capable model; "${model}" does not declare image input`,
+		);
+	}
 }
 
 function registerTools(scope) {
@@ -1593,12 +1833,14 @@ function registerTools(scope) {
 
 	register({
 		name: "browser_navigate",
-		description: "Navigate the in-app browser tab to a URL (e.g. http://localhost:3000, http://192.168.0.146:8001, or live preview).",
+		description:
+			"Navigate the in-app browser tab to a URL. Use http(s) for remote pages. For local HTML in the workspace, pass a workspace path or file:// URL — the Browser tab rewrites it to Live Server automatically (do not start a separate python http.server).",
 		parameters: {
 			url: {
 				type: "string",
 				required: true,
-				description: "Target URL to open in the in-app browser",
+				description:
+					"http(s) URL, /api/browser-live/… path, workspace-relative file (e.g. liquid-vacuum/index.html), or file:///workspace/… path",
 			},
 		},
 		output: {
@@ -1690,9 +1932,99 @@ function registerTools(scope) {
 	});
 }
 
+function registerScreenshotTool(scope) {
+	const tools = scope.tools || scope.get?.("tools");
+	if (!tools?.register || !defineTool || !AttachmentId) return;
+
+	try {
+		tools.register(defineTool({
+			name: "browser_screenshot",
+			description:
+				"Capture a PNG screenshot of the current in-app Browser tab viewport and return it as an image you can see. Use this to verify visual/render issues (layout, canvas/WebGL fluid sims, CSS). Requires the Browser tab to have a Live/gate page loaded (same-origin). Prefer after browser_navigate to the page under test. Not a DOM dump — use browser_snapshot for element refs.",
+			parameters: {},
+			output: {
+				schema: {
+					type: "object",
+					additionalProperties: false,
+					properties: {
+						url: { type: "string", required: true },
+						title: { type: "string", required: true },
+						notes: {
+							type: "array",
+							items: { type: "string" },
+							required: true,
+						},
+						image: IMAGE_VALUE_SCHEMA,
+					},
+				},
+				render: (_args, value) => screenshotContent(value),
+			},
+			execute: async (_args, exec) => {
+				const attachments = scope.get?.("attachments") || scope.attachments;
+				if (!attachments?.saveImage) {
+					throw new Error("browser_screenshot: no attachment service is mounted");
+				}
+				await assertImageCapableRoute(scope, exec);
+
+				const res = await runBrowserAction(scope, "screenshot", { timeoutMs: 25000 });
+				if (!res || res.ok === false) {
+					throw new Error(res?.error || "screenshot failed");
+				}
+				const b64 = String(res.pngBase64 || "").replace(/\s+/g, "");
+				if (!b64) throw new Error("screenshot returned empty image data");
+				const data = Buffer.from(b64, "base64");
+				if (data.length < 32) throw new Error("screenshot PNG too small / invalid");
+
+				let ref;
+				try {
+					ref = await attachments.saveImage({
+						data: new Uint8Array(data),
+						mediaType: "image/png",
+						name: `browser-screenshot-${Date.now()}.png`,
+					});
+				} catch (error) {
+					if (AttachmentError && error instanceof AttachmentError) {
+						throw new Error(`browser_screenshot could not store image: ${error.message}`, { cause: error });
+					}
+					throw error;
+				}
+
+				return {
+					url: res.url || "",
+					title: res.title || "",
+					notes: Array.isArray(res.notes) ? res.notes : [],
+					image: {
+						attachmentId: ref.attachmentId,
+						mediaType: ref.mediaType,
+						bytes: ref.bytes,
+						width: ref.width,
+						height: ref.height,
+						...ref.name === undefined ? {} : { name: ref.name },
+						...ref.originalDimensions === undefined
+							? {}
+							: { originalDimensions: { ...ref.originalDimensions } },
+					},
+				};
+			},
+			presentCall() {
+				return {
+					card: "generic",
+					title: "Browser screenshot",
+					kind: "read",
+				};
+			},
+		}));
+	} catch (e) {
+		console.warn("[dsh-browser] register tool failed: browser_screenshot", e);
+	}
+}
+
 function apply(ctx) {
 	ctx.inject(["tools"], (toolsScope) => {
 		toolsScope.effect(() => registerTools(toolsScope), "dsh-browser: tools");
+	});
+	ctx.inject(["tools", "attachments"], (scope) => {
+		scope.effect(() => registerScreenshotTool(scope), "dsh-browser: screenshot");
 	});
 	ctx.inject(["connection", "webServer"], (connScope) => {
 		connScope.effect(() => registerRpc(connScope), "dsh-browser: rpc");

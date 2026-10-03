@@ -38,6 +38,13 @@ export interface CronJobWire {
 export interface CronListWire {
   readonly jobs: readonly CronJobWire[]
   readonly generatedAt: number
+  /** Shared cron-only preamble (not used for interactive chat). */
+  readonly standingInstructions?: string
+}
+
+/** Payload of the `setStanding` endpoint. */
+export interface CronStandingWire {
+  readonly standingInstructions: string
 }
 
 /** Payload returned after creating or deduplicating a task. */

@@ -38,10 +38,29 @@ function makeHarness(service: Partial<CronService>) {
 describe('registerCronRpc', () => {
   it('lists jobs through the channel', async () => {
     const jobs = [{ id: 'cron-1' }]
-    const { captured } = makeHarness({ list: () => jobs as never })
-    const result = await captured('list', {}, new AbortController().signal) as { ok: boolean; value: { jobs: unknown[] } }
+    const { captured } = makeHarness({
+      list: () => jobs as never,
+      standingInstructions: () => 'keep going',
+    })
+    const result = await captured('list', {}, new AbortController().signal) as {
+      ok: boolean
+      value: { jobs: unknown[]; standingInstructions: string }
+    }
     expect(result.ok).toBe(true)
     expect(result.value.jobs).toEqual(jobs)
+    expect(result.value.standingInstructions).toBe('keep going')
+  })
+
+  it('saves standing instructions', async () => {
+    const setStandingInstructions = vi.fn().mockReturnValue('updated standing')
+    const { captured } = makeHarness({ setStandingInstructions })
+    const result = await captured('setStanding', { standingInstructions: 'updated standing' }, new AbortController().signal) as {
+      ok: boolean
+      value: { standingInstructions: string }
+    }
+    expect(result.ok).toBe(true)
+    expect(result.value.standingInstructions).toBe('updated standing')
+    expect(setStandingInstructions).toHaveBeenCalledWith('updated standing')
   })
 
   it('adds recurring and one-shot jobs through scheduler validation', async () => {

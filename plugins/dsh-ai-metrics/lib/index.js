@@ -1,6 +1,7 @@
 /**
  * Host half: same-origin proxies for metrics + plugins-data config store.
  * - /jetson-metrics-api/* → Jetson metrics-api (optional)
+ * - /jetson-switcher-api/* → Jetson model switcher :8100 (clear-cache, health)
  * - /ollama-metrics-api/* → host Ollama (browser cannot hit :11434 directly — CORS)
  */
 import { readFile, writeFile, mkdir } from "node:fs/promises";
@@ -11,8 +12,10 @@ import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
 const name = "dsh-ai-metrics";
 const inject = ["webServer", "connection"];
 const PROXY_PREFIX = "/jetson-metrics-api";
+const SWITCHER_PROXY_PREFIX = "/jetson-switcher-api";
 const OLLAMA_PROXY_PREFIX = "/ollama-metrics-api";
 const DEFAULT_UPSTREAM = "http://192.168.0.146:8001";
+const DEFAULT_SWITCHER_UPSTREAM = "http://192.168.0.146:8100";
 /** Docker→host bridge; override with OLLAMA_BASE_URL (e.g. http://192.168.0.50:11434). */
 const DEFAULT_OLLAMA_UPSTREAM = "http://172.17.0.1:11434";
 const RPC_CHANNEL = "/ai-metrics-config";
@@ -93,12 +96,13 @@ function registerRpc(ctx) {
 		});
 }
 
-function makePrefixProxy(ctx, { prefix, upstreamBase, label, timeoutMs = 20_000 }) {
+function makePrefixProxy(ctx, { prefix, upstreamBase, label, timeoutMs = 20_000, allowMethods = ["GET", "HEAD"] }) {
 	const base = String(upstreamBase || "").replace(/\/+$/, "");
+	const allowed = new Set(allowMethods.map((m) => m.toUpperCase()));
 	return async (req, res) => {
 		try {
 			const method = (req.method || "GET").toUpperCase();
-			if (method !== "GET" && method !== "HEAD") {
+			if (!allowed.has(method)) {
 				sendJson(res, 405, { ok: false, error: "method not allowed" });
 				return;
 			}
@@ -114,10 +118,12 @@ function makePrefixProxy(ctx, { prefix, upstreamBase, label, timeoutMs = 20_000 
 				return;
 			}
 
+			// clear-cache restarts llama-server (~20–90s)
+			const slow = method === "POST" && /\/clear-cache\/?$/.test(suffix);
 			const upstream = await fetch(target, {
 				method,
-				headers: { accept: "application/json" },
-				signal: AbortSignal.timeout(timeoutMs),
+				headers: { accept: "application/json", "content-type": "application/json" },
+				signal: AbortSignal.timeout(slow ? 120_000 : timeoutMs),
 			});
 			const buf = Buffer.from(await upstream.arrayBuffer());
 			res.writeHead(upstream.status, {
@@ -133,13 +139,14 @@ function makePrefixProxy(ctx, { prefix, upstreamBase, label, timeoutMs = 20_000 
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			ctx.logger?.warn?.(`[${name}] ${label} proxy failed: ${message}`);
-			sendJson(res, 502, { ok: false, error: "upstream metrics unreachable", detail: message });
+			sendJson(res, 502, { ok: false, error: "upstream unreachable", detail: message });
 		}
 	};
 }
 
 function apply(ctx) {
 	const jetsonUpstream = (process.env.JETSON_METRICS_URL || DEFAULT_UPSTREAM).replace(/\/+$/, "");
+	const switcherUpstream = (process.env.JETSON_SWITCHER_URL || DEFAULT_SWITCHER_UPSTREAM).replace(/\/+$/, "");
 	const ollamaUpstream = (process.env.OLLAMA_BASE_URL || DEFAULT_OLLAMA_UPSTREAM).replace(/\/+$/, "");
 
 	ctx.effect(
@@ -154,6 +161,22 @@ function apply(ctx) {
 				}),
 			}),
 		`${name}: jetson-metrics proxy`,
+	);
+
+	ctx.effect(
+		() =>
+			ctx.webServer.register({
+				kind: "prefix",
+				path: SWITCHER_PROXY_PREFIX,
+				handler: makePrefixProxy(ctx, {
+					prefix: SWITCHER_PROXY_PREFIX,
+					upstreamBase: switcherUpstream,
+					label: "jetson switcher",
+					timeoutMs: 15_000,
+					allowMethods: ["GET", "HEAD", "POST"],
+				}),
+			}),
+		`${name}: jetson-switcher proxy`,
 	);
 
 	ctx.effect(

@@ -40,6 +40,8 @@ export interface CronService {
   edit(id: string, input: AddJobInput): AddJobResult
   remove(id: string): boolean
   list(): readonly CronJob[]
+  standingInstructions(): string
+  setStandingInstructions(text: string): string
   fireNow(id: string): Promise<'submitted' | 'not_found' | 'target_required'>
   setPaused(id: string, paused: boolean): boolean
   setTarget(id: string, target: AutomationTarget): boolean
@@ -64,6 +66,11 @@ export class CronScheduler {
       edit: (id, input) => this.editJob(id, input),
       remove: id => this.removeJob(id),
       list: () => this.listJobs(),
+      standingInstructions: () => this.options.store.standingInstructions(),
+      setStandingInstructions: text => {
+        this.options.store.setStandingInstructions(text)
+        return this.options.store.standingInstructions()
+      },
       fireNow: id => this.fireNow(id),
       setPaused: (id, paused) => this.setPaused(id, paused),
       setTarget: (id, target) => this.setTarget(id, target),

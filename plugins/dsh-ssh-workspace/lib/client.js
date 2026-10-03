@@ -209,14 +209,15 @@ window.__ModuleLoader__.load({
 			window.dispatchEvent(new CustomEvent("dsh:open-settings", { detail: { section: "ssh-workspace" } }));
 		}
 
-		function AddWorkspaceDialog({ workspaces, connection, onClose }) {
+		function AddWorkspaceDialog({ workspaces, uiWorkspace, connection, onClose }) {
+			const browse = uiWorkspace || workspaces;
 			const [mode, setMode] = React.useState("local");
 			const [hosts, setHosts] = React.useState([]);
 			const [hostId, setHostId] = React.useState("");
-			const [localPath, setLocalPath] = React.useState(null);
-			const [cwd, setCwd] = React.useState(null);
+			const [localPath, setLocalPath] = React.useState(LOCAL_WORKSPACE_ROOT);
+			const [cwd, setCwd] = React.useState(LOCAL_WORKSPACE_ROOT);
 			const [entries, setEntries] = React.useState([]);
-			const [localCrumbs, setLocalCrumbs] = React.useState([{ name: "Home", path: null }]);
+			const [localCrumbs, setLocalCrumbs] = React.useState([{ name: "workspace", path: LOCAL_WORKSPACE_ROOT }]);
 			const [busy, setBusy] = React.useState(false);
 			const [loading, setLoading] = React.useState(false);
 			const [error, setError] = React.useState("");
@@ -232,34 +233,45 @@ window.__ModuleLoader__.load({
 			const sshLoadSeq = React.useRef(0);
 			const defaultedTab = React.useRef(false);
 
+			const resolveLocalPath = (path) => {
+				if (path == null || path === "" || path === "/") return LOCAL_WORKSPACE_ROOT;
+				return String(path);
+			};
+
 			const loadLocal = React.useCallback(async (path) => {
+				const target = resolveLocalPath(path);
 				setError("");
 				setLoading(true);
 				try {
-					const level = await workspaces.listDirectory(path == null ? undefined : path);
+					if (typeof browse?.listDirectory !== "function") {
+						throw new Error("Directory browser unavailable (uiWorkspace.listDirectory missing)");
+					}
+					const level = await browse.listDirectory(target);
 					const list = (level?.entries || [])
 						.filter((e) => e.name && !e.hidden && e.name !== "dssh:")
 						.sort((a, b) => a.name.localeCompare(b.name));
 					setEntries(list);
-					const resolved = level?.path ?? path ?? null;
+					const resolved = resolveLocalPath(level?.path ?? target);
 					setCwd(resolved);
-					const crumbs = [{ name: "Home", path: null }];
-					if (resolved && resolved.replace(/\/+$/, "") !== LOCAL_WORKSPACE_ROOT) {
+					const crumbs = [{ name: "workspace", path: LOCAL_WORKSPACE_ROOT }];
+					if (resolved.replace(/\/+$/, "") !== LOCAL_WORKSPACE_ROOT) {
 						const parts = String(resolved).split("/").filter(Boolean);
 						let acc = "";
 						for (const part of parts) {
 							acc += `/${part}`;
+							if (acc === LOCAL_WORKSPACE_ROOT) continue;
 							crumbs.push({ name: part, path: acc });
 						}
 					}
 					setLocalCrumbs(crumbs);
 				} catch (err) {
 					setEntries([]);
+					setCwd(target);
 					setError(err?.message || String(err));
 				} finally {
 					setLoading(false);
 				}
-			}, [workspaces]);
+			}, [browse]);
 
 			const loadRemote = React.useCallback(async (hid, path) => {
 				if (!hid) return;
@@ -291,7 +303,7 @@ window.__ModuleLoader__.load({
 					setSshEntries([]);
 					setSshCrumbs([{ name: "Root", path: "/" }]);
 				} else {
-					setLocalPath(null);
+					setLocalPath(LOCAL_WORKSPACE_ROOT);
 				}
 			};
 
@@ -343,12 +355,20 @@ window.__ModuleLoader__.load({
 
 			const createLocalFolder = async () => {
 				const name = newFolderName.trim();
-				const parent = cwd;
-				if (!name || parent == null || creatingFolder) return;
+				const parent = resolveLocalPath(cwd || localPath);
+				if (!name || creatingFolder) return;
+				if (!/^[^\0/\\]+$/.test(name) || name === "." || name === "..") {
+					setError("Folder name must be a single path segment (no slashes).");
+					return;
+				}
+				if (typeof browse?.createDirectory !== "function") {
+					setError("Directory browser unavailable (uiWorkspace.createDirectory missing)");
+					return;
+				}
 				setCreatingFolder(true);
 				setError("");
 				try {
-					const created = await workspaces.createDirectory(parent, name);
+					const created = await browse.createDirectory(parent, name);
 					const createdPath = typeof created === "string" ? created : created?.path;
 					setShowNewFolder(false);
 					setNewFolderName("");
@@ -365,25 +385,44 @@ window.__ModuleLoader__.load({
 			};
 
 			const openLocal = async () => {
-				const target = localPath || cwd;
 				const title = workspaceTitle.trim();
-				if (!target || busy) return;
-				if (!title) {
-					setError("Enter a workspace name.");
+				if (!title || busy) return;
+				if (!/^[^\0/\\]+$/.test(title) || title === "." || title === "..") {
+					setError("Name must be a single folder name (no slashes).");
 					return;
 				}
-				if (target.replace(/\/+$/, "") === LOCAL_WORKSPACE_ROOT) {
-					setError("Open a subfolder under /workspace (or create one below).");
-					return;
-				}
+				let target = resolveLocalPath(localPath || cwd);
 				setBusy(true);
+				setError("");
 				try {
+					// At /workspace root: Name is the new sibling folder (same place as Test env, Projects, …).
+					if (target.replace(/\/+$/, "") === LOCAL_WORKSPACE_ROOT) {
+						if (typeof browse?.createDirectory !== "function") {
+							throw new Error("Directory browser unavailable (uiWorkspace.createDirectory missing)");
+						}
+						try {
+							target = await browse.createDirectory(LOCAL_WORKSPACE_ROOT, title);
+						} catch (err) {
+							const msg = err?.message || String(err);
+							if (/directory-exists|already exists/i.test(msg)) {
+								target = `${LOCAL_WORKSPACE_ROOT}/${title}`;
+							} else {
+								throw err;
+							}
+						}
+						setLocalPath(target);
+						setCwd(target);
+					}
 					const ws = await workspaces.create({ path: target });
 					const id = ws?.workspaceId || ws?.id;
 					if (id) {
-						const defaultName = target.split("/").filter(Boolean).pop() || "";
+						const defaultName = String(target).split("/").filter(Boolean).pop() || "";
 						if (title !== defaultName && typeof workspaces.rename === "function") {
-							await workspaces.rename({ workspaceId: id, title });
+							try {
+								await workspaces.rename(id, title);
+							} catch {
+								try { await workspaces.rename({ workspaceId: id, title }); } catch { /* ignore */ }
+							}
 						}
 						await callRpc(connection, "unbindWorkspace", { workspaceId: id });
 					}
@@ -441,7 +480,7 @@ window.__ModuleLoader__.load({
 			if (localParentPath != null) {
 				localRows.push({
 					name: "..",
-					path: localParentPath === LOCAL_WORKSPACE_ROOT ? null : localParentPath,
+					path: localParentPath,
 					type: "directory",
 					parent: true,
 				});
@@ -461,7 +500,7 @@ window.__ModuleLoader__.load({
 				),
 				React.createElement("div", { className: "dsw-hint" },
 					mode === "local"
-						? "Browse or create a folder under /workspace, name it, then Add workspace."
+						? "Type a Name and Add workspace — that creates a new folder next to your other projects under /workspace. Or pick an existing folder below."
 						: "Browse the remote PC, name the workspace, then Add workspace."),
 				mode === "ssh" && React.createElement("div", { className: "dsw-hostPicker" },
 					React.createElement("select", {
@@ -532,14 +571,14 @@ window.__ModuleLoader__.load({
 								setLocalPath(e.parent ? e.path : e.path);
 							},
 						}, React.createElement("span", null, "📁"), " ", e.name))
-							: !loading && React.createElement("div", { className: "dsw-status" }, "Empty — create a folder below"),
+							: !loading && React.createElement("div", { className: "dsw-status" }, "No folders here yet — type a Name below and click Add workspace"),
 						!showNewFolder
 							? React.createElement("div", { className: "dsw-newRow" },
 								React.createElement("button", {
 									type: "button",
 									className: "dsw-btn",
-									disabled: loading || creatingFolder || !cwd,
-									onClick: () => setShowNewFolder(true),
+									disabled: loading || creatingFolder,
+									onClick: () => { setShowNewFolder(true); setError(""); },
 								}, "New folder"),
 							)
 							: React.createElement("div", { className: "dsw-newRow" },
@@ -547,6 +586,7 @@ window.__ModuleLoader__.load({
 									className: "dsw-nameInput",
 									placeholder: "Folder name",
 									value: newFolderName,
+									autoFocus: true,
 									disabled: creatingFolder,
 									onChange: (e) => setNewFolderName(e.target.value),
 									onKeyDown: (e) => { if (e.key === "Enter") createLocalFolder(); },
@@ -589,8 +629,8 @@ window.__ModuleLoader__.load({
 							React.createElement("button", {
 								type: "button",
 								className: "dsw-btn dsw-btnPrimary",
-								disabled: busy || !targetPath || !workspaceTitle.trim() || (mode === "ssh" && !hostId) || pickerBusy
-									|| (mode === "local" && targetPath.replace(/\/+$/, "") === LOCAL_WORKSPACE_ROOT),
+								disabled: busy || !workspaceTitle.trim() || (mode === "ssh" && (!hostId || !targetPath)) || pickerBusy
+									|| (mode === "local" && !targetPath),
 								onClick: mode === "local" ? openLocal : openRemote,
 							}, busy ? "Adding…" : "Add workspace"),
 						),
@@ -920,7 +960,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 
-		function openPicker(workspaces, connection) {
+		function openPicker(workspaces, uiWorkspace, connection) {
 			ensureStyles();
 			closePicker();
 			const host = document.createElement("div");
@@ -933,7 +973,7 @@ window.__ModuleLoader__.load({
 				: { render: (el) => ReactDOM.render(el, host), unmount: () => ReactDOM.unmountComponentAtNode(host) };
 			reactRoot.render(React.createElement(React.Fragment, null,
 				React.createElement("div", { className: "dsw-backdrop", "aria-hidden": "true" }),
-				React.createElement(AddWorkspaceDialog, { workspaces, connection, onClose: closePicker }),
+				React.createElement(AddWorkspaceDialog, { workspaces, uiWorkspace, connection, onClose: closePicker }),
 			));
 		}
 
@@ -962,11 +1002,11 @@ window.__ModuleLoader__.load({
 			return null;
 		}
 
-		const inject = ["connection", "workspaces", "slots"];
+		const inject = ["connection", "workspaces", "uiWorkspace", "slots"];
 
 		function apply(ctx) {
 			ensureStyles();
-			document.documentElement.setAttribute("data-dsh-ssh-workspace", "0.2.0");
+			document.documentElement.setAttribute("data-dsh-ssh-workspace", "0.2.5");
 
 			const connection = ctx.get?.("connection");
 			if (ctx.slots?.inject && connection) {
@@ -983,13 +1023,17 @@ window.__ModuleLoader__.load({
 				}
 			}
 
-			ctx.inject(["connection", "workspaces"], (scope) => {
+			ctx.inject(["connection", "workspaces", "uiWorkspace"], (scope) => {
 				const conn = scope.connection || scope.get("connection");
 				const workspaces = scope.workspaces || scope.get("workspaces");
+				const uiWorkspace = scope.uiWorkspace || scope.get("uiWorkspace");
 				// Chips only need list; create is for the Add-workspace picker.
 				if (!conn?.rpc?.call || !workspaces?.list) {
 					console.warn(`[${PLUGIN}] connection/workspaces.list unavailable`);
 					return;
+				}
+				if (!uiWorkspace?.listDirectory) {
+					console.warn(`[${PLUGIN}] uiWorkspace.listDirectory unavailable — local folder browse will fail`);
 				}
 				activeConnection = conn;
 
@@ -1054,7 +1098,7 @@ window.__ModuleLoader__.load({
 						e.preventDefault();
 						e.stopPropagation();
 						if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
-						openPicker(workspaces, conn);
+						openPicker(workspaces, uiWorkspace, conn);
 					};
 					document.addEventListener("click", onClick, true);
 					return () => { clearInterval(iv); document.removeEventListener("click", onClick, true); closePicker(); };

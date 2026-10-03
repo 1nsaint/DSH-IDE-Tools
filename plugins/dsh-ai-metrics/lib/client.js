@@ -77,11 +77,15 @@ window.__ModuleLoader__.load({
 .dam_loadFill{display:block;height:100%;border-radius:inherit;width:0;max-width:100%;transition:width .35s ease}
 .dam_loadPct{flex:none;width:28px;font-size:9px;line-height:1;text-align:right;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
 .dam_rail .dam_loadPct{display:none}
-.dam_tip{font-size:12px;line-height:18px;max-width:min(260px,calc(100vw - 24px));min-width:160px;box-sizing:border-box;color:var(--dsw-alias-label-primary);padding:8px 10px;border-radius:10px;background:var(--dsw-alias-bg-layer-3,#2a2d34);box-shadow:var(--dsw-shadow-lv2,0 4px 16px rgba(0,0,0,.35));pointer-events:none;white-space:normal}
+.dam_tip{font-size:12px;line-height:18px;max-width:min(280px,calc(100vw - 24px));min-width:160px;box-sizing:border-box;color:var(--dsw-alias-label-primary);padding:8px 10px;border-radius:10px;background:var(--dsw-alias-bg-layer-3,#2a2d34);box-shadow:var(--dsw-shadow-lv2,0 4px 16px rgba(0,0,0,.35));pointer-events:auto;white-space:normal}
 .dam_tipPortal{position:fixed;z-index:10050;opacity:0;visibility:hidden;transition:opacity .12s ease;pointer-events:none}
-.dam_tipPortal.dam_tipOpen{opacity:1;visibility:visible}
+.dam_tipPortal.dam_tipOpen{opacity:1;visibility:visible;pointer-events:auto}
 .dam_tip strong{display:block;font-size:12px;font-weight:600;margin-bottom:4px}
 .dam_tipRow{display:flex;justify-content:space-between;gap:12px}
+.dam_clearBtn{display:block;width:100%;margin-top:8px;height:28px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,#444);background:var(--dsw-alias-bg-layer-2,#222);color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;cursor:pointer}
+.dam_clearBtn:hover:not(:disabled){border-color:var(--dsw-alias-state-business-primary,#e8c547);color:var(--dsw-alias-state-business-primary,#e8c547)}
+.dam_clearBtn:disabled{opacity:.55;cursor:default}
+.dam_clearNote{margin:6px 0 0;font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary)}
 .dam_form{display:flex;flex-direction:column;gap:10px;max-width:640px}
 .dam_form label{font-size:12px;color:var(--dsw-alias-label-secondary)}
 .dam_form input:not([type="color"]),.dam_form select{height:32px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);padding:0 10px;font:inherit;font-size:12px}
@@ -638,9 +642,13 @@ window.__ModuleLoader__.load({
 			);
 		}
 
+		const SWITCHER_HEALTH = "/jetson-switcher-api/health";
+		const SWITCHER_CLEAR = "/jetson-switcher-api/clear-cache";
+
 		function MetricsWidget({ wide }) {
 			const rootRef = React.useRef(null);
 			const tipWrapRef = React.useRef(null);
+			const hideTimerRef = React.useRef(null);
 			const [cfg, setCfg] = React.useState(loadConfig);
 			const [snap, setSnap] = React.useState(null);
 			const [error, setError] = React.useState(false);
@@ -649,27 +657,39 @@ window.__ModuleLoader__.load({
 			const [tipOpen, setTipOpen] = React.useState(false);
 			const [tipPos, setTipPos] = React.useState({ left: 0, bottom: 8, maxHeight: 320 });
 			const tipPortalRef = React.useRef(null);
+			const [switcher, setSwitcher] = React.useState(null);
+			const [clearState, setClearState] = React.useState("idle"); // idle | working | ok | err
+			const [clearMsg, setClearMsg] = React.useState("");
 
 			const placeTip = React.useCallback(() => {
 				const el = tipWrapRef.current;
 				if (!el) return;
 				const rect = el.getBoundingClientRect();
 				const gap = 8;
-				const maxW = Math.min(260, window.innerWidth - 24);
+				const maxW = Math.min(280, window.innerWidth - 24);
 				let left = rect.right + gap;
 				if (left + maxW > window.innerWidth - 8) {
 					left = Math.max(8, rect.left - maxW - gap);
 				}
-				// Anchor to the widget bottom so the tip grows upward (footer slot).
 				const bottom = Math.max(gap, window.innerHeight - rect.bottom);
 				const maxHeight = Math.max(96, rect.bottom - gap);
 				setTipPos({ left, bottom, maxHeight });
 			}, []);
 
 			const showTip = React.useCallback(() => {
+				if (hideTimerRef.current) {
+					window.clearTimeout(hideTimerRef.current);
+					hideTimerRef.current = null;
+				}
 				placeTip();
 				setTipOpen(true);
 			}, [placeTip]);
+
+			const hideTipSoon = React.useCallback(() => {
+				if (clearState === "working") return;
+				if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+				hideTimerRef.current = window.setTimeout(() => setTipOpen(false), 180);
+			}, [clearState]);
 
 			const hideTip = React.useCallback(() => setTipOpen(false), []);
 
@@ -691,7 +711,7 @@ window.__ModuleLoader__.load({
 						maxHeight: Math.max(96, window.innerHeight - gap * 2),
 					}));
 				}
-			}, [tipOpen, placeTip, snap, loading, error]);
+			}, [tipOpen, placeTip, snap, loading, error, switcher, clearState, clearMsg]);
 
 			React.useEffect(() => {
 				if (!tipOpen) return undefined;
@@ -722,6 +742,16 @@ window.__ModuleLoader__.load({
 				}
 			}, [wide, cfg.adapter]);
 
+			const refreshSwitcher = React.useCallback(async () => {
+				try {
+					const res = await fetch(SWITCHER_HEALTH, { cache: "no-store" });
+					if (!res.ok) throw new Error(`health ${res.status}`);
+					setSwitcher(await res.json());
+				} catch {
+					setSwitcher(null);
+				}
+			}, []);
+
 			const refresh = React.useCallback(async () => {
 				if (cfg.adapter === "off") {
 					setSnap(null);
@@ -741,7 +771,28 @@ window.__ModuleLoader__.load({
 				} finally {
 					setLoading(false);
 				}
-			}, [cfg]);
+				void refreshSwitcher();
+			}, [cfg, refreshSwitcher]);
+
+			const clearCache = React.useCallback(async (ev) => {
+				ev?.preventDefault?.();
+				ev?.stopPropagation?.();
+				if (clearState === "working") return;
+				setClearState("working");
+				setClearMsg("Restarting llama (same model)…");
+				showTip();
+				try {
+					const res = await fetch(SWITCHER_CLEAR, { method: "POST", cache: "no-store" });
+					const body = await res.json().catch(() => ({}));
+					if (!res.ok) throw new Error(body?.detail || body?.error || `HTTP ${res.status}`);
+					setClearState("ok");
+					setClearMsg(body?.message || "KV / prompt cache cleared.");
+					await refresh();
+				} catch (err) {
+					setClearState("err");
+					setClearMsg(err?.message || String(err));
+				}
+			}, [clearState, showTip, refresh]);
 
 			React.useEffect(() => {
 				setLoading(true);
@@ -797,6 +848,29 @@ window.__ModuleLoader__.load({
 						React.createElement("span", null, `${Math.round(gpuPercent)}%`),
 					));
 				}
+				const swRows = [];
+				if (switcher?.ctx != null) {
+					swRows.push(React.createElement("div", { key: "ctx", className: "dam_tipRow" },
+						React.createElement("span", null, "ctx"),
+						React.createElement("span", null, String(switcher.ctx)),
+					));
+				}
+				if (switcher?.cache_ram_mib != null) {
+					swRows.push(React.createElement("div", { key: "cram", className: "dam_tipRow" },
+						React.createElement("span", null, "cache-ram"),
+						React.createElement("span", null, `${switcher.cache_ram_mib} MiB`),
+					));
+				}
+				if (switcher?.current_model) {
+					swRows.push(React.createElement("div", { key: "model", className: "dam_tipRow" },
+						React.createElement("span", null, "model"),
+						React.createElement("span", null, String(switcher.current_model)),
+					));
+				}
+				const clearLabel = clearState === "working" ? "Clearing…"
+					: clearState === "ok" ? "Cleared"
+						: clearState === "err" ? "Retry clear cache"
+							: "Clear KV cache";
 				return [
 					React.createElement("strong", { key: "t" },
 						snap.title + (snap.detail ? ` · ${snap.detail}` : "")),
@@ -808,6 +882,20 @@ window.__ModuleLoader__.load({
 						React.createElement("span", null, formatBytes(seg.bytes)),
 					)),
 					...loadRows,
+					...swRows,
+					React.createElement("button", {
+						key: "clear",
+						type: "button",
+						className: "dam_clearBtn",
+						disabled: clearState === "working",
+						onMouseDown: (e) => { e.preventDefault(); e.stopPropagation(); },
+						onClick: clearCache,
+						title: "POST /clear-cache — reload same GGUF, drop KV/prompt cache (~20s)",
+					}, clearLabel),
+					clearMsg
+						? React.createElement("div", { key: "cnote", className: "dam_clearNote" }, clearMsg)
+						: React.createElement("div", { key: "cnote", className: "dam_clearNote" },
+							"Drops KV / prompt cache; keeps the loaded model."),
 				];
 			})();
 
@@ -862,6 +950,8 @@ window.__ModuleLoader__.load({
 							overflow: "visible",
 						},
 						role: "tooltip",
+						onMouseEnter: showTip,
+						onMouseLeave: hideTipSoon,
 					}, React.createElement("div", { className: "dam_tip" }, tip)),
 					document.body,
 				)
@@ -875,9 +965,9 @@ window.__ModuleLoader__.load({
 					className: "dam_tipWrap",
 					ref: tipWrapRef,
 					onMouseEnter: showTip,
-					onMouseLeave: hideTip,
+					onMouseLeave: hideTipSoon,
 					onFocus: showTip,
-					onBlur: hideTip,
+					onBlur: hideTipSoon,
 				}, button),
 				tipPortal,
 			);

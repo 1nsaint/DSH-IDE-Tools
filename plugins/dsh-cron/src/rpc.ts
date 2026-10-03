@@ -44,7 +44,16 @@ export function registerCronRpc(ctx: Context, service: CronService): () => void 
   return registerRpcChannel(ctx, CRON_RPC_CHANNEL, async (endpoint, payload, _signal) => {
     try {
       switch (endpoint) {
-        case 'list': return ok({ jobs: service.list(), generatedAt: Date.now() })
+        case 'list': return ok({
+          jobs: service.list(),
+          generatedAt: Date.now(),
+          standingInstructions: service.standingInstructions(),
+        })
+        case 'setStanding': {
+          const text = payloadText(payload, 'standingInstructions')
+          if (text === undefined) throw new Error('dsh-cron RPC: payload.standingInstructions must be a string')
+          return ok({ standingInstructions: service.setStandingInstructions(text) })
+        }
         case 'add': {
           const cron = payloadText(payload, 'cron')
           const timeZone = payloadText(payload, 'timeZone')

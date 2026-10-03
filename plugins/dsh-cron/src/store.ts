@@ -8,6 +8,7 @@ import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync, type Stat
 import { dirname } from 'node:path'
 import type { AutomationRunState, AutomationTarget } from './automation.ts'
 import { acquireDirLock, type DirLock } from './filelock.ts'
+import { DEFAULT_STANDING_INSTRUCTIONS } from './standing.ts'
 import { mergeJobs } from './store-merge.ts'
 
 /** One-shot absolute schedule, RFC 3339 UTC. */
@@ -139,6 +140,7 @@ function normalizeJob(job: CronJob, fallbackTarget: AutomationTarget | undefined
 export class CronStore {
   private seq = 0
   private jobList: CronJob[] = []
+  private standingText = DEFAULT_STANDING_INSTRUCTIONS
   private watcher: ReturnType<typeof setInterval> | null = null
   private lastWritten: string | null = null
   private lastStat: { mtimeMs: number; size: number } | null = null
@@ -213,9 +215,26 @@ export class CronStore {
     this.seq = typeof parsed.seq === 'number' && Number.isSafeInteger(parsed.seq) ? parsed.seq : jobs.length
     this.eventSeq = typeof parsed.eventCursor === 'number' && Number.isSafeInteger(parsed.eventCursor) ? parsed.eventCursor : 0
     this.loadedVersion = Number(parsed.version)
+    if (typeof parsed.standingInstructions === 'string') {
+      this.standingText = parsed.standingInstructions
+    } else if (!hot) {
+      // Fresh / pre-feature stores get the unattended default once.
+      this.standingText = DEFAULT_STANDING_INSTRUCTIONS
+    }
     this.rebase()
     const sidecar = this.readSeqSidecar()
     if (sidecar !== null && sidecar > this.seq) this.seq = sidecar
+  }
+
+  /** Cron-only preamble injected into every scheduled Automation run. */
+  standingInstructions(): string {
+    return this.standingText
+  }
+
+  /** Replace the shared standing instructions and persist. */
+  setStandingInstructions(text: string): void {
+    this.standingText = text
+    this.persist()
   }
 
   private rebase(): void {
@@ -368,7 +387,13 @@ export class CronStore {
 
   private writeSnapshot(): void {
     this.seq = maxSeq(this.seq, this.jobList)
-    const payload = JSON.stringify({ version: STORE_VERSION, seq: this.seq, eventCursor: this.eventSeq, jobs: this.jobList }, null, 2)
+    const payload = JSON.stringify({
+      version: STORE_VERSION,
+      seq: this.seq,
+      eventCursor: this.eventSeq,
+      standingInstructions: this.standingText,
+      jobs: this.jobList,
+    }, null, 2)
     const content = `${payload}\n`
     this.lastWritten = content
     const temporary = `${this.filePath}.tmp-${process.pid}`
@@ -404,6 +429,9 @@ export class CronStore {
     const diskCursor = typeof parsed.eventCursor === 'number' && Number.isSafeInteger(parsed.eventCursor) ? parsed.eventCursor : 0
     this.seq = Math.max(this.seq, diskSeq)
     this.eventSeq = Math.max(this.eventSeq, diskCursor)
+    if (typeof parsed.standingInstructions === 'string') {
+      this.standingText = parsed.standingInstructions
+    }
     return mergeJobs(this.jobList, this.baseJobs, latest, this.deletedIds)
   }
 

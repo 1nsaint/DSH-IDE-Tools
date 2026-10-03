@@ -17,12 +17,13 @@ import {
   IconPlusOutline16,
 } from './icons.tsx'
 import { callRpc } from './rpc.ts'
-import type { CronAddWire, CronEditWire, CronFireWire, CronJobWire, CronListWire, CronRemoveWire, CronUpdateWire } from './wire.ts'
+import type { CronAddWire, CronEditWire, CronFireWire, CronJobWire, CronListWire, CronRemoveWire, CronStandingWire, CronUpdateWire } from './wire.ts'
 import type { CronKey } from './locales.ts'
 import { SchedulePicker, combineAtLocal, defaultAtLocal } from './schedule-picker.tsx'
 import { isMountRootWorkspace } from './runtime-stores.ts'
 import { WorkspaceSelect } from './workspace-select.tsx'
 import { fetchCronModelGroups } from './model-catalog.ts'
+import { DEFAULT_STANDING_INSTRUCTIONS } from '../standing.ts'
 
 const POLL_MS = 30_000
 
@@ -258,6 +259,8 @@ export function CronScheduleView({ connection, t, useSessions, useWorkspaces }: 
   const [expanded, setExpanded] = useState<string | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [standing, setStanding] = useState(DEFAULT_STANDING_INSTRUCTIONS)
+  const [standingDirty, setStandingDirty] = useState(false)
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([])
   const [modelsState, setModelsState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const titleId = useId()
@@ -302,8 +305,31 @@ export function CronScheduleView({ connection, t, useSessions, useWorkspaces }: 
   const refresh = useCallback(async (signal?: AbortSignal): Promise<void> => {
     const next = await callRpc<CronListWire>(connection, 'list', {}, signal)
     setList(next)
+    if (!standingDirty && typeof next.standingInstructions === 'string') {
+      setStanding(next.standingInstructions)
+    } else if (!standingDirty && next.standingInstructions === undefined) {
+      setStanding(DEFAULT_STANDING_INSTRUCTIONS)
+    }
     setError(null)
-  }, [connection])
+  }, [connection, standingDirty])
+
+  const saveStanding = useCallback(async (): Promise<void> => {
+    setBusy('standing')
+    setError(null)
+    setNotice(null)
+    try {
+      const outcome = await callRpc<CronStandingWire>(connection, 'setStanding', {
+        standingInstructions: standing,
+      })
+      setStanding(outcome.standingInstructions)
+      setStandingDirty(false)
+      setNotice(t('standingSaved'))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusy(null)
+    }
+  }, [connection, standing, t])
 
   const loadModels = useCallback(async (signal?: AbortSignal): Promise<void> => {
     setModelsState('loading')
@@ -412,6 +438,12 @@ export function CronScheduleView({ connection, t, useSessions, useWorkspaces }: 
     setError(null)
     setNotice(null)
     try {
+      if (standingDirty) {
+        await callRpc<CronStandingWire>(connection, 'setStanding', {
+          standingInstructions: standing,
+        })
+        setStandingDirty(false)
+      }
       if (editing && editingId) {
         const outcome = await callRpc<CronEditWire>(connection, 'edit', {
           id: editingId,
@@ -566,7 +598,40 @@ export function CronScheduleView({ connection, t, useSessions, useWorkspaces }: 
                 onChange={event => { setDraft(current => ({ ...current, prompt: event.target.value })); setError(null) }}
               />
             </label>
+            <label className={css.field}>
+              <span>{t('fieldStanding')}</span>
+              <textarea
+                value={standing}
+                rows={8}
+                onChange={event => {
+                  setStanding(event.target.value)
+                  setStandingDirty(true)
+                  setError(null)
+                }}
+              />
+              <small>{t('standingHint')}</small>
+            </label>
             <div className={css.formActions}>
+              <button
+                type="button"
+                className={css.btn}
+                disabled={busy === 'standing'}
+                onClick={() => {
+                  setStanding(DEFAULT_STANDING_INSTRUCTIONS)
+                  setStandingDirty(true)
+                }}
+              >
+                {t('standingReset')}
+              </button>
+              <button
+                type="button"
+                className={css.btn}
+                disabled={busy === 'standing' || !standingDirty}
+                onClick={() => { void saveStanding() }}
+              >
+                {busy === 'standing' ? t('standingSaving') : t('standingSave')}
+              </button>
+              <span className={css.spacer} />
               <button type="button" className={css.btn} onClick={cancelCreate}>{t('cancel')}</button>
               <button
                 type="submit"

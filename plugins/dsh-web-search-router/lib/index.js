@@ -5,7 +5,7 @@ export const name = "web-search-router";
 export const inject = ["web", "webServer"];
 export const MULTI_SEARCH_PROVIDER_ID = "multi-search";
 
-const USER_AGENT = "dsh-web-search-router/0.2.0";
+const USER_AGENT = "dsh-web-search-router/0.3.0";
 const PARALLEL_URL = "https://search.parallel.ai/mcp";
 const DEFAULT_TIMEOUT_MS = 20000;
 const DEFAULT_MAX_RESULTS_PER_PROVIDER = 8;
@@ -16,15 +16,21 @@ const RRF_K = 60;
 // Runtime latency is updated after every successful call and blended with it
 // so a slow source naturally moves down the fallback chain.
 const PROVIDER_META = {
+  parallel: { label: "Parallel", capacity: 5000, latencyMs: 1200 },
+  duckduckgo: { label: "DuckDuckGo", capacity: 5000, latencyMs: 800 },
+  searxng: { label: "SearXNG", capacity: 5000, latencyMs: 1500 },
   tavily: { label: "Tavily", capacity: 1000, latencyMs: 986 },
   exa: { label: "Exa", capacity: 1400, latencyMs: 1533 },
   brave: { label: "Brave Search", capacity: 1000, latencyMs: 1197 },
   serper: { label: "Serper", capacity: 1000, latencyMs: 1000 },
   serpapi: { label: "SerpApi", capacity: 250, latencyMs: 11705 }
 };
-// ProDesk: SerpAPI first, Brave as fallback. Other keyed providers stay available
-// if keys exist, but only these two are in the default chain.
-const KEYED_PROVIDER_ORDER = ["serpapi", "brave"];
+
+/** Keyless providers tried first (no API key / free public endpoints). */
+const KEYLESS_PROVIDER_ORDER = ["parallel", "duckduckgo", "searxng"];
+
+/** Keyed providers after keyless — SerpApi/Brave first, then other free-tier keys. */
+const KEYED_PROVIDER_ORDER = ["serpapi", "brave", "tavily", "serper", "exa"];
 
 export const Config = z.object({
   timeoutMs: z.number().step(1).min(1000).default(DEFAULT_TIMEOUT_MS),
@@ -34,7 +40,9 @@ export const Config = z.object({
   exaApiKeyEnv: z.string().default("EXA_API_KEY"),
   serperApiKeyEnv: z.string().default("SERPER_API_KEY"),
   braveApiKeyEnv: z.string().default("BRAVE_SEARCH_API_KEY"),
-  serpapiApiKeyEnv: z.string().default("SERPAPI_API_KEY")
+  serpapiApiKeyEnv: z.string().default("SERPAPI_API_KEY"),
+  /** Optional public or self-hosted SearXNG base URL (no trailing slash). */
+  searxngUrlEnv: z.string().default("SEARXNG_URL")
 });
 
 function positiveInt(value) {
@@ -265,6 +273,54 @@ async function serpApiSearch(query, limit, key, signal) {
   return (Array.isArray(data?.organic_results) ? data.organic_results : []).map((item) => source(item?.link, item?.title, item?.snippet, item?.date, "SerpApi")).filter(Boolean);
 }
 
+/** Free Instant Answer API — limited organic coverage, but no key / no quota. */
+async function duckDuckGoSearch(query, limit, signal) {
+  const url = new URL("https://api.duckduckgo.com/");
+  url.searchParams.set("q", query);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("no_redirect", "1");
+  url.searchParams.set("no_html", "1");
+  url.searchParams.set("skip_disambig", "1");
+  const response = await fetch(url, { headers: { accept: "application/json", "user-agent": USER_AGENT }, signal });
+  const data = await jsonResponse(response, "DuckDuckGo", signal);
+  const rows = [];
+  if (typeof data?.AbstractURL === "string" && data.AbstractURL) {
+    rows.push(source(data.AbstractURL, data.Heading || data.AbstractSource || query, data.Abstract || "", null, "DuckDuckGo"));
+  }
+  const related = Array.isArray(data?.RelatedTopics) ? data.RelatedTopics : [];
+  const flatten = (items) => {
+    for (const item of items) {
+      if (Array.isArray(item?.Topics)) flatten(item.Topics);
+      else if (typeof item?.FirstURL === "string") {
+        rows.push(source(item.FirstURL, item.Text?.split(" - ")[0] || item.Text, item.Text, null, "DuckDuckGo"));
+      }
+    }
+  };
+  flatten(related);
+  const results = rows.filter(Boolean).slice(0, limit);
+  if (results.length === 0) throw new Error("DuckDuckGo returned no results");
+  return results;
+}
+
+/** Optional SearXNG instance (public or self-hosted). Base URL from SEARXNG_URL. */
+async function searxngSearch(query, limit, baseUrl, signal) {
+  const root = String(baseUrl || "").replace(/\/+$/, "");
+  if (!root) throw new Error("SearXNG URL not configured");
+  const url = new URL(`${root}/search`);
+  url.searchParams.set("q", query);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("categories", "general");
+  const response = await fetch(url, {
+    headers: { accept: "application/json", "user-agent": USER_AGENT },
+    signal
+  });
+  const data = await jsonResponse(response, "SearXNG", signal);
+  const rows = Array.isArray(data?.results) ? data.results : [];
+  const results = rows.slice(0, limit).map((item) => source(item?.url, item?.title, item?.content || item?.snippet, item?.publishedDate, "SearXNG")).filter(Boolean);
+  if (results.length === 0) throw new Error("SearXNG returned no results");
+  return results;
+}
+
 export function rankProviderIds(ids, stats = new Map()) {
   const remainingFor = (id) => {
     const meta = PROVIDER_META[id] ?? { capacity: 1 };
@@ -388,13 +444,20 @@ export class MultiSearchProvider {
     const options = this.resolveOptions();
     const keys = await this.resolveKeys(options);
     if (forceRefresh) await this.refreshUsage(keys, signal, true);
-    const rows = [{
-      id: "parallel",
-      label: "Parallel",
-      configured: true,
-      quota: { source: "unknown" },
-      cooldownUntil: this.cooldowns.get("parallel") ?? 0
-    }];
+    const rows = [];
+    for (const id of KEYLESS_PROVIDER_ORDER) {
+      const meta = PROVIDER_META[id];
+      const observed = this.stats.get(id) ?? { latencyMs: meta.latencyMs, uses: 0 };
+      const configured = id === "searxng" ? Boolean(keys.searxng) : true;
+      rows.push({
+        id,
+        label: meta.label,
+        configured,
+        latencyMs: observed.latencyMs,
+        quota: configured ? { source: "unknown" } : null,
+        cooldownUntil: this.cooldowns.get(id) ?? 0
+      });
+    }
     for (const id of KEYED_PROVIDER_ORDER) {
       const meta = PROVIDER_META[id];
       const observed = this.stats.get(id) ?? { latencyMs: meta.latencyMs, uses: 0 };
@@ -422,6 +485,18 @@ export class MultiSearchProvider {
     return { providers: rows, refreshedAt: Date.now() };
   }
 
+  async runProvider(id, keys, request, limit, signal) {
+    if (id === "parallel") return parallelSearch(request.query, limit, signal);
+    if (id === "duckduckgo") return duckDuckGoSearch(request.query, limit, signal);
+    if (id === "searxng") return searxngSearch(request.query, limit, keys.searxng, signal);
+    if (id === "brave") return braveSearch(request.query, limit, keys.brave, signal);
+    if (id === "serpapi") return serpApiSearch(request.query, limit, keys.serpapi, signal);
+    if (id === "tavily") return tavilySearch(request.query, limit, keys.tavily, signal);
+    if (id === "serper") return serperSearch(request.query, limit, keys.serper, signal);
+    if (id === "exa") return exaSearch(request.query, limit, keys.exa, signal);
+    throw new Error(`Unknown provider ${id}`);
+  }
+
   async search(request, signal) {
     const options = this.resolveOptions();
     if (!this.available()) throw new WebError("Multi-search provider is not configured", "WEB_PROVIDER_UNAVAILABLE");
@@ -433,16 +508,16 @@ export class MultiSearchProvider {
     const failures = [];
     let uniqueCount = 0;
 
-    const runJob = async (id, run) => {
+    const runJob = async (id) => {
       const cooldownUntil = this.cooldowns.get(id) ?? 0;
       if (cooldownUntil > Date.now()) {
-        failures.push(`${PROVIDER_META[id]?.label ?? "Parallel"}: cooldown`);
+        failures.push(`${PROVIDER_META[id]?.label ?? id}: cooldown`);
         return;
       }
       const timed = withTimeout(signal, options.timeoutMs);
       const started = Date.now();
       try {
-        const output = await run(timed.signal);
+        const output = await this.runProvider(id, keys, request, limit, timed.signal);
         const list = Array.isArray(output) ? output : output.results;
         lists.push(list);
         const previous = this.stats.get(id) ?? { latencyMs: Date.now() - started, uses: 0 };
@@ -450,33 +525,39 @@ export class MultiSearchProvider {
         previous.uses += 1;
         this.stats.set(id, previous);
         if (output?.quota) this.setQuota(id, output.quota);
-        else if (id !== "parallel") this.decrementQuota(id);
+        else if (!KEYLESS_PROVIDER_ORDER.includes(id) || id === "searxng") this.decrementQuota(id);
         uniqueCount = new Set(lists.flat().map((item) => canonicalUrl(item.url))).size;
       } catch (error) {
-        failures.push(PROVIDER_META[id]?.label ?? "Parallel");
+        failures.push(`${PROVIDER_META[id]?.label ?? id}${error?.message ? `: ${String(error.message).slice(0, 80)}` : ""}`);
         this.cooldowns.set(id, Date.now() + cooldownMsFor(error));
       } finally {
         timed.dispose();
       }
     };
 
-    // Fixed order for this install: SerpAPI → Brave (no Parallel-first hop).
-    await this.refreshUsage(keys, signal);
-    const keyedIds = KEYED_PROVIDER_ORDER.filter((id) => keys[id] && this.quotaAvailable(id));
-    if (keyedIds.length === 0) {
-      throw new WebError(
-        "No SerpAPI/Brave keys configured — add SERPAPI_API_KEY and/or BRAVE_SEARCH_API_KEY in Settings → Web Search",
-        "WEB_PROVIDER_CREDENTIAL_MISSING"
-      );
-    }
-    for (const id of keyedIds) {
-      if (id === "brave") await runJob(id, (jobSignal) => braveSearch(request.query, limit, keys.brave, jobSignal));
-      if (id === "serpapi") await runJob(id, (jobSignal) => serpApiSearch(request.query, limit, keys.serpapi, jobSignal));
+    // 1) Keyless free endpoints first (Parallel, DuckDuckGo, optional SearXNG).
+    for (const id of KEYLESS_PROVIDER_ORDER) {
+      if (id === "searxng" && !keys.searxng) continue;
+      await runJob(id);
       if (uniqueCount >= maxResults) break;
     }
+
+    // 2) Keyed free-tier APIs — only when still short on results.
+    if (uniqueCount < maxResults) {
+      await this.refreshUsage(keys, signal);
+      const keyedIds = KEYED_PROVIDER_ORDER.filter((id) => keys[id] && this.quotaAvailable(id));
+      for (const id of keyedIds) {
+        await runJob(id);
+        if (uniqueCount >= maxResults) break;
+      }
+    }
+
     throwIfAborted(signal);
     const sources = rrfMerge(lists, maxResults);
-    if (sources.length === 0) throw new WebError(`All web search providers failed: ${failures.join(", ")}`, "WEB_PROVIDER_ERROR");
+    if (sources.length === 0) {
+      const hint = failures.length ? failures.join(", ") : "no providers available";
+      throw new WebError(`All web search providers failed: ${hint}`, "WEB_PROVIDER_ERROR");
+    }
     return { sources, truncated: uniqueCount > maxResults };
   }
 }
@@ -488,7 +569,8 @@ export function apply(ctx, config) {
     exa: config.exaApiKeyEnv ?? "EXA_API_KEY",
     serper: config.serperApiKeyEnv ?? "SERPER_API_KEY",
     brave: config.braveApiKeyEnv ?? "BRAVE_SEARCH_API_KEY",
-    serpapi: config.serpapiApiKeyEnv ?? "SERPAPI_API_KEY"
+    serpapi: config.serpapiApiKeyEnv ?? "SERPAPI_API_KEY",
+    searxng: config.searxngUrlEnv ?? "SEARXNG_URL"
   };
   const resolveOptions = () => ({
     credentials: ctx.get("credentials"),

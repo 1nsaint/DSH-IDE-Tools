@@ -164,10 +164,11 @@ test("cascade falls back to the highest-ranked keyed provider and then stops", a
     }));
     const result = await provider.search({ query: "test", maxResults: 8 });
     assert.equal(result.sources.length, 8);
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 4);
     assert.match(calls[0], /search\.parallel\.ai/);
-    assert.match(calls[1], /api\.tavily\.com\/usage/);
-    assert.match(calls[2], /api\.tavily\.com\/search/);
+    assert.match(calls[1], /api\.duckduckgo\.com/);
+    assert.match(calls[2], /api\.tavily\.com\/usage/);
+    assert.match(calls[3], /api\.tavily\.com\/search/);
   } finally {
     globalThis.fetch = originalFetch;
   }

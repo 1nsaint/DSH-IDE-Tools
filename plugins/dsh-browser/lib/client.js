@@ -7,7 +7,7 @@ window.__ModuleLoader__.load({
 		const REF_SOURCE = "browser-dom";
 		const STORE_KEY = "dsh-browser.view.v1";
 		const OPEN_EVENT = "dsh-open-browser-url";
-		const BUILD = "0.6.28-agent-cmd-queue";
+		const BUILD = "0.6.29-link-chooser";
 		const DT_SIZE = {
 			bottomMin: 160,
 			bottomMax: 720,
@@ -34,6 +34,127 @@ window.__ModuleLoader__.load({
 			if (typeof url !== "string" || !url) return;
 			pendingOpen.url = url;
 			pendingOpen.listeners.forEach((fn) => fn(url));
+		}
+
+		/** Popover: open chat/markdown links in Browser tab or system browser. */
+		let linkChooserEl = null;
+		let linkChooserCleanup = null;
+
+		function dismissLinkChooser() {
+			if (linkChooserCleanup) {
+				try { linkChooserCleanup(); } catch { /* */ }
+				linkChooserCleanup = null;
+			}
+			if (linkChooserEl) {
+				linkChooserEl.remove();
+				linkChooserEl = null;
+			}
+		}
+
+		function openUrlInBrowserTab(url) {
+			const href = String(url || "").trim();
+			if (!href) return;
+			window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { url: href } }));
+			switchToBrowserTab();
+		}
+
+		function openUrlExternally(url) {
+			const href = String(url || "").trim();
+			if (!href) return;
+			window.open(href, "_blank", "noopener,noreferrer");
+		}
+
+		function showLinkChooser(url, clientX, clientY) {
+			ensureStyles();
+			dismissLinkChooser();
+			const el = document.createElement("div");
+			el.className = "db_linkChooser";
+			el.setAttribute("role", "menu");
+			el.setAttribute("data-dsh-link-chooser", "1");
+
+			const urlLine = document.createElement("div");
+			urlLine.className = "db_linkChooserUrl";
+			urlLine.textContent = url;
+			el.appendChild(urlLine);
+
+			const mkBtn = (label, hint, onClick) => {
+				const b = document.createElement("button");
+				b.type = "button";
+				b.className = "db_linkChooserBtn";
+				b.setAttribute("role", "menuitem");
+				b.innerHTML = `${label}<small>${hint}</small>`;
+				b.addEventListener("click", (e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					dismissLinkChooser();
+					onClick();
+				});
+				el.appendChild(b);
+			};
+
+			mkBtn("Open in Browser tab", "Harness in-app browser (gate / Live)", () => openUrlInBrowserTab(url));
+			mkBtn("Open externally", "Your system / Cursor browser", () => openUrlExternally(url));
+
+			document.body.appendChild(el);
+			linkChooserEl = el;
+
+			const pad = 8;
+			const rect = el.getBoundingClientRect();
+			let left = clientX;
+			let top = clientY + 6;
+			if (left + rect.width > window.innerWidth - pad) left = window.innerWidth - rect.width - pad;
+			if (top + rect.height > window.innerHeight - pad) top = Math.max(pad, clientY - rect.height - 6);
+			if (left < pad) left = pad;
+			if (top < pad) top = pad;
+			el.style.left = `${Math.round(left)}px`;
+			el.style.top = `${Math.round(top)}px`;
+
+			const onDoc = (ev) => {
+				if (el.contains(ev.target)) return;
+				dismissLinkChooser();
+			};
+			const onKey = (ev) => {
+				if (ev.key === "Escape") dismissLinkChooser();
+			};
+			// Defer so the opening click doesn't immediately dismiss.
+			const t = setTimeout(() => {
+				document.addEventListener("mousedown", onDoc, true);
+				document.addEventListener("keydown", onKey, true);
+			}, 0);
+			linkChooserCleanup = () => {
+				clearTimeout(t);
+				document.removeEventListener("mousedown", onDoc, true);
+				document.removeEventListener("keydown", onKey, true);
+			};
+		}
+
+		function linkFromClickTarget(target) {
+			let node = target;
+			if (node && node.nodeType === 3) node = node.parentElement;
+			while (node && node !== document.body) {
+				if (node.nodeType === 1 && node.tagName === "A" && node.href) return node;
+				node = node.parentElement;
+			}
+			return null;
+		}
+
+		function shouldOfferLinkChooser(anchor) {
+			if (!(anchor instanceof HTMLAnchorElement)) return false;
+			if (anchor.closest(".db_root, .db_linkChooser, [data-dsh-link-chooser]")) return false;
+			// Ignore links inside the live page iframe document (different root).
+			const href = anchor.getAttribute("href") || "";
+			if (!href || href.startsWith("#") || href.startsWith("javascript:") || href.startsWith("mailto:") || href.startsWith("tel:")) {
+				return false;
+			}
+			let abs = "";
+			try {
+				abs = new URL(anchor.href, window.location.href).href;
+			} catch {
+				return false;
+			}
+			if (!isHttpUrl(abs)) return false;
+			// Same-origin Harness chrome paths (not live/gate) — external only is safer; still offer both.
+			return true;
 		}
 
 		function readPersisted() {
@@ -428,6 +549,28 @@ window.__ModuleLoader__.load({
 .db_storageKV{display:grid;grid-template-columns:140px 1fr auto;gap:6px;align-items:start;padding:4px 0;border-bottom:1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 40%, transparent)}
 .db_storageKey{word-break:break-all;color:var(--dsw-alias-state-business-primary)}
 .db_storageVal{word-break:break-word;color:var(--dsw-alias-label-secondary);white-space:pre-wrap}
+.db_linkChooser{
+  position:fixed;z-index:10050;min-width:200px;max-width:min(320px,calc(100vw - 16px));
+  padding:6px;border-radius:12px;
+  border:1px solid var(--dsw-alias-border-l2);
+  background:var(--dsw-alias-bg-module-platform,var(--dsw-alias-bg-layer-1));
+  box-shadow:0 8px 28px rgba(0,0,0,.45);
+  display:flex;flex-direction:column;gap:4px;
+  font-family:inherit;
+}
+.db_linkChooserUrl{
+  font-size:11px;line-height:1.35;color:var(--dsw-alias-label-tertiary);
+  padding:4px 8px 6px;word-break:break-all;max-height:2.8em;overflow:hidden;
+}
+.db_linkChooserBtn{
+  appearance:none;border:none;border-radius:8px;cursor:pointer;text-align:left;
+  padding:8px 10px;font:inherit;font-size:13px;font-weight:500;
+  color:var(--dsw-alias-label-primary);
+  background:transparent;
+  display:flex;flex-direction:column;gap:2px;
+}
+.db_linkChooserBtn:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.db_linkChooserBtn small{font-size:11px;font-weight:400;color:var(--dsw-alias-label-tertiary)}
 @media (max-width:900px){
   .db_body{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto}
   .db_body.db_bodySideCollapsed{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr)}
@@ -470,11 +613,44 @@ window.__ModuleLoader__.load({
 			const s = String(raw || "").trim();
 			if (!s) return "";
 			if (s.startsWith("data:text/html")) return s;
+			// Never turn file:// into https://file://…
+			if (/^file:/i.test(s) || /^https?:\/\/file:/i.test(s)) return s;
 			if (s.startsWith("/") && !s.startsWith("//")) {
 				try { return new URL(s, window.location.origin).href; } catch { return s; }
 			}
 			if (/^https?:\/\//i.test(s)) return s;
 			return `https://${s}`;
+		}
+
+		/** file:// or workspace paths that should go through Live Server */
+		function isWorkspaceFileUrl(raw) {
+			const s = String(raw || "").trim();
+			if (!s) return false;
+			if (/^file:/i.test(s) || /^https?:\/\/file:/i.test(s)) return true;
+			if (/\.(html?|xhtml)(\?|#|$)/i.test(s) && !/^https?:\/\//i.test(s) && !s.includes("/api/browser-")) {
+				return true;
+			}
+			if (/^\/workspace\//i.test(s)) return true;
+			return false;
+		}
+
+		function workspacePathFromUrl(raw) {
+			let s = String(raw || "").trim();
+			if (/^https?:\/\/file:/i.test(s)) s = s.replace(/^https?:\/\//i, "");
+			if (/^file:/i.test(s)) {
+				try {
+					const u = new URL(s);
+					if (u.hostname && u.hostname !== "localhost") {
+						s = `/${u.hostname}${u.pathname || ""}`;
+					} else {
+						s = u.pathname || "/";
+					}
+				} catch {
+					s = s.replace(/^file:\/\/*/i, "/");
+				}
+			}
+			try { s = decodeURIComponent(s); } catch { /* keep */ }
+			return s.replace(/\\/g, "/");
 		}
 
 		function addressBarValue(raw) {
@@ -1114,10 +1290,23 @@ window.__ModuleLoader__.load({
 				}
 			}, []);
 
-			const loadLive = React.useCallback((raw, { push = true } = {}) => {
-				const requested = fromGateUrl(normalizeUrl(raw));
+			const loadLive = React.useCallback(async (raw, { push = true } = {}) => {
+				let requested = fromGateUrl(normalizeUrl(raw));
+				if (isWorkspaceFileUrl(String(raw || "").trim()) || isWorkspaceFileUrl(requested)) {
+					try {
+						const sid = sessionId || resolveCurrentSessionId(conversation);
+						const filePath = workspacePathFromUrl(String(raw || requested || "").trim());
+						if (sid && filePath && connection) {
+							const res = await callRpc(connection, "live.urlFor", { sessionId: sid, path: filePath });
+							if (res?.url) requested = fromGateUrl(normalizeUrl(res.url)) || res.url;
+						}
+					} catch (err) {
+						setError(err?.message || String(err));
+						return;
+					}
+				}
 				if (!requested || !isBrowseUrl(requested)) {
-					setError("Enter a valid http(s) URL.");
+					setError("Enter a valid http(s) URL or workspace HTML path.");
 					return;
 				}
 				if (isHarnessAppShell(requested)) {
@@ -1150,7 +1339,7 @@ window.__ModuleLoader__.load({
 				setUrlInput(addressBarValue(requested));
 				writePersisted({ urlInput: addressBarValue(requested), currentUrl: frameUrl, mode: "live" });
 				if (push) pushHistory(requested, histIdxRef.current, setHistory, setHistIdx);
-			}, []);
+			}, [connection, conversation, sessionId]);
 
 			React.useEffect(() => {
 				const onPending = (url) => {
@@ -1245,11 +1434,160 @@ window.__ModuleLoader__.load({
 				return () => window.removeEventListener("message", onMsg);
 			}, [loadLive, postSelectMode, refreshDomTree]);
 
+			/**
+			 * Capture the Live/gate iframe viewport as PNG (same-origin only).
+			 * Prefers drawing <canvas> (WebGL/2D); falls back to a DOM raster via SVG foreignObject.
+			 */
+			async function captureIframeScreenshot(iframe) {
+				if (!iframe) {
+					return { ok: false, error: "Browser frame not active — open the Browser tab and load a page first" };
+				}
+				let doc;
+				let win;
+				try {
+					doc = iframe.contentDocument;
+					win = iframe.contentWindow;
+				} catch (err) {
+					return {
+						ok: false,
+						error: "Cannot screenshot cross-origin page. Use Live Server / gate URLs (workspace files or /api/browser-gate/…).",
+					};
+				}
+				if (!doc || !win || !doc.documentElement) {
+					return { ok: false, error: "Browser frame has no document yet — navigate to a page first" };
+				}
+
+				const maxW = 1280;
+				const maxH = 720;
+				const vw = Math.max(1, win.innerWidth || doc.documentElement.clientWidth || 800);
+				const vh = Math.max(1, win.innerHeight || doc.documentElement.clientHeight || 600);
+				const scale = Math.min(1, maxW / vw, maxH / vh);
+				const outW = Math.max(1, Math.floor(vw * scale));
+				const outH = Math.max(1, Math.floor(vh * scale));
+				const out = doc.createElement("canvas");
+				out.width = outW;
+				out.height = outH;
+				const ctx = out.getContext("2d");
+				if (!ctx) return { ok: false, error: "2D canvas unavailable for screenshot" };
+
+				const bg = win.getComputedStyle(doc.body || doc.documentElement).backgroundColor || "#111111";
+				ctx.fillStyle = bg;
+				ctx.fillRect(0, 0, outW, outH);
+
+				const notes = [];
+				let canvasDrawn = 0;
+
+				// Wait two frames so the latest WebGL present may still be readable.
+				await new Promise((r) => win.requestAnimationFrame(() => win.requestAnimationFrame(r)));
+
+				const canvases = Array.from(doc.querySelectorAll("canvas"));
+				for (const c of canvases) {
+					try {
+						const r = c.getBoundingClientRect();
+						if (r.width < 2 || r.height < 2) continue;
+						ctx.drawImage(
+							c,
+							r.left * scale,
+							r.top * scale,
+							r.width * scale,
+							r.height * scale,
+						);
+						canvasDrawn += 1;
+					} catch (err) {
+						notes.push(`canvas-skip:${err?.message || err}`);
+					}
+				}
+
+				if (canvasDrawn === 0) {
+					try {
+						const clone = doc.documentElement.cloneNode(true);
+						clone.querySelectorAll("script, style[data-dsh-browser]").forEach((n) => n.remove());
+						const xhtml = new XMLSerializer().serializeToString(clone);
+						const svg =
+							`<svg xmlns="http://www.w3.org/2000/svg" width="${outW}" height="${outH}">` +
+							`<foreignObject width="100%" height="100%" externalResourcesRequired="true">` +
+							`<div xmlns="http://www.w3.org/1999/xhtml" style="width:${vw}px;height:${vh}px;transform:scale(${scale});transform-origin:0 0;overflow:hidden">` +
+							xhtml +
+							`</div></foreignObject></svg>`;
+						const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+						const url = URL.createObjectURL(blob);
+						try {
+							const img = new win.Image();
+							img.decoding = "sync";
+							await new Promise((resolve, reject) => {
+								img.onload = () => resolve();
+								img.onerror = () => reject(new Error("DOM raster failed"));
+								img.src = url;
+							});
+							ctx.drawImage(img, 0, 0, outW, outH);
+							notes.push("dom-fallback");
+						} finally {
+							URL.revokeObjectURL(url);
+						}
+					} catch (err) {
+						notes.push(`dom-fallback-failed:${err?.message || err}`);
+					}
+				} else {
+					notes.push(`canvases:${canvasDrawn}`);
+				}
+
+				// Sample a few pixels — blank WebGL (preserveDrawingBuffer:false) is common.
+				let sample;
+				try {
+					sample = ctx.getImageData(0, 0, Math.min(16, outW), Math.min(16, outH)).data;
+				} catch {
+					sample = null;
+				}
+				let nonZero = 0;
+				if (sample) {
+					for (let i = 0; i < sample.length; i += 4) {
+						if (sample[i] || sample[i + 1] || sample[i + 2] || sample[i + 3]) nonZero += 1;
+					}
+				}
+				if (nonZero < 4) {
+					notes.push("possibly-blank:WebGL may need preserveDrawingBuffer or a DOM-visible UI");
+				}
+
+				const dataUrl = out.toDataURL("image/png");
+				const pngBase64 = dataUrl.replace(/^data:image\/png;base64,/, "");
+				return {
+					ok: true,
+					pngBase64,
+					width: outW,
+					height: outH,
+					url: win.location.href,
+					title: doc.title || "",
+					notes,
+					bytesEstimate: Math.floor((pngBase64.length * 3) / 4),
+				};
+			}
+
 			// Agent / RPC bridge: listen for automation actions directed to the current browser iframe
 			React.useEffect(() => {
 				const onAgentAction = (e) => {
 					const { actionId, action, selector, value } = e.detail || {};
 					if (!actionId || !action) return;
+
+					if (action === "screenshot") {
+						(async () => {
+							try {
+								const result = await captureIframeScreenshot(iframeRef.current);
+								window.dispatchEvent(new CustomEvent("dsh-browser-action-response-" + actionId, {
+									detail: { actionId, ...result },
+								}));
+							} catch (err) {
+								window.dispatchEvent(new CustomEvent("dsh-browser-action-response-" + actionId, {
+									detail: {
+										actionId,
+										ok: false,
+										error: err?.message || String(err),
+									},
+								}));
+							}
+						})();
+						return;
+					}
+
 					const win = iframeRef.current?.contentWindow;
 					if (!win) {
 						window.dispatchEvent(new CustomEvent("dsh-browser-action-response-" + actionId, {
@@ -2181,6 +2519,30 @@ window.__ModuleLoader__.load({
 			try { window.__DSH_BROWSER_BUILD = BUILD; } catch { /* ignore */ }
 
 			ctx.effect(() => {
+				const onClick = (ev) => {
+					if (ev.defaultPrevented) return;
+					if (ev.button !== 0) return;
+					if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+					const anchor = linkFromClickTarget(ev.target);
+					if (!shouldOfferLinkChooser(anchor)) return;
+					let abs = "";
+					try {
+						abs = new URL(anchor.href, window.location.href).href;
+					} catch {
+						return;
+					}
+					ev.preventDefault();
+					ev.stopPropagation();
+					showLinkChooser(abs, ev.clientX, ev.clientY);
+				};
+				document.addEventListener("click", onClick, true);
+				return () => {
+					document.removeEventListener("click", onClick, true);
+					dismissLinkChooser();
+				};
+			}, `${PLUGIN}: chat link chooser`);
+
+			ctx.effect(() => {
 				const onOpen = async (ev) => {
 					const detail = ev?.detail || {};
 					try {
@@ -2206,11 +2568,13 @@ window.__ModuleLoader__.load({
 					const action = String(cmd.action || "").trim();
 					const selector = cmd.selector != null ? String(cmd.selector).trim() : undefined;
 					const value = cmd.value !== undefined ? String(cmd.value) : undefined;
-					const timeoutMs = typeof cmd.timeoutMs === "number" ? cmd.timeoutMs : 10000;
+					const timeoutMs = typeof cmd.timeoutMs === "number"
+						? cmd.timeoutMs
+						: (action === "screenshot" ? 25000 : 10000);
 					const actionId = "act_" + Math.random().toString(36).slice(2, 10);
 					switchToBrowserTab();
 					// Give the BrowserView a moment to mount after tab switch.
-					await sleep(120);
+					await sleep(action === "screenshot" ? 280 : 120);
 					return new Promise((resolve) => {
 						let timer = null;
 						const onRes = (e) => {
@@ -2234,12 +2598,33 @@ window.__ModuleLoader__.load({
 					let result;
 					try {
 						if (cmd.kind === "navigate") {
-							const url = String(cmd.url || "").trim();
+							let url = String(cmd.url || "").trim();
 							if (!url) result = { ok: false, error: "url required" };
 							else {
-								setPendingUrl(url);
-								switchToBrowserTab();
-								result = { ok: true, url };
+								if (isWorkspaceFileUrl(url)) {
+									try {
+										const sid = resolveCurrentSessionId(conversation)
+											|| resolveCurrentSessionId(null);
+										const filePath = workspacePathFromUrl(url);
+										if (sid && filePath && connection) {
+											const res = await callRpc(connection, "live.urlFor", {
+												sessionId: sid,
+												path: filePath,
+											});
+											if (res?.url) url = res.url;
+										}
+									} catch (err) {
+										result = {
+											ok: false,
+											error: err?.message || String(err),
+										};
+									}
+								}
+								if (!result) {
+									setPendingUrl(url);
+									switchToBrowserTab();
+									result = { ok: true, url };
+								}
 							}
 						} else if (cmd.kind === "action") {
 							result = await runAction(cmd);

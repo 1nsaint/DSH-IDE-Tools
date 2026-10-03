@@ -37,10 +37,16 @@ window.__ModuleLoader__.load({
       document.head.appendChild(style);
     }
 
-    // ProDesk order: SerpAPI first, Brave fallback.
+    // Keyless first (Parallel, DuckDuckGo), then keyed free-tier APIs.
     const SOURCES = [
-      { id: "serpapi", name: "SerpApi", ref: "SERPAPI_API_KEY", note: "Primary — Google results via SerpApi." },
-      { id: "brave", name: "Brave Search", ref: "BRAVE_SEARCH_API_KEY", note: "Fallback when SerpApi fails, is rate-limited, or returns too few results." }
+      { id: "parallel", name: "Parallel", ref: null, note: "Keyless — tried first. No API key required." },
+      { id: "duckduckgo", name: "DuckDuckGo", ref: null, note: "Keyless Instant Answer API — free fallback (limited coverage)." },
+      { id: "searxng", name: "SearXNG", ref: "SEARXNG_URL", note: "Optional public/self-hosted SearXNG base URL (e.g. https://searx.be). Stored like a credential." },
+      { id: "serpapi", name: "SerpApi", ref: "SERPAPI_API_KEY", note: "Google results via SerpApi (free tier)." },
+      { id: "brave", name: "Brave Search", ref: "BRAVE_SEARCH_API_KEY", note: "Brave Search API free tier." },
+      { id: "tavily", name: "Tavily", ref: "TAVILY_API_KEY", note: "Optional Tavily free-tier key." },
+      { id: "serper", name: "Serper", ref: "SERPER_API_KEY", note: "Optional Serper.dev free-tier key." },
+      { id: "exa", name: "Exa", ref: "EXA_API_KEY", note: "Optional Exa free-tier key." }
     ];
 
     function messageOf(error) {
@@ -72,22 +78,27 @@ window.__ModuleLoader__.load({
 
     function SearchCard({ source, status, usage, onSave, onRemove, busy }) {
       const [draft, setDraft] = React.useState("");
+      const keyless = !source.ref;
       return React.createElement("div", { className: "cyh-search-card" },
         React.createElement("div", { className: "cyh-search-row" },
           React.createElement("div", { className: "cyh-search-name" }, source.name),
-          React.createElement("div", { className: `cyh-search-state${status?.configured ? " ok" : ""}` },
-            status?.configured ? "Configured" : "Not set"
+          React.createElement("div", { className: `cyh-search-state${(keyless || status?.configured) ? " ok" : ""}` },
+            keyless ? "Keyless" : (status?.configured ? "Configured" : "Not set")
           )
         ),
         React.createElement("p", { className: "cyh-search-note" }, source.note),
-        React.createElement("p", { className: "cyh-search-quota" }, quotaText(source, usage)),
-        React.createElement("div", { className: "cyh-search-field" },
+        React.createElement("p", { className: "cyh-search-quota" }, keyless
+          ? (usage?.cooldownUntil > Date.now() ? "In cooldown — temporarily skipped." : "No API key needed.")
+          : quotaText(source, usage)),
+        keyless ? null : React.createElement("div", { className: "cyh-search-field" },
           React.createElement("input", {
             className: "cyh-search-input",
-            type: "password",
+            type: source.id === "searxng" ? "url" : "password",
             value: draft,
-            "aria-label": `${source.name} API Key`,
-            placeholder: status?.configured ? "Configured — leave blank to keep" : "Paste API key",
+            "aria-label": `${source.name} ${source.id === "searxng" ? "URL" : "API Key"}`,
+            placeholder: status?.configured
+              ? (source.id === "searxng" ? "Configured — leave blank to keep" : "Configured — leave blank to keep")
+              : (source.id === "searxng" ? "https://searx.example" : "Paste API key"),
             autoComplete: "new-password",
             onChange: (event) => setDraft(event.target.value),
           }),
@@ -172,7 +183,7 @@ window.__ModuleLoader__.load({
       return React.createElement("div", { className: "cyh-search-page" },
         React.createElement("h2", null, "Web Search"),
         React.createElement("p", { className: "cyh-search-intro" },
-          "Agent web_search uses SerpApi first, then Brave as fallback. Keys are stored in Harness credentials (same values as n8n) and are never shown again after save."
+          "Agent web_search tries keyless Parallel and DuckDuckGo first, then your keyed APIs (SerpApi, Brave, Tavily, Serper, Exa). Keys are write-only credentials and are never shown again after save."
         ),
         React.createElement("div", { className: "cyh-search-toolbar" },
           React.createElement("span", { className: "cyh-search-updated" },

@@ -547,6 +547,15 @@
 
 .formActions {
   padding-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.spacer {
+  flex: 1 1 8px;
+  min-width: 8px;
 }
 
 .empty {
