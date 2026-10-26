@@ -1,6 +1,8 @@
 # DSH IDE Tools
 
-IDE-style plugins for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — Code, Git, Terminal, Containers, Database, Browser, Scheduled tasks, files sidebar, workspaces, and more.
+IDE-style plugins for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — Code, Git, Terminal, Containers, Database, Browser, Downloads, Scheduled tasks, SSH workspaces, file sidebar, split view, Lite mode, and more.
+
+Requires a running DeepSeek Harness with **Plugins**. This repo is the plugin suite, not Harness itself.
 
 ## Install
 
@@ -15,7 +17,7 @@ https://github.com/1nsaint/DSH-IDE-Tools
 (Shorthand: `github:1nsaint/DSH-IDE-Tools`.)
 
 4. Wait for pnpm to finish, then **hard-refresh** the browser (Ctrl+Shift+R).
-5. Open **Settings** for host-specific bits (LLM URL, Browser CDP, metrics, search keys). Those live in `$DSH_HOME/plugins-data/` and are **not** shipped by the suite.
+5. Open **Settings** for host-specific bits (LLM / Ollama URL, Browser CDP, metrics, search keys, SSH). Those live in `$DSH_HOME/plugins-data/` and are **not** shipped by the suite.
 
 <p align="center">
   <img src="docs/images/01-plugins-panel.png" alt="Plugins panel with Add plugin and installed dsh-ide-tools" width="900" />
@@ -35,10 +37,38 @@ github:1nsaint/DSH-IDE-Tools#path:plugins/dsh-browser
 
 **Notes**
 
+- Needs a **public** repo (stock Harness clones with no GitHub login).
 - Not on npm yet — paste the GitHub URL, not bare `dsh-ide-tools`.
 - Optional headed Chromium for Remote Browser is a separate Docker companion — see **Settings → Browser** after install.
 
 More detail: [`docs/INSTALL.md`](docs/INSTALL.md) · [`docs/FAQ.md`](docs/FAQ.md)
+
+## Features
+
+| Area | What it does |
+| --- | --- |
+| **Code** | Center editor tab — find-in-file, edit, download; opens from the file sidebar or chat links |
+| **Git** | Branches, changes, history, clone/publish, GitHub sign-in |
+| **Terminal** | Interactive PTY (local or via SSH workspaces) |
+| **Downloads** | Aria2 — magnets, torrents, large HTTP; agent tools included |
+| **Browser** | Live in-app browser + optional Remote Chromium (CDP); DevTools tools for agents |
+| **Database** | Multi-engine explorer — connections, table search, optional SQL |
+| **Scheduled** | Durable cron → fresh Automation sessions (separate from stock one-shot tasks) |
+| **Containers** | Docker list — filters, logs, ports, remotes; test-env create alongside |
+| **File sidebar** | Workspaces ↔ Files tree, search, drag paths into chat |
+| **Split view** | Side-by-side panes; Terminal gets its own PTY in the split surface |
+| **Lite mode** | Settings profiles that trim agent tool categories for small/local GPUs |
+| **SSH** | Saved hosts, keys, remote folder picker, `dssh://` workspaces, SFTP + SSH terminal |
+| **Agent review** | Cursor-style review of agent file edits — undo / keep / diff |
+| **Live write** | “Writing…” card while write/edit tool args stream |
+| **MCP** | Settings UI to add stdio / HTTP MCP servers |
+| **AI Metrics** | Sidebar RAM donut + optional metrics / Ollama proxies |
+| **Workspace accents** | Per-workspace color accents |
+| **Archived** | Restore or permanently delete archived chats |
+| **Web search router** | Provider routing for search tools |
+| **UI / settings polish** | Wider chat, settings icons, remote Settings unlock helpers |
+| **Local agent** | KV / context tweaks aimed at local models |
+| **Composer dock** | Steps / tokens / context under the composer |
 
 ## License
 
