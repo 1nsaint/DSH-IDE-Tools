@@ -31,12 +31,6 @@ The suite installs as one package (`dsh-ide-tools`). Uninstall that row to remov
 github:1nsaint/DSH-IDE-Tools#path:plugins/dsh-browser
 ```
 
-**Notes**
-
-- Repo must stay **public** (stock Harness clones with no GitHub credentials).
-- Not published to npm yet — use the GitHub URL above, not bare `dsh-ide-tools`.
-- Do not also bake the same plugins into `dsh.profile.bundles` on the same profile (duplicate loader ids).
-- Optional headed Chromium for Remote Browser is a **separate** Docker companion — see Settings → Browser after install.
 
 Full details: [`docs/INSTALL.md`](docs/INSTALL.md) · [`docs/FAQ.md`](docs/FAQ.md)
 
