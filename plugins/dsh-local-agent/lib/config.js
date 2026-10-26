@@ -16,12 +16,24 @@ export const STORE_FILE = "dsh-local-agent.json";
  * @property {boolean} useCustomCategories
  * @property {CategoryFlags} categories
  * @property {boolean} truncateToolResults
+ * @property {boolean} truncateAllToolResults
  * @property {number} maxInlineChars
  * @property {boolean} patientJetsonStream
  * @property {boolean} liteSystemHint
+ * @property {boolean} sessionHygieneHint
+ * @property {boolean} denyHeavyMedia
  * @property {boolean} stubToolResults
  * @property {number} stubAfterChars
  * @property {boolean} earlyPruneToolResults
+ * @property {boolean} deferToolResultShrink
+ * @property {number} keepRecentToolResults
+ * @property {number} hardMaxInlineChars
+ * @property {number} heavyMaxInlineChars mid-turn cap for browser/web/bash/read (before deferred stub)
+ * @property {number} shrinkEverySteps shrink older tool results every N agent steps (0 = only at turn end)
+ * @property {number} jetsonKvSlots llama.cpp --parallel / slot count for id_slot pinning
+ * @property {boolean} breakGenerationLoops abort mid-stream when prose/reasoning repeats without a tool call
+ * @property {number} generationLoopMinChars min accumulated chars before fingerprint loop check
+ * @property {number} generationLoopMaxChars hard cap on prose/reasoning without a tool call
  */
 
 export const CATEGORY_META = [
@@ -29,6 +41,7 @@ export const CATEGORY_META = [
 	{ id: "shell", label: "Shell", hint: "bash / pwsh" },
 	{ id: "web", label: "Web", hint: "web_search, web_fetch" },
 	{ id: "browser", label: "In-app browser", hint: "browser_* (dsh-browser)" },
+	{ id: "downloads", label: "Downloads", hint: "download_* (aria2 — magnets, torrents, large HTTP)" },
 	{ id: "scheduling", label: "Scheduling", hint: "cron_*, schedule_* — turn on when creating or editing schedules" },
 	{ id: "search", label: "Repo search", hint: "glob, grep" },
 	{ id: "skills", label: "Skills loader", hint: "skill" },
@@ -46,6 +59,7 @@ export const PRESET_DEFAULTS = {
 			shell: true,
 			web: false,
 			browser: false,
+			downloads: false,
 			scheduling: false,
 			search: false,
 			skills: true,
@@ -54,12 +68,24 @@ export const PRESET_DEFAULTS = {
 			advanced: false,
 		},
 		truncateToolResults: true,
-		maxInlineChars: 12_000,
+		truncateAllToolResults: true,
+		maxInlineChars: 2_500,
 		patientJetsonStream: true,
 		liteSystemHint: true,
-		stubToolResults: false,
-		stubAfterChars: 4000,
-		earlyPruneToolResults: false,
+		sessionHygieneHint: true,
+		denyHeavyMedia: true,
+		stubToolResults: true,
+		stubAfterChars: 1_200,
+		earlyPruneToolResults: true,
+		deferToolResultShrink: true,
+		keepRecentToolResults: 1,
+		hardMaxInlineChars: 24_000,
+		heavyMaxInlineChars: 1_500,
+		shrinkEverySteps: 1,
+		jetsonKvSlots: 1,
+		breakGenerationLoops: true,
+		generationLoopMinChars: 500,
+		generationLoopMaxChars: 8_000,
 	},
 	balanced: {
 		useCustomCategories: false,
@@ -68,6 +94,7 @@ export const PRESET_DEFAULTS = {
 			shell: true,
 			web: true,
 			browser: false,
+			downloads: true,
 			scheduling: false,
 			search: true,
 			skills: true,
@@ -76,12 +103,24 @@ export const PRESET_DEFAULTS = {
 			advanced: true,
 		},
 		truncateToolResults: true,
-		maxInlineChars: 24_000,
+		truncateAllToolResults: false,
+		maxInlineChars: 8_000,
 		patientJetsonStream: true,
 		liteSystemHint: false,
-		stubToolResults: false,
-		stubAfterChars: 4000,
-		earlyPruneToolResults: false,
+		sessionHygieneHint: true,
+		denyHeavyMedia: false,
+		stubToolResults: true,
+		stubAfterChars: 3_000,
+		earlyPruneToolResults: true,
+		deferToolResultShrink: true,
+		keepRecentToolResults: 2,
+		hardMaxInlineChars: 48_000,
+		heavyMaxInlineChars: 3_000,
+		shrinkEverySteps: 2,
+		jetsonKvSlots: 1,
+		breakGenerationLoops: true,
+		generationLoopMinChars: 600,
+		generationLoopMaxChars: 10_000,
 	},
 	jetson: {
 		useCustomCategories: false,
@@ -90,6 +129,7 @@ export const PRESET_DEFAULTS = {
 			shell: true,
 			web: true,
 			browser: false,
+			downloads: true,
 			scheduling: false,
 			search: true,
 			skills: true,
@@ -98,35 +138,93 @@ export const PRESET_DEFAULTS = {
 			advanced: true,
 		},
 		truncateToolResults: true,
-		maxInlineChars: 24_000,
+		truncateAllToolResults: true,
+		maxInlineChars: 2_500,
 		patientJetsonStream: true,
-		liteSystemHint: false,
-		stubToolResults: false,
-		stubAfterChars: 4000,
-		earlyPruneToolResults: false,
+		liteSystemHint: true,
+		sessionHygieneHint: true,
+		denyHeavyMedia: true,
+		stubToolResults: true,
+		stubAfterChars: 1_200,
+		earlyPruneToolResults: true,
+		deferToolResultShrink: true,
+		keepRecentToolResults: 1,
+		hardMaxInlineChars: 24_000,
+		heavyMaxInlineChars: 1_500,
+		shrinkEverySteps: 1,
+		jetsonKvSlots: 1,
+		breakGenerationLoops: true,
+		generationLoopMinChars: 500,
+		generationLoopMaxChars: 8_000,
 	},
 	full: {
 		useCustomCategories: false,
 		categories: Object.fromEntries(CATEGORY_META.map((c) => [c.id, true])),
 		truncateToolResults: false,
+		truncateAllToolResults: false,
 		maxInlineChars: 48_000,
 		patientJetsonStream: false,
 		liteSystemHint: false,
+		sessionHygieneHint: false,
+		denyHeavyMedia: false,
 		stubToolResults: false,
 		stubAfterChars: 4000,
 		earlyPruneToolResults: false,
+		deferToolResultShrink: false,
+		keepRecentToolResults: 8,
+		hardMaxInlineChars: 120_000,
+		heavyMaxInlineChars: 48_000,
+		shrinkEverySteps: 0,
+		jetsonKvSlots: 1,
+		breakGenerationLoops: false,
+		generationLoopMinChars: 800,
+		generationLoopMaxChars: 16_000,
 	},
 	custom: {
 		useCustomCategories: true,
 		categories: Object.fromEntries(CATEGORY_META.map((c) => [c.id, true])),
 		truncateToolResults: true,
-		maxInlineChars: 24_000,
+		truncateAllToolResults: true,
+		maxInlineChars: 2_500,
 		patientJetsonStream: true,
-		liteSystemHint: false,
-		stubToolResults: false,
-		stubAfterChars: 4000,
-		earlyPruneToolResults: false,
+		liteSystemHint: true,
+		sessionHygieneHint: true,
+		denyHeavyMedia: true,
+		stubToolResults: true,
+		stubAfterChars: 1_200,
+		earlyPruneToolResults: true,
+		deferToolResultShrink: true,
+		keepRecentToolResults: 1,
+		hardMaxInlineChars: 24_000,
+		heavyMaxInlineChars: 1_500,
+		shrinkEverySteps: 1,
+		jetsonKvSlots: 1,
+		breakGenerationLoops: true,
+		generationLoopMinChars: 500,
+		generationLoopMaxChars: 8_000,
 	},
+};
+
+/** One-click values for already-bloated Jetson chats (keeps current categories). */
+export const JETSON_RESCUE_OVERRIDES = {
+	truncateToolResults: true,
+	truncateAllToolResults: true,
+	maxInlineChars: 2_000,
+	patientJetsonStream: true,
+	liteSystemHint: true,
+	sessionHygieneHint: true,
+	denyHeavyMedia: true,
+	stubToolResults: true,
+	stubAfterChars: 1_000,
+	earlyPruneToolResults: true,
+	deferToolResultShrink: true,
+	keepRecentToolResults: 1,
+	hardMaxInlineChars: 16_000,
+	heavyMaxInlineChars: 1_200,
+	shrinkEverySteps: 1,
+	breakGenerationLoops: true,
+	generationLoopMinChars: 500,
+	generationLoopMaxChars: 6_000,
 };
 
 const SUBAGENT_TOOLS = new Set([
@@ -154,6 +252,7 @@ export function categoryForTool(toolName) {
 	if (n === "bash" || n === "pwsh") return "shell";
 	if (n === "web_search" || n === "web_fetch") return "web";
 	if (n.startsWith("browser_")) return "browser";
+	if (n.startsWith("download_")) return "downloads";
 	if (n.startsWith("cron_") || n.startsWith("schedule_")) return "scheduling";
 	if (n === "glob" || n === "grep") return "search";
 	if (n === "skill") return "skills";
@@ -195,11 +294,23 @@ export function normalizeConfig(raw) {
 		categories,
 		truncateToolResults:
 			typeof o.truncateToolResults === "boolean" ? o.truncateToolResults : presetBlock.truncateToolResults,
-		maxInlineChars: clampInt(o.maxInlineChars, 2000, 120_000, presetBlock.maxInlineChars),
+		truncateAllToolResults:
+			typeof o.truncateAllToolResults === "boolean"
+				? o.truncateAllToolResults
+				: (presetBlock.truncateAllToolResults ?? false),
+		maxInlineChars: clampInt(o.maxInlineChars, 1000, 120_000, presetBlock.maxInlineChars),
 		patientJetsonStream:
 			typeof o.patientJetsonStream === "boolean" ? o.patientJetsonStream : presetBlock.patientJetsonStream,
 		liteSystemHint:
 			typeof o.liteSystemHint === "boolean" ? o.liteSystemHint : presetBlock.liteSystemHint,
+		sessionHygieneHint:
+			typeof o.sessionHygieneHint === "boolean"
+				? o.sessionHygieneHint
+				: (presetBlock.sessionHygieneHint ?? false),
+		denyHeavyMedia:
+			typeof o.denyHeavyMedia === "boolean"
+				? o.denyHeavyMedia
+				: (presetBlock.denyHeavyMedia ?? false),
 		stubToolResults:
 			typeof o.stubToolResults === "boolean" ? o.stubToolResults : presetBlock.stubToolResults,
 		stubAfterChars: clampInt(o.stubAfterChars, 500, 80_000, presetBlock.stubAfterChars),
@@ -207,6 +318,56 @@ export function normalizeConfig(raw) {
 			typeof o.earlyPruneToolResults === "boolean"
 				? o.earlyPruneToolResults
 				: presetBlock.earlyPruneToolResults,
+		deferToolResultShrink:
+			typeof o.deferToolResultShrink === "boolean"
+				? o.deferToolResultShrink
+				: (presetBlock.deferToolResultShrink ?? true),
+		keepRecentToolResults: clampInt(
+			o.keepRecentToolResults,
+			0,
+			32,
+			presetBlock.keepRecentToolResults ?? 3,
+		),
+		hardMaxInlineChars: clampInt(
+			o.hardMaxInlineChars,
+			4_000,
+			200_000,
+			presetBlock.hardMaxInlineChars ?? 48_000,
+		),
+		heavyMaxInlineChars: clampInt(
+			o.heavyMaxInlineChars,
+			400,
+			120_000,
+			presetBlock.heavyMaxInlineChars ?? Math.min(presetBlock.maxInlineChars ?? 6_000, 3_000),
+		),
+		shrinkEverySteps: clampInt(
+			o.shrinkEverySteps,
+			0,
+			64,
+			presetBlock.shrinkEverySteps ?? 2,
+		),
+		jetsonKvSlots: clampInt(
+			o.jetsonKvSlots ?? process.env.DSH_JETSON_KV_SLOTS,
+			1,
+			64,
+			presetBlock.jetsonKvSlots ?? 1,
+		),
+		breakGenerationLoops:
+			typeof o.breakGenerationLoops === "boolean"
+				? o.breakGenerationLoops
+				: (presetBlock.breakGenerationLoops ?? true),
+		generationLoopMinChars: clampInt(
+			o.generationLoopMinChars,
+			200,
+			20_000,
+			presetBlock.generationLoopMinChars ?? 500,
+		),
+		generationLoopMaxChars: clampInt(
+			o.generationLoopMaxChars,
+			1_000,
+			64_000,
+			presetBlock.generationLoopMaxChars ?? 8_000,
+		),
 	};
 }
 
@@ -232,10 +393,16 @@ export function isToolAllowed(toolName, cfg) {
  * @param {LocalAgentConfig} cfg
  * @returns {string[]}
  */
+const HEAVY_MEDIA_TOOLS = new Set([
+	"browser_screenshot",
+	"read_image",
+]);
+
 export function buildToolDenyList(restrictableNames, cfg) {
 	const deny = [];
 	for (const name of restrictableNames) {
 		if (!isToolAllowed(name, cfg)) deny.push(name);
+		else if (cfg.denyHeavyMedia && HEAVY_MEDIA_TOOLS.has(name)) deny.push(name);
 	}
 	return deny;
 }

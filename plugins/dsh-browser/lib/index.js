@@ -10,6 +10,20 @@ import { createReadStream } from "node:fs";
 import { statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
+import { CHROME_UA, isCloudflareChallenge, cloudflareErrorMessage, cloudflareDone } from "./cf.js";
+import { loadConfig, saveConfig } from "./config.js";
+import { remoteBrowser, testCdpHttp } from "./cdp.js";
+import {
+	assertNotLooping,
+	recordFailure,
+	recordSuccess,
+	recordPageText,
+	detectDeadEndPage,
+	rememberSnapshot,
+	formatCompactSnapshot,
+	getActivity,
+	enrichInteractionError,
+} from "./guardrails.js";
 
 // Relative import to dsh-tools package hosted in dsh-cron's node_modules or global dsh
 let defineTool;
@@ -593,17 +607,35 @@ const INJECT_JS = `
       try {
         if (action === "snapshot") {
           const items = [];
-          const query = 'button, a[href], input, select, textarea, [role="button"], [role="tab"], [role="link"], [role="checkbox"], [role="menuitem"], [data-testid], h1, h2, h3, p';
-          const nodes = Array.from(document.querySelectorAll(query)).slice(0, 75);
-          let idx = 0;
-          for (const el of nodes) {
+          const query = 'button, a[href], input, select, textarea, [role="button"], [role="tab"], [role="link"], [role="checkbox"], [role="menuitem"], [data-testid], article a[href], h1 a[href], h2 a[href], h3 a[href], h1, h2, h3';
+          const visible = [];
+          for (const el of document.querySelectorAll(query)) {
             const rect = el.getBoundingClientRect();
             if (rect.width === 0 && rect.height === 0) continue;
             const style = window.getComputedStyle(el);
             if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") continue;
+            visible.push(el);
+            if (visible.length >= 200) break;
+          }
+          const vh = window.innerHeight || 800;
+          const scored = visible.map((el, i) => {
+            const rect = el.getBoundingClientRect();
+            const inView = rect.top < vh && rect.bottom > 0 ? 1 : 0;
+            const tag = el.tagName.toLowerCase();
+            const href = el.getAttribute("href") || "";
+            const isContentLink = tag === "a" && href && !href.startsWith("#") && href !== "/" && !/^javascript:/i.test(href);
+            const inMain = el.closest("main, article, [role=\\"main\\"], .content, #content, .post, .entry");
+            return { el, score: inView * 10 + (isContentLink ? 5 : 0) + (inMain ? 8 : 0) - i * 0.001 };
+          });
+          scored.sort((a, b) => b.score - a.score);
+          let idx = 0;
+          const seenHref = new Set();
+          for (const { el } of scored.slice(0, 80)) {
             const text = (el.innerText || el.getAttribute("aria-label") || el.getAttribute("title") || el.getAttribute("placeholder") || el.value || "").trim().slice(0, 100);
             const tag = el.tagName.toLowerCase();
-            const id = el.id ? "#" + el.id : "";
+            const href = el.getAttribute("href") || undefined;
+            if (href && seenHref.has(href) && (tag === "a" || el.getAttribute("role") === "link")) continue;
+            if (href) seenHref.add(href);
             const sel = el.id ? "#" + el.id : cssPath(el);
             items.push({
               ref: "e" + (idx++),
@@ -614,8 +646,9 @@ const INJECT_JS = `
               name: el.name || undefined,
               text,
               value: el.value !== undefined && tag !== "button" ? String(el.value).slice(0, 100) : undefined,
-              href: el.getAttribute("href") || undefined,
+              href,
             });
+            if (items.length >= 80) break;
           }
           respond({ ok: true, snapshot: { url: location.href, title: document.title, items } });
           return;
@@ -660,7 +693,7 @@ const INJECT_JS = `
             if (!el) throw new Error("element not found: " + selector);
             text = (el.innerText || el.textContent || "").trim();
           } else {
-            text = (document.body?.innerText || "").trim().slice(0, 5000);
+					text = (document.body?.innerText || "").trim().slice(0, 2500);
           }
           respond({ ok: true, text });
           return;
@@ -1187,6 +1220,59 @@ function parseGatePathname(pathname) {
 	return `${m[1]}://${m[2]}${pathPart}`;
 }
 
+function cfBlockedHtml(url, status) {
+	const safe = String(url || "").replace(/[&<>"']/g, (c) => ({
+		"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+	}[c]));
+	return `<!doctype html><html><head><meta charset=utf-8><title>Blocked by Cloudflare</title>
+<style>
+body{font:14px/1.45 system-ui,sans-serif;margin:0;padding:32px;background:#111;color:#eee}
+h1{font-size:18px;margin:0 0 8px}p{margin:0 0 10px;color:#bbb;max-width:40rem}
+code{color:#9cf}a{color:#8ab4f8}
+</style></head><body data-dsh-browser-blocked="cloudflare_challenge">
+<h1>Blocked by Cloudflare</h1>
+<p>The built-in browser gate cannot pass this site's bot check${status ? ` (HTTP ${status})` : ""}.</p>
+<p><code>${safe}</code></p>
+<p>Do not keep retrying here. Use <strong>Settings → Browser → Remote Chromium</strong>, or open the URL in a normal browser.</p>
+<script>try{parent.postMessage({type:"dsh-browser-blocked",reason:"cloudflare_challenge",url:${JSON.stringify(String(url || ""))}},"*")}catch(e){}</script>
+</body></html>`;
+}
+
+async function ensureRemote() {
+	const cfg = await loadConfig();
+	if (cfg.engine !== "remote") {
+		throw new Error("Remote Chromium is not enabled (Settings → Browser)");
+	}
+	await remoteBrowser.ensure(cfg.cdpHttp);
+	return cfg;
+}
+
+async function isRemoteEngine() {
+	const cfg = await loadConfig();
+	return cfg.engine === "remote";
+}
+
+/**
+ * Builtin gate hit Cloudflare → flip to Remote Chromium and retry once.
+ * @param {string} url
+ * @returns {Promise<object | null>} null when CDP is down / failover impossible
+ */
+async function failoverNavigateViaRemote(url) {
+	const cfg = await loadConfig();
+	const probe = await testCdpHttp(cfg.cdpHttp);
+	if (!probe?.ok) return null;
+	await saveConfig({ engine: "remote" });
+	await remoteBrowser.ensure(cfg.cdpHttp);
+	const res = await remoteBrowser.navigate(url);
+	return {
+		...(res && typeof res === "object" ? res : {}),
+		ok: true,
+		engine: "remote",
+		failoverFrom: "builtin",
+		note: "Auto-switched to Remote Chromium after Cloudflare on the built-in gate.",
+	};
+}
+
 
 
 async function resolveLiveTarget(ctx, sessionId, relPosix) {
@@ -1252,18 +1338,23 @@ async function fetchPage(ctx, urlString) {
 		redirect: "follow",
 		signal: AbortSignal.timeout(20000),
 		headers: {
-			"user-agent": "DeepSeekHarnessBrowser/0.1 (+local)",
+			"user-agent": CHROME_UA,
 			accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+			"accept-language": "en-US,en;q=0.9",
 		},
 	});
 	const buf = Buffer.from(await res.arrayBuffer());
 	if (buf.length > MAX_BYTES) throw new Error(`page too large (${buf.length} bytes)`);
 	const ctype = (res.headers.get("content-type") || "").toLowerCase();
 	const finalUrl = res.url || url.href;
+	const rawHtml = buf.toString("utf8");
+	if (isCloudflareChallenge(res.status, rawHtml)) {
+		throw new Error(cloudflareErrorMessage(finalUrl));
+	}
 	if (!ctype.includes("html") && !ctype.includes("xml") && !/^\s*</.test(buf.slice(0, 64).toString("utf8"))) {
 		throw new Error(`not an HTML page (${ctype || "unknown type"})`);
 	}
-	const html = injectPicker(buf.toString("utf8"), finalUrl);
+	const html = injectPicker(rawHtml, finalUrl);
 	return {
 		url: finalUrl,
 		status: res.status,
@@ -1377,11 +1468,11 @@ function registerGateRoute(ctx) {
 			}
 
 			const headers = {
-				"user-agent": "DeepSeekHarnessBrowser/0.5 (+gate)",
+				"user-agent": CHROME_UA,
 				accept: req.headers.accept || "*/*",
+				"accept-language": req.headers["accept-language"] || "en-US,en;q=0.9",
 			};
 			if (req.headers["content-type"]) headers["content-type"] = req.headers["content-type"];
-			if (req.headers["accept-language"]) headers["accept-language"] = req.headers["accept-language"];
 
 			let body;
 			if (method !== "GET" && method !== "HEAD") {
@@ -1408,6 +1499,16 @@ function registerGateRoute(ctx) {
 
 			if (isHtml && method === "GET") {
 				let html = buf.toString("utf8");
+				if (isCloudflareChallenge(upstream.status, html)) {
+					const blocked = cfBlockedHtml(finalUrl, upstream.status);
+					res.writeHead(403, {
+						"content-type": "text/html; charset=utf-8",
+						"cache-control": "no-store",
+						"x-dsh-browser-blocked": "cloudflare_challenge",
+					});
+					res.end(blocked);
+					return;
+				}
 				const proto = String(req.headers["x-forwarded-proto"] || "http").split(",")[0].trim() || "http";
 				const host = String(req.headers["x-forwarded-host"] || req.headers.host || "localhost").split(",")[0].trim();
 				const harnessOrigin = `${proto}://${host}`;
@@ -1716,6 +1817,71 @@ function registerRpc(ctx) {
 						const accepted = completeAgentCommand(id, payload?.result ?? { ok: false, error: "empty result" });
 						return ok({ accepted });
 					}
+					case "getConfig": {
+						return ok(await loadConfig());
+					}
+					case "setConfig": {
+						const next = await saveConfig({
+							engine: payload?.engine,
+							cdpHttp: payload?.cdpHttp ?? payload?.baseUrl,
+						});
+						if (next.engine !== "remote") {
+							await remoteBrowser.close().catch(() => {});
+						}
+						return ok(next);
+					}
+					case "remote.test": {
+						const cfg = await loadConfig();
+						const base = String(payload?.cdpHttp || cfg.cdpHttp || "").trim();
+						return ok(await testCdpHttp(base));
+					}
+					case "remote.navigate": {
+						await ensureRemote();
+						return ok(await remoteBrowser.navigate(String(payload?.url || "")));
+					}
+					case "remote.status": {
+						const cfg = await loadConfig();
+						if (cfg.engine === "remote") {
+							try { await remoteBrowser.ensure(cfg.cdpHttp); } catch { /* status still useful */ }
+						}
+						return ok({ ...remoteBrowser.status(), config: cfg });
+					}
+					case "remote.frame": {
+						await ensureRemote();
+						return ok(remoteBrowser.frame());
+					}
+					case "remote.input": {
+						await ensureRemote();
+						const kind = String(payload?.kind || "click");
+						if (kind === "click") {
+							return ok(await remoteBrowser.mouseClick(
+								payload?.x,
+								payload?.y,
+								payload?.button,
+							));
+						}
+						throw new Error(`unknown remote.input kind: ${kind}`);
+					}
+					case "remote.action": {
+						await ensureRemote();
+						const action = String(payload?.action || "").trim();
+						if (action === "snapshot") return ok(await remoteBrowser.snapshot());
+						if (action === "click") return ok(await remoteBrowser.click(payload?.selector));
+						if (action === "fill") return ok(await remoteBrowser.fill(payload?.selector, payload?.value));
+						if (action === "text") return ok(await remoteBrowser.text(payload?.selector));
+						if (action === "screenshot") return ok(await remoteBrowser.screenshot());
+						if (action === "console") return ok(remoteBrowser.getConsole(payload?.limit));
+						if (action === "network") return ok(remoteBrowser.getNetwork(payload?.limit));
+						if (action === "evaluate") return ok(await remoteBrowser.evaluate(payload?.script));
+						throw new Error(`unknown remote action: ${action}`);
+					}
+					case "activity.list": {
+						return ok({
+							entries: getActivity(payload?.limit ?? 24),
+							url: remoteBrowser.url || "",
+							title: remoteBrowser.title || "",
+						});
+					}
 					default:
 						return transportError(new Error(`unknown endpoint: ${endpoint}`));
 				}
@@ -1726,18 +1892,182 @@ function registerRpc(ctx) {
 }
 
 async function runBrowserAction(_scope, action, params = {}) {
-	return enqueueAgentCommand({
-		kind: "action",
-		action,
-		selector: params.selector,
-		value: params.value,
-		timeoutMs: params.timeoutMs,
-	}, action === "screenshot" ? 60_000 : 45_000);
+	assertNotLooping(action, params);
+	try {
+		let res;
+		if (await isRemoteEngine()) {
+			await ensureRemote();
+			if (action === "snapshot") res = await remoteBrowser.snapshot();
+			else if (action === "click") res = await remoteBrowser.click(params.selector);
+			else if (action === "fill") res = await remoteBrowser.fill(params.selector, params.value);
+			else if (action === "text") res = await remoteBrowser.text(params.selector);
+			else if (action === "screenshot") res = await remoteBrowser.screenshot();
+			else if (action === "console") res = remoteBrowser.getConsole(params.limit);
+			else if (action === "network") res = remoteBrowser.getNetwork(params.limit);
+			else if (action === "evaluate") res = await remoteBrowser.evaluate(params.script);
+			else throw new Error(`unsupported remote action: ${action}`);
+		} else {
+			if (action === "console" || action === "network" || action === "evaluate") {
+				throw new Error(`${action} requires Settings → Browser → Remote Chromium`);
+			}
+			res = await enqueueAgentCommand({
+				kind: "action",
+				action,
+				selector: params.selector,
+				value: params.value,
+				timeoutMs: params.timeoutMs,
+			}, action === "screenshot" ? 60_000 : 45_000);
+			if (res && res.ok === false) {
+				throw new Error(res.error || `${action} failed`);
+			}
+		}
+
+		if (action === "snapshot" && res?.snapshot) {
+			rememberSnapshot(res.snapshot);
+		}
+
+		// Dead-end pages: soft done flag (ok:true) — not a hard error that makes the model thrash.
+		if (action === "snapshot" || action === "text") {
+			const blob = action === "text"
+				? String(res?.text || "")
+				: [
+					res?.snapshot?.title,
+					...(Array.isArray(res?.snapshot?.items) ? res.snapshot.items.map((i) => i.text) : []),
+				].filter(Boolean).join("\n");
+			if (action === "text") recordPageText(blob.length);
+			const dead = detectDeadEndPage(blob, res?.snapshot?.url || remoteBrowser.url || "");
+			if (dead) {
+				recordSuccess(action, { url: res?.snapshot?.url || "" });
+				return { ...(res && typeof res === "object" ? res : {}), ok: true, ...dead };
+			}
+		}
+		if (action === "evaluate" && res?.ok) {
+			const body =
+				typeof res.result === "string"
+					? res.result
+					: res.result != null
+						? JSON.stringify(res.result)
+						: "";
+			recordPageText(body.length);
+		}
+
+		recordSuccess(action, {
+			detail: action === "click" || action === "fill"
+				? String(params.selector || "")
+				: (res?.snapshot?.url || res?.url || ""),
+		});
+		return res;
+	} catch (err) {
+		recordFailure(action, params, err);
+		const raw = err instanceof Error ? err.message : String(err);
+		const msg = enrichInteractionError(raw, String(params.selector || ""));
+		if (msg !== raw) throw new Error(msg);
+		throw err;
+	}
 }
 
 async function runBrowserNavigate(scope, url) {
-	const resolved = await resolveNavigateUrl(scope, url);
-	return enqueueAgentCommand({ kind: "navigate", url: resolved });
+	assertNotLooping("navigate", { url });
+	try {
+		const resolved = await resolveNavigateUrl(scope, url);
+		let res;
+		if (await isRemoteEngine()) {
+			// Live Server / workspace files stay on the built-in path (same-origin Live).
+			if (String(resolved).includes("/api/browser-live/")) {
+				res = await enqueueAgentCommand({ kind: "navigate", url: resolved });
+			} else {
+				await ensureRemote();
+				res = await remoteBrowser.navigate(resolved);
+				if (res?.cloudflareChallenge) {
+					recordSuccess("navigate");
+					return { ok: true, ...res, ...cloudflareDone(res.url || resolved) };
+				}
+			}
+		} else {
+			// Built-in: preflight http(s) for CF — auto-failover to Remote instead of hanging the model.
+			if (/^https?:\/\//i.test(resolved) && !resolved.includes("/api/browser-")) {
+				try {
+					const pre = await fetch(resolved, {
+						redirect: "follow",
+						signal: AbortSignal.timeout(15000),
+						headers: {
+							"user-agent": CHROME_UA,
+							accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+						},
+					});
+					const text = await pre.text();
+					if (isCloudflareChallenge(pre.status, text)) {
+						try {
+							const failedOver = await failoverNavigateViaRemote(pre.url || resolved);
+							if (failedOver) {
+								recordSuccess("navigate", { detail: `failover ${pre.url || resolved}` });
+								const dead = detectDeadEndPage(failedOver.title || "", failedOver.url || resolved);
+								if (dead) return { ...failedOver, ...dead };
+								return failedOver;
+							}
+						} catch (failErr) {
+							scope?.logger?.warn?.(
+								`[dsh-browser] CF→remote failover failed: ${failErr instanceof Error ? failErr.message : failErr}`,
+							);
+						}
+						// Challenge hint (ok:true, not done:true) — agent should solve CF, not abort.
+						recordSuccess("navigate");
+						return { ok: true, url: pre.url || resolved, ...cloudflareDone(pre.url || resolved) };
+					}
+					const dead = detectDeadEndPage(text, pre.url || resolved);
+					if (dead) {
+						recordSuccess("navigate");
+						return { ok: true, url: pre.url || resolved, ...dead };
+					}
+				} catch (err) {
+					if (err instanceof Error && (/Cloudflare|STOP:/i.test(err.message))) {
+						recordSuccess("navigate");
+						return { ok: true, url: resolved, ...cloudflareDone(resolved) };
+					}
+					// Network errors: still try the UI path.
+				}
+			}
+			res = await enqueueAgentCommand({ kind: "navigate", url: resolved });
+		}
+		if (res && res.ok === false) {
+			const errMsg = String(res.error || "navigate failed");
+			if (/cloudflare|just a moment/i.test(errMsg)) {
+				if (!(await isRemoteEngine())) {
+					try {
+						const failedOver = await failoverNavigateViaRemote(resolved);
+						if (failedOver) {
+							recordSuccess("navigate", { detail: `failover ${resolved}` });
+							return failedOver;
+						}
+					} catch {
+						/* fall through */
+					}
+				}
+				recordSuccess("navigate");
+				return { ok: true, url: resolved, ...cloudflareDone(resolved) };
+			}
+			throw new Error(errMsg);
+		}
+		// After navigate, soft paywall / CF hint on title (ok:true, not an exception).
+		if (res?.title) {
+			const dead = detectDeadEndPage(res.title, res.url || resolved);
+			if (dead) {
+				recordSuccess("navigate");
+				return { ...(res && typeof res === "object" ? res : {}), ok: true, ...dead };
+			}
+		}
+		recordSuccess("navigate");
+		return res;
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		// Remote navigate can still throw CF — return challenge guidance, keep the turn alive.
+		if (/cloudflare|just a moment|verify you are human|security verification/i.test(msg)) {
+			recordSuccess("navigate");
+			return { ok: true, url: String(url || ""), ...cloudflareDone(url) };
+		}
+		recordFailure("navigate", { url }, err);
+		throw err;
+	}
 }
 
 function imageRefFromSaved(ref) {
@@ -1834,7 +2164,10 @@ function registerTools(scope) {
 	register({
 		name: "browser_navigate",
 		description:
-			"Navigate the in-app browser tab to a URL. Use http(s) for remote pages. For local HTML in the workspace, pass a workspace path or file:// URL — the Browser tab rewrites it to Live Server automatically (do not start a separate python http.server).",
+			"Navigate the browser to a URL (prefer Remote Chromium for Cloudflare / bot checks). " +
+			"Use this instead of bash curl/wget for any public website. " +
+			"If Cloudflare / Verify-you-are-human appears: do not give up — ask the user to click it in the live Remote feed and/or snapshot+click, then continue. " +
+			"done:true is only for paywalls/membership — then tell the user and end the turn. For local HTML use a workspace path or file:// (Live Server).",
 		parameters: {
 			url: {
 				type: "string",
@@ -1855,11 +2188,24 @@ function registerTools(scope) {
 
 	register({
 		name: "browser_snapshot",
-		description: "Inspect interactive DOM elements (buttons, inputs, links, forms) currently visible in the in-app browser tab. Returns element tags, IDs, texts, values, and ref selectors (e.g. e0, e1, #submit).",
+		description:
+			"List interactive elements currently visible (buttons, links, inputs). Returns a compact ref list (e0, e1, …). Click ONLY listed refs — never invent eN or product URLs that are not in the list. " +
+			"If Cloudflare / Verify-you-are-human appears: do not end the turn — click that checkbox if listed (or ask the user via the live feed), wait, snapshot again. " +
+			"done:true is only for paywalls — then tell the user and end the turn.",
 		parameters: {},
 		output: {
 			schema: { type: "json" },
-			render: (_args, val) => [{ type: "text", text: JSON.stringify(val, null, 2) }],
+			render: (_args, val) => {
+				const snap = val?.snapshot;
+				if (snap && Array.isArray(snap.items)) {
+					const compact = formatCompactSnapshot(snap);
+					const extra = val?.done
+						? `\n\ndone: true (${val.reason || "blocked"})\n${val.message || ""}`
+						: "";
+					return [{ type: "text", text: compact + extra }];
+				}
+				return [{ type: "text", text: JSON.stringify(val, null, 2) }];
+			},
 		},
 		execute: async () => {
 			const res = await runBrowserAction(scope, "snapshot");
@@ -1869,12 +2215,14 @@ function registerTools(scope) {
 
 	register({
 		name: "browser_click",
-		description: "Click an interactive element in the in-app browser page by its CSS selector or ref (e.g. '#submit-btn', 'button.save', 'e2').",
+		description:
+			"Click an element. Prefer a ref from the latest browser_snapshot (e0, e1). Never invent refs. Also accepts CSS, text=Label, or button:has-text(\"Label\"). First miss: snapshot once and retry a listed ref. Only errors starting with STOP: mean end the turn.",
 		parameters: {
 			selector: {
 				type: "string",
 				required: true,
-				description: "CSS selector or element ref from browser_snapshot to click",
+				description:
+					"Snapshot ref from the last browser_snapshot (e0), CSS selector, text=Reject non-essential, or button:has-text(\"Accept all\")",
 			},
 		},
 		output: {
@@ -1929,6 +2277,58 @@ function registerTools(scope) {
 			const res = await runBrowserAction(scope, "text", { selector: args.selector });
 			return res;
 		},
+	});
+
+	register({
+		name: "browser_console",
+		description:
+			"Read recent page console logs (log/warn/error) from the remote Chromium session. Use when the page looks broken or a click did nothing. Prefer Remote Chromium engine.",
+		parameters: {
+			limit: {
+				type: "integer",
+				description: "Max log lines to return (default 50)",
+			},
+		},
+		output: {
+			schema: { type: "json" },
+			render: (_args, val) => [{ type: "text", text: JSON.stringify(val, null, 2) }],
+		},
+		execute: async (args) => runBrowserAction(scope, "console", { limit: args.limit }),
+	});
+
+	register({
+		name: "browser_network",
+		description:
+			"Read recent network responses (URL, status, MIME) from the remote Chromium session. Use for failed loads / API errors. Prefer Remote Chromium engine.",
+		parameters: {
+			limit: {
+				type: "integer",
+				description: "Max requests to return (default 50)",
+			},
+		},
+		output: {
+			schema: { type: "json" },
+			render: (_args, val) => [{ type: "text", text: JSON.stringify(val, null, 2) }],
+		},
+		execute: async (args) => runBrowserAction(scope, "network", { limit: args.limit }),
+	});
+
+	register({
+		name: "browser_evaluate",
+		description:
+			"Run a JavaScript expression in the page (like DevTools console eval). Use sparingly for debugging. Requires Remote Chromium engine.",
+		parameters: {
+			script: {
+				type: "string",
+				required: true,
+				description: "JavaScript expression to evaluate in the page context",
+			},
+		},
+		output: {
+			schema: { type: "json" },
+			render: (_args, val) => [{ type: "text", text: JSON.stringify(val, null, 2) }],
+		},
+		execute: async (args) => runBrowserAction(scope, "evaluate", { script: args.script }),
 	});
 }
 

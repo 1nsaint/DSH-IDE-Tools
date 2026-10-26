@@ -3,14 +3,16 @@
  * - /jetson-metrics-api/* → Jetson metrics-api (optional)
  * - /jetson-switcher-api/* → Jetson model switcher :8100 (clear-cache, health)
  * - /ollama-metrics-api/* → host Ollama (browser cannot hit :11434 directly — CORS)
+ * - auto-sync Jetson switcher /v1/models → llm-pi-ai jetson-llamacpp catalog
  */
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
+import { startJetsonModelSync, syncJetsonModels } from "./jetson-model-sync.js";
 
 const name = "dsh-ai-metrics";
-const inject = ["webServer", "connection"];
+const inject = ["webServer", "connection", "settings"];
 const PROXY_PREFIX = "/jetson-metrics-api";
 const SWITCHER_PROXY_PREFIX = "/jetson-switcher-api";
 const OLLAMA_PROXY_PREFIX = "/ollama-metrics-api";
@@ -19,6 +21,8 @@ const DEFAULT_SWITCHER_UPSTREAM = "http://192.168.0.146:8100";
 /** Docker→host bridge; override with OLLAMA_BASE_URL (e.g. http://192.168.0.50:11434). */
 const DEFAULT_OLLAMA_UPSTREAM = "http://172.17.0.1:11434";
 const RPC_CHANNEL = "/ai-metrics-config";
+/** Periodic catalog sync; set DSH_JETSON_MODEL_SYNC_MS=0 to disable. Default 5 min. */
+const DEFAULT_SYNC_MS = 300_000;
 
 function sendJson(res, status, body) {
 	const buf = Buffer.from(JSON.stringify(body), "utf8");
@@ -69,7 +73,15 @@ async function saveStore(cfg) {
 	return clean;
 }
 
-function registerRpc(ctx) {
+function syncIntervalMs() {
+	const raw = process.env.DSH_JETSON_MODEL_SYNC_MS;
+	if (raw === undefined || raw === "") return DEFAULT_SYNC_MS;
+	const n = Number(raw);
+	if (!Number.isFinite(n) || n < 0) return DEFAULT_SYNC_MS;
+	return Math.round(n);
+}
+
+function registerRpc(ctx, switcherUpstream) {
 	return registerRpcChannel(ctx, RPC_CHANNEL, async (endpoint, payload) => {
 			try {
 				if (endpoint === "loadConfig") {
@@ -88,6 +100,15 @@ function registerRpc(ctx) {
 						return ok({ config: saved, migrated: true });
 					}
 					return ok({ config: store.config, migrated: false });
+				}
+				if (endpoint === "syncJetsonModels") {
+					const result = await syncJetsonModels({
+						ctx,
+						upstreamBase: switcherUpstream,
+						log: (msg) => ctx.logger?.info?.(msg),
+						force: Boolean(payload?.force),
+					});
+					return ok(result);
 				}
 				throw new Error(`unknown endpoint: ${endpoint}`);
 			} catch (error) {
@@ -194,8 +215,18 @@ function apply(ctx) {
 		`${name}: ollama-metrics proxy`,
 	);
 
-	ctx.inject(["connection", "webServer"], (scope) => {
-		scope.effect(() => registerRpc(scope), `${name}: rpc`);
+	ctx.inject(["connection", "webServer", "settings"], (scope) => {
+		scope.effect(() => registerRpc(scope, switcherUpstream), `${name}: rpc`);
+		scope.effect(
+			() =>
+				startJetsonModelSync({
+					ctx: scope,
+					upstreamBase: switcherUpstream,
+					intervalMs: syncIntervalMs(),
+					log: (msg) => scope.logger?.info?.(msg) ?? console.info(msg),
+				}),
+			`${name}: jetson model sync`,
+		);
 	});
 }
 

@@ -155,11 +155,39 @@ export function canonicalUrl(raw) {
   }
 }
 
+/** Cap + collapse repeated scrape blobs (e.g. Printables dumping the same paragraph 10×). */
+const MAX_SNIPPET_CHARS = 360;
+
+function normalizeSnippet(raw, maxLen = MAX_SNIPPET_CHARS) {
+  let s = String(raw || "").replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  // Collapse consecutive duplicate chunks of ~40–120 chars (broken scrapers)
+  for (let n = 120; n >= 40; n -= 20) {
+    const re = new RegExp(`(.{${n}})(\\1)+`, "g");
+    s = s.replace(re, "$1");
+  }
+  // Drop near-duplicate sentences kept back-to-back
+  const parts = s.split(/(?<=[.!?])\s+/);
+  const out = [];
+  let prev = "";
+  for (const part of parts) {
+    const t = part.trim();
+    if (!t) continue;
+    if (prev && (t === prev || (prev.length > 30 && t.includes(prev.slice(0, 40))))) continue;
+    out.push(t);
+    prev = t;
+  }
+  s = out.join(" ").trim() || s;
+  if (s.length > maxLen) s = `${s.slice(0, maxLen).trimEnd()}…`;
+  return s;
+}
+
 function source(url, title, snippet, publishedAt, provider) {
   if (typeof url !== "string" || url.length === 0) return null;
   const result = { url: canonicalUrl(url) };
-  if (typeof title === "string" && title.trim()) result.title = title.trim();
-  if (typeof snippet === "string" && snippet.trim()) result.snippet = `[${provider}] ${snippet.trim()}`;
+  if (typeof title === "string" && title.trim()) result.title = title.trim().slice(0, 200);
+  const cleaned = normalizeSnippet(snippet);
+  if (cleaned) result.snippet = `[${provider}] ${cleaned}`;
   if (typeof publishedAt === "string" && publishedAt.trim()) result.publishedAt = publishedAt.trim();
   return result;
 }
@@ -211,7 +239,13 @@ async function parallelSearch(query, limit, signal) {
   if (!text) throw new Error("Parallel returned no structured result");
   const data = JSON.parse(text);
   const rows = Array.isArray(data?.results) ? data.results : [];
-  return rows.slice(0, limit).map((item) => source(item?.url, item?.title, Array.isArray(item?.excerpts) ? item.excerpts.join("\n") : "", item?.publish_date, "Parallel")).filter(Boolean);
+  return rows.slice(0, limit).map((item) => source(
+    item?.url,
+    item?.title,
+    Array.isArray(item?.excerpts) ? item.excerpts.slice(0, 2).join(" ") : "",
+    item?.publish_date,
+    "Parallel",
+  )).filter(Boolean);
 }
 
 async function tavilySearch(query, limit, key, signal) {

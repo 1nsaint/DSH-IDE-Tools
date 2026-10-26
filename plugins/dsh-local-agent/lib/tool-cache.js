@@ -43,11 +43,50 @@ export async function persistToolCache(sessionId, toolName, text) {
  * @param {string} p.relHint
  * @param {number} p.charCount
  */
-export function formatToolResultStub({ toolName, ref, absPath, relHint, charCount }) {
-	return [
+/**
+ * @param {object} p
+ * @param {string} p.toolName
+ * @param {string} p.ref
+ * @param {string} p.absPath
+ * @param {string} p.relHint
+ * @param {number} p.charCount
+ * @param {string} [p.preview]
+ */
+export function formatToolResultStub({ toolName, ref, absPath, relHint, charCount, preview }) {
+	const lines = [
 		`[${PLUGIN}: tool result ${ref} · ${toolName} · ${charCount} chars omitted from model context]`,
 		`Cached on host: ${absPath}`,
 		`(under DSH home: ${relHint})`,
-		"Re-fetch with read on that path, or run the tool again if you need the full body.",
-	].join("\n");
+	];
+	if (preview) {
+		lines.push("", "--- short preview (already handled; full body on host) ---", preview.slice(0, 500));
+	}
+	lines.push("Re-fetch with read on that path, or run the tool again if you need the full body.");
+	return lines.join("\n");
+}
+
+/**
+ * Pull a compact ref list out of a browser_snapshot JSON body so stubs stay usable.
+ * @param {string} text
+ */
+export function previewBrowserSnapshot(text) {
+	try {
+		const data = JSON.parse(text);
+		const snap = data?.snapshot || data;
+		const items = Array.isArray(snap?.items) ? snap.items : null;
+		if (!items) return "";
+		const lines = [
+			`url: ${snap.url || ""}`,
+			`title: ${snap.title || ""}`,
+			`refs (${items.length}) — click ONLY these:`,
+		];
+		for (const it of items) {
+			const t = String(it.text || "").replace(/\s+/g, " ").trim().slice(0, 50);
+			const href = it.href ? ` → ${String(it.href).slice(0, 70)}` : "";
+			lines.push(`${it.ref} ${it.tag || ""}${t ? ` "${t}"` : ""}${href}`);
+		}
+		return lines.join("\n");
+	} catch {
+		return "";
+	}
 }

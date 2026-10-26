@@ -1,7 +1,7 @@
 {
   "name": "dsh-browser",
-  "version": "0.6.32",
-  "description": "Gated Live browser + DevTools; chat link chooser; workspace file:// \u2192 Live; agent queue; browser_screenshot.",
+  "version": "0.7.2",
+  "description": "Gated Live browser + Remote Chromium (CDP); Cloudflare fail-fast; DevTools tools for agents; browser_screenshot.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

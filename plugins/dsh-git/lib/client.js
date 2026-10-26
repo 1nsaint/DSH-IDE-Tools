@@ -13,6 +13,40 @@ window.__ModuleLoader__.load({
 .dg_meta{flex:1;min-width:0;font-size:13px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dg_select{height:30px;min-width:160px;max-width:320px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);padding:0 8px;font:inherit;font-size:12px}
 .dg_selectWide{min-width:200px;max-width:420px}
+.dg_picker{position:relative;min-width:200px;max-width:420px;flex:0 1 320px}
+.dg_pickerBtn{
+  width:100%;height:30px;display:flex;align-items:center;gap:6px;padding:0 8px;
+  border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);
+  color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;cursor:pointer;text-align:left;min-width:0
+}
+.dg_pickerBtn:disabled{opacity:.5;cursor:not-allowed}
+.dg_pickerBtn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
+.dg_pickerLabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dg_pickerChev{flex:none;opacity:.7;font-size:10px}
+.dg_pickerMenu{
+  position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:40;
+  max-height:min(360px,50vh);overflow:auto;padding:4px;
+  border-radius:10px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);
+  box-shadow:0 10px 28px rgba(0,0,0,.4)
+}
+.dg_pickerEmpty{padding:10px 8px;font-size:12px;color:var(--dsw-alias-label-tertiary)}
+.dg_pickerRow{
+  display:flex;align-items:center;gap:4px;width:100%;min-width:0;padding:0;border:0;background:transparent;
+  border-radius:6px;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px
+}
+.dg_pickerRow:hover,.dg_pickerRowActive{background:var(--dsw-alias-interactive-bg-hover)}
+.dg_pickerExpand{
+  flex:none;width:22px;height:26px;border:0;border-radius:4px;background:transparent;
+  color:var(--dsw-alias-label-tertiary);cursor:pointer;font-size:10px;line-height:1
+}
+.dg_pickerExpand:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
+.dg_pickerExpandSpacer{flex:none;width:22px;height:26px}
+.dg_pickerPick{
+  flex:1;min-width:0;height:26px;padding:0 6px;border:0;border-radius:4px;background:transparent;
+  color:inherit;font:inherit;font-size:12px;text-align:left;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap
+}
+.dg_pickerSub{padding-left:4px}
+.dg_pickerSub .dg_pickerPick{color:var(--dsw-alias-label-secondary);font-size:11px}
 .dg_btn{height:30px;padding:0 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-size:12px;cursor:pointer}
 .dg_btn:disabled{opacity:.5;cursor:not-allowed}
 .dg_btnPrimary{background:transparent;color:var(--dsw-alias-state-business-primary);border-color:var(--dsw-alias-state-business-primary);border-width:2px}
@@ -396,6 +430,10 @@ window.__ModuleLoader__.load({
 			const [showPrPanel, setShowPrPanel] = React.useState(false);
 			/** Repo paths whose submodule list is expanded in the hub (default: all collapsed). */
 			const [expandedSubmoduleRepos, setExpandedSubmoduleRepos] = React.useState(() => new Set());
+			/** Same idea for the toolbar repo picker (native <select> cannot collapse). */
+			const [repoPickerOpen, setRepoPickerOpen] = React.useState(false);
+			const [pickerExpanded, setPickerExpanded] = React.useState(() => new Set());
+			const repoPickerRef = React.useRef(null);
 
 			const toggleSubmoduleList = React.useCallback((path, ev) => {
 				ev?.stopPropagation?.();
@@ -407,6 +445,51 @@ window.__ModuleLoader__.load({
 					return next;
 				});
 			}, []);
+
+			const togglePickerExpand = React.useCallback((path, ev) => {
+				ev?.preventDefault?.();
+				ev?.stopPropagation?.();
+				if (!path) return;
+				setPickerExpanded((prev) => {
+					const next = new Set(prev);
+					if (next.has(path)) next.delete(path);
+					else next.add(path);
+					return next;
+				});
+			}, []);
+
+			React.useEffect(() => {
+				if (!repoPickerOpen) return undefined;
+				const onDoc = (ev) => {
+					if (repoPickerRef.current && !repoPickerRef.current.contains(ev.target)) {
+						setRepoPickerOpen(false);
+					}
+				};
+				const onKey = (ev) => {
+					if (ev.key === "Escape") setRepoPickerOpen(false);
+				};
+				document.addEventListener("mousedown", onDoc);
+				document.addEventListener("keydown", onKey);
+				return () => {
+					document.removeEventListener("mousedown", onDoc);
+					document.removeEventListener("keydown", onKey);
+				};
+			}, [repoPickerOpen]);
+
+			// Keep the parent expanded in the picker when a submodule is selected.
+			React.useEffect(() => {
+				if (!repoPath || !repos.length) return;
+				const parent = repos.find((r) =>
+					(r.submodules || []).some((s) => s.path === repoPath),
+				);
+				if (!parent?.path) return;
+				setPickerExpanded((prev) => {
+					if (prev.has(parent.path)) return prev;
+					const next = new Set(prev);
+					next.add(parent.path);
+					return next;
+				});
+			}, [repoPath, repos]);
 
 			React.useEffect(() => {
 				setRepoPath(loadRepoPath(sessionId));
@@ -715,6 +798,16 @@ window.__ModuleLoader__.load({
 					setHistoryBusy(false);
 				}
 			}, [repoPath, refresh, connection, sessionId, selectHistoryCommit, remoteView]);
+
+			const selectLocalRepo = React.useCallback((next) => {
+				if (!next) return;
+				setRepoPickerOpen(false);
+				setRemoteView(null);
+				setRepoPath(next);
+				saveRepoPath(sessionId, next);
+				if (page === "history") openHistory(next, { forceLocal: true });
+				else refresh(next);
+			}, [sessionId, page, openHistory, refresh]);
 
 			const openRemoteHistory = React.useCallback(async (remote) => {
 				if (!remote?.fullName) return;
@@ -2131,34 +2224,93 @@ window.__ModuleLoader__.load({
 						}, "GitHub"),
 					),
 					repoSource === "local"
-						? React.createElement("select", {
-							className: "dg_select dg_selectWide",
-							value: repoPath || "",
-							disabled: busy || (!repos.length && !repoPath),
-							title: "Local git repos",
-							onChange: (e) => {
-								const next = e.target.value;
-								setRemoteView(null);
-								setRepoPath(next);
-								saveRepoPath(sessionId, next);
-								if (page === "history") openHistory(next, { forceLocal: true });
-								else refresh(next);
-							},
-						},
-							!repos.length && React.createElement("option", { value: "" }, "No local repos yet"),
-							repos.flatMap((r) => [
-								React.createElement("option", {
-									key: r.path,
-									value: r.path,
-								}, `${r.name}${r.hasCompose ? " · compose" : ""}`),
-								...(r.submodules || []).map((sub) =>
-									React.createElement("option", {
-										key: sub.path,
-										value: sub.path,
-									}, `  ↳ ${sub.name} (submodule)`),
+						? (() => {
+							const selectedRepo = repos.find((r) => r.path === repoPath)
+								|| repos.find((r) => (r.submodules || []).some((s) => s.path === repoPath));
+							const selectedSub = selectedRepo
+								? (selectedRepo.submodules || []).find((s) => s.path === repoPath)
+								: null;
+							const label = !repos.length && !repoPath
+								? "No local repos yet"
+								: selectedSub
+									? `↳ ${selectedSub.name} (submodule)`
+									: selectedRepo
+										? `${selectedRepo.name}${selectedRepo.hasCompose ? " · compose" : ""}`
+										: (repoPath ? repoPath.split("/").filter(Boolean).pop() : "Select a repo…");
+							return React.createElement(
+								"div",
+								{ className: "dg_picker", ref: repoPickerRef },
+								React.createElement("button", {
+									type: "button",
+									className: "dg_pickerBtn",
+									disabled: busy || (!repos.length && !repoPath),
+									title: "Local git repos — expand a parent to see submodules",
+									"aria-haspopup": "listbox",
+									"aria-expanded": repoPickerOpen,
+									onClick: () => setRepoPickerOpen((v) => !v),
+								},
+									React.createElement("span", { className: "dg_pickerLabel" }, label),
+									React.createElement("span", { className: "dg_pickerChev", "aria-hidden": true },
+										repoPickerOpen ? "▴" : "▾"),
 								),
-							]),
-						)
+								repoPickerOpen && React.createElement(
+									"div",
+									{ className: "dg_pickerMenu", role: "listbox" },
+									!repos.length && React.createElement("div", { className: "dg_pickerEmpty" },
+										"No local repos yet"),
+									repos.map((r) => {
+										const subs = r.submodules || [];
+										const expanded = pickerExpanded.has(r.path);
+										const parentActive = repoPath === r.path;
+										return React.createElement(
+											React.Fragment,
+											{ key: r.path },
+											React.createElement(
+												"div",
+												{
+													className: "dg_pickerRow" + (parentActive ? " dg_pickerRowActive" : ""),
+												},
+												subs.length
+													? React.createElement("button", {
+														type: "button",
+														className: "dg_pickerExpand",
+														title: expanded ? "Hide submodules" : "Show submodules",
+														"aria-label": expanded ? "Collapse submodules" : "Expand submodules",
+														"aria-expanded": expanded,
+														onClick: (ev) => togglePickerExpand(r.path, ev),
+													}, expanded ? "▾" : "▸")
+													: React.createElement("span", { className: "dg_pickerExpandSpacer" }),
+												React.createElement("button", {
+													type: "button",
+													className: "dg_pickerPick",
+													role: "option",
+													"aria-selected": parentActive,
+													onClick: () => selectLocalRepo(r.path),
+												}, `${r.name}${r.hasCompose ? " · compose" : ""}${subs.length ? ` · ${subs.length} sub` : ""}`),
+											),
+											expanded && subs.map((sub) =>
+												React.createElement(
+													"div",
+													{
+														key: sub.path,
+														className: "dg_pickerRow dg_pickerSub"
+															+ (repoPath === sub.path ? " dg_pickerRowActive" : ""),
+													},
+													React.createElement("span", { className: "dg_pickerExpandSpacer" }),
+													React.createElement("button", {
+														type: "button",
+														className: "dg_pickerPick",
+														role: "option",
+														"aria-selected": repoPath === sub.path,
+														onClick: () => selectLocalRepo(sub.path),
+													}, `↳ ${sub.name} (submodule)`),
+												),
+											),
+										);
+									}),
+								),
+							);
+						})()
 						: React.createElement("select", {
 							className: "dg_select dg_selectWide",
 							value: remoteView ? `gh:${remoteView.fullName}` : "",
@@ -2657,7 +2809,14 @@ window.__ModuleLoader__.load({
 								),
 							),
 						),
-						files.length === 0 && React.createElement("div", { className: "dg_empty" }, "Working tree clean."),
+						files.length === 0 && React.createElement("div", { className: "dg_empty" },
+							React.createElement("div", { style: { fontWeight: 600, marginBottom: 6 } }, "No uncommitted changes"),
+							React.createElement("div", null,
+								status?.detached
+									? "This clone matches the checked-out commit (submodules often sit on a detached HEAD). Switch to History to browse commits, or create/checkout a branch above to start editing."
+									: "The working tree matches HEAD — nothing to stage or commit. Switch to History to browse past commits, or edit files in the workspace to see them here.",
+							),
+						),
 						files.map((f) =>
 							React.createElement(
 								"div",

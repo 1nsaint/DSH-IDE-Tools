@@ -7,7 +7,8 @@ window.__ModuleLoader__.load({
 		const REF_SOURCE = "browser-dom";
 		const STORE_KEY = "dsh-browser.view.v1";
 		const OPEN_EVENT = "dsh-open-browser-url";
-		const BUILD = "0.6.29-link-chooser";
+		const BUILD = "0.7.2-split-cf-clicks";
+		const CONFIG_EVENT = "dsh-browser-config";
 		const DT_SIZE = {
 			bottomMin: 160,
 			bottomMax: 720,
@@ -418,6 +419,12 @@ window.__ModuleLoader__.load({
   padding-left:8px;
   border-left:1px solid var(--dsw-alias-border-l2);
 }
+.db_engineToggle{display:inline-flex;flex:0 0 auto}
+.db_engineToggle .db_btn{font-size:11px;padding:0 8px;height:26px}
+.db_engineHint{font-size:10px;color:var(--dsw-alias-label-tertiary);padding:0 4px;flex:0 0 auto;max-width:7rem;line-height:1.2;display:none}
+@container db (min-width:900px){
+  .db_engineHint{display:inline}
+}
 .db_btn{height:28px;padding:0 8px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:4px;box-sizing:border-box;flex:none}
 .db_btnIcon{width:28px;padding:0}
 .db_btnGo{width:28px;padding:0;border:none;background:transparent;color:var(--dsw-alias-state-business-primary);box-shadow:none}
@@ -470,6 +477,23 @@ window.__ModuleLoader__.load({
 .db_body.db_bodySideCollapsed{grid-template-columns:minmax(0,1fr)}
 .db_frameWrap{min-height:0;overflow:hidden;background:var(--dsw-alias-bg-base,#1b1d21);position:relative}
 .db_frame{width:100%;height:100%;border:0;background:#fff}
+.db_remoteFrame{width:100%;height:100%;object-fit:contain;background:#111;display:block;cursor:crosshair;touch-action:none}
+.db_remoteFrameHint{position:absolute;top:8px;right:8px;z-index:2;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:600;background:rgba(0,0,0,.55);color:#fff;pointer-events:none}
+.db_remoteBadge{position:absolute;top:8px;left:8px;z-index:2;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:600;letter-spacing:.02em;background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 85%,#000);color:#fff;pointer-events:none}
+.db_agentActivity{position:absolute;left:8px;right:8px;bottom:8px;z-index:3;max-height:132px;overflow:auto;padding:8px 10px;border-radius:8px;font-size:11px;line-height:1.35;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:color-mix(in srgb,var(--dsw-alias-bg-module-platform, #1a1a1a) 92%, transparent);color:var(--dsw-alias-label-primary,#eee);border:.5px solid var(--dsw-alias-border-l4, #444);pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.25)}
+.db_agentActivityHead{font-weight:600;font-size:10px;letter-spacing:.04em;text-transform:uppercase;opacity:.7;margin-bottom:4px}
+.db_agentActivityRow{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.db_agentActivityRow[data-ok=false]{color:var(--dsw-alias-state-error-primary,#f66)}
+.db_agentActivityEmpty{opacity:.55}
+.db_blocked{
+  display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:10px;
+  height:100%;padding:32px 28px;box-sizing:border-box;text-align:left;
+  color:var(--dsw-alias-label-secondary,#9aa0a6);
+  background:var(--dsw-alias-bg-base,#1b1d21);font-size:13px;line-height:1.5;
+}
+.db_blockedTitle{font-size:16px;font-weight:600;color:var(--dsw-alias-state-error-primary,#f28b82)}
+.db_blockedUrl{font-family:var(--ds-font-family-code);font-size:11px;word-break:break-all;color:var(--dsw-alias-label-tertiary)}
+.db_blockedActions{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
 .db_frameWrap .db_empty{
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
   height:100%;padding:32px 24px;box-sizing:border-box;text-align:center;
@@ -1046,23 +1070,26 @@ window.__ModuleLoader__.load({
 			return { selector, cssUrl, score: 0, inline: !cssUrl };
 		}
 
-		function BrowserView({ connection, conversation, sessionId, inputActions, useInput }) {
-			const [urlInput, setUrlInput] = React.useState(() => viewCache.urlInput);
-			const [currentUrl, setCurrentUrl] = React.useState(() => viewCache.currentUrl);
+		function BrowserView({ connection, conversation, sessionId, inputActions, useInput, surface = "main" }) {
+			const isPrimary = surface === "main";
+			const [urlInput, setUrlInput] = React.useState(() => (isPrimary ? viewCache.urlInput : ""));
+			const [currentUrl, setCurrentUrl] = React.useState(() => (isPrimary ? viewCache.currentUrl : ""));
 			const [mode, setMode] = React.useState("live");
-			const [history, setHistory] = React.useState(() => viewCache.history || []);
-			const [histIdx, setHistIdx] = React.useState(() => viewCache.histIdx ?? -1);
+			const [history, setHistory] = React.useState(() => (isPrimary ? (viewCache.history || []) : []));
+			const [histIdx, setHistIdx] = React.useState(() => (isPrimary ? (viewCache.histIdx ?? -1) : -1));
 			const [selectMode, setSelectMode] = React.useState(false);
-			const [selections, setSelections] = React.useState(() => viewCache.selections || []);
-			const [sideOpen, setSideOpen] = React.useState(() => viewCache.sideOpen === true);
+			const [selections, setSelections] = React.useState(() => (isPrimary ? (viewCache.selections || []) : []));
+			const [sideOpen, setSideOpen] = React.useState(() => (isPrimary ? viewCache.sideOpen === true : false));
 			const [devtoolsOpen, setDevtoolsOpen] = React.useState(false);
-			const [dtTab, setDtTab] = React.useState(() => viewCache.dtTab || "elements");
-			const [dtDock, setDtDock] = React.useState(() => viewCache.dtDock === "right" ? "right" : "bottom");
+			const [dtTab, setDtTab] = React.useState(() => (isPrimary ? (viewCache.dtTab || "elements") : "elements"));
+			const [dtDock, setDtDock] = React.useState(() => (isPrimary && viewCache.dtDock === "right" ? "right" : "bottom"));
 			const [dtHeight, setDtHeight] = React.useState(() => {
+				if (!isPrimary) return DT_SIZE.bottomDefault;
 				const n = Number(viewCache.dtHeight);
 				return Number.isFinite(n) ? n : DT_SIZE.bottomDefault;
 			});
 			const [dtWidth, setDtWidth] = React.useState(() => {
+				if (!isPrimary) return DT_SIZE.rightDefault;
 				const n = Number(viewCache.dtWidth);
 				return Number.isFinite(n) ? n : DT_SIZE.rightDefault;
 			});
@@ -1072,7 +1099,7 @@ window.__ModuleLoader__.load({
 			const [inspectEl, setInspectEl] = React.useState(null);
 			const [styleDraft, setStyleDraft] = React.useState({});
 			const [styleBaseline, setStyleBaseline] = React.useState({});
-			const [consoleLogs, setConsoleLogs] = React.useState(() => viewCache.consoleLogs || []);
+			const [consoleLogs, setConsoleLogs] = React.useState(() => (isPrimary ? (viewCache.consoleLogs || []) : []));
 			const [consoleFilter, setConsoleFilter] = React.useState("all");
 			const [evalInput, setEvalInput] = React.useState("");
 			const [networkEntries, setNetworkEntries] = React.useState([]);
@@ -1083,6 +1110,13 @@ window.__ModuleLoader__.load({
 			const [styleSaveMsg, setStyleSaveMsg] = React.useState("");
 			const [busy, setBusy] = React.useState(false);
 			const [error, setError] = React.useState("");
+			const [engine, setEngine] = React.useState("builtin");
+			const [blocked, setBlocked] = React.useState(null);
+			const [remoteFrame, setRemoteFrame] = React.useState(null);
+			const [remoteMeta, setRemoteMeta] = React.useState({ url: "", title: "" });
+			const [remoteFrameMeta, setRemoteFrameMeta] = React.useState(null);
+			const [agentActivity, setAgentActivity] = React.useState([]);
+			const remoteImgRef = React.useRef(null);
 			const iframeRef = React.useRef(null);
 			const midRef = React.useRef(null);
 			const histIdxRef = React.useRef(histIdx);
@@ -1096,7 +1130,102 @@ window.__ModuleLoader__.load({
 			React.useEffect(() => { selectModeRef.current = selectMode; }, [selectMode]);
 			React.useEffect(() => { dtTabRef.current = dtTab; }, [dtTab]);
 
+			const applyConfig = React.useCallback((cfg) => {
+				if (!cfg) return;
+				setEngine(cfg.engine === "remote" ? "remote" : "builtin");
+			}, []);
+
+			const refreshConfig = React.useCallback(() => {
+				if (!connection) return Promise.resolve();
+				return callRpc(connection, "getConfig").then(applyConfig).catch(() => {});
+			}, [connection, applyConfig]);
+
 			React.useEffect(() => {
+				refreshConfig();
+				const onCfg = (ev) => applyConfig(ev.detail);
+				window.addEventListener(CONFIG_EVENT, onCfg);
+				const onVis = () => {
+					if (document.visibilityState === "visible") refreshConfig();
+				};
+				document.addEventListener("visibilitychange", onVis);
+				return () => {
+					window.removeEventListener(CONFIG_EVENT, onCfg);
+					document.removeEventListener("visibilitychange", onVis);
+				};
+			}, [refreshConfig, applyConfig]);
+
+			React.useEffect(() => {
+				const onMsg = (ev) => {
+					const data = ev.data || {};
+					if (data.type === "dsh-browser-blocked" && data.reason === "cloudflare_challenge") {
+						// Only the pane whose Gate iframe posted this — avoid both split panes reacting.
+						const frameWin = iframeRef.current?.contentWindow;
+						if (frameWin && ev.source && ev.source !== frameWin) return;
+						setBlocked({ url: data.url || urlInput, reason: data.reason });
+						setError("Blocked by Cloudflare — switch the toolbar to Remote, or open externally.");
+					}
+				};
+				window.addEventListener("message", onMsg);
+				return () => window.removeEventListener("message", onMsg);
+			}, [urlInput]);
+
+			React.useEffect(() => {
+				if (engine !== "remote" || !connection) return undefined;
+				let stopped = false;
+				const tick = async () => {
+					if (stopped) return;
+					try {
+						const st = await callRpc(connection, "remote.status");
+						if (st?.connected && st.url && st.url !== "about:blank") {
+							setRemoteMeta({ url: st.url, title: st.title || "" });
+							setCurrentUrl((prev) => {
+								if (prev && (String(prev).includes("/api/browser-live/") || String(prev).includes("/api/browser-gate/"))) {
+									return prev;
+								}
+								if (prev !== st.url) {
+									setUrlInput(st.url);
+									setBlocked(null);
+								}
+								return st.url;
+							});
+						}
+						if (st?.connected) {
+							const fr = await callRpc(connection, "remote.frame");
+							if (fr?.base64) {
+								setRemoteFrame(`data:${fr.mime || "image/jpeg"};base64,${fr.base64}`);
+								if (fr.meta) setRemoteFrameMeta(fr.meta);
+							}
+						}
+					} catch {
+						/* ignore poll errors */
+					}
+				};
+				tick();
+				const id = setInterval(tick, 750);
+				return () => { stopped = true; clearInterval(id); };
+			}, [engine, connection]);
+
+			// Agent tool activity (both Gate + Remote) — so you can see stuck loops.
+			React.useEffect(() => {
+				if (!connection) return undefined;
+				let stopped = false;
+				const tick = async () => {
+					if (stopped) return;
+					try {
+						const act = await callRpc(connection, "activity.list", { limit: 12 });
+						if (Array.isArray(act?.entries)) setAgentActivity(act.entries);
+					} catch {
+						/* optional */
+					}
+				};
+				tick();
+				const id = setInterval(tick, 1200);
+				return () => { stopped = true; clearInterval(id); };
+			}, [connection]);
+
+			React.useEffect(() => {
+				// Split/hero panes must not clobber the primary Browser tab's URL/history.
+				if (!isPrimary) return;
 				viewCache.urlInput = urlInput;
 				viewCache.currentUrl = currentUrl;
 				viewCache.mode = mode;
@@ -1122,7 +1251,7 @@ window.__ModuleLoader__.load({
 					dtHeight,
 					dtWidth,
 				});
-			}, [urlInput, currentUrl, mode, history, histIdx, selections, sideOpen, devtoolsOpen, dtTab, dtDock, dtHeight, dtWidth, consoleLogs]);
+			}, [isPrimary, urlInput, currentUrl, mode, history, histIdx, selections, sideOpen, devtoolsOpen, dtTab, dtDock, dtHeight, dtWidth, consoleLogs]);
 
 			React.useEffect(() => {
 				if (!inspectEl) {
@@ -1316,6 +1445,65 @@ window.__ModuleLoader__.load({
 					writePersisted({ urlInput: "", currentUrl: "", mode: "live" });
 					return;
 				}
+
+				// Remote Chromium path (http(s) only — Live Server stays on gate)
+				const useRemote = engine === "remote"
+					&& /^https?:\/\//i.test(requested)
+					&& !requested.includes("/api/browser-live/");
+				if (useRemote) {
+					loadGenRef.current += 1;
+					setBusy(true);
+					setError("");
+					setBlocked(null);
+					setRemoteFrame(null);
+					selectModeRef.current = false;
+					setSelectMode(false);
+					setMode("live");
+					try {
+						const res = await callRpc(connection, "remote.navigate", { url: requested });
+						const pub = res?.url || requested;
+						setUrlInput(pub);
+						setCurrentUrl(pub);
+						setBlocked(null);
+						setRemoteMeta({ url: pub, title: res?.title || "" });
+						if (res?.cloudflareChallenge) {
+							// Keep screencast visible so the user can click Turnstile.
+							setError(
+								"Cloudflare check — click “Verify you are human” in the live view below. " +
+								"If it stays on Verifying… with no progress, use Open externally (toolbar won’t pass some Turnstiles).",
+							);
+						} else {
+							setError("");
+						}
+						if (push) {
+							setHistory((h) => {
+								const base = h.slice(0, histIdxRef.current + 1);
+								const next = [...base, pub];
+								setHistIdx(next.length - 1);
+								return next;
+							});
+						}
+						if (isPrimary) writePersisted({ urlInput: pub, currentUrl: pub, mode: "live" });
+					} catch (err) {
+						const msg = err?.message || String(err);
+						if (/Cloudflare|verify you are human|just a moment/i.test(msg)) {
+							// Soft CF: still show remote live view for clicking.
+							setError(
+								"Cloudflare check — click “Verify you are human” in the live view below, or open externally.",
+							);
+							setCurrentUrl(requested);
+							setUrlInput(requested);
+							setBlocked(null);
+						} else {
+							setError(msg);
+							setCurrentUrl("");
+						}
+					} finally {
+						setBusy(false);
+					}
+					return;
+				}
+
 				const frameUrl = toGateUrl(requested);
 				if (!frameUrl || !isBrowseUrl(frameUrl)) {
 					setError("Could not open that URL through the browser gate.");
@@ -1323,6 +1511,8 @@ window.__ModuleLoader__.load({
 				}
 				loadGenRef.current += 1;
 				setError("");
+				setBlocked(null);
+				setRemoteFrame(null);
 				selectModeRef.current = false;
 				setSelectMode(false);
 				setDevtoolsOpen(false);
@@ -1337,11 +1527,87 @@ window.__ModuleLoader__.load({
 				setTreeFilter("");
 				setCurrentUrl(frameUrl);
 				setUrlInput(addressBarValue(requested));
-				writePersisted({ urlInput: addressBarValue(requested), currentUrl: frameUrl, mode: "live" });
+				if (isPrimary) writePersisted({ urlInput: addressBarValue(requested), currentUrl: frameUrl, mode: "live" });
 				if (push) pushHistory(requested, histIdxRef.current, setHistory, setHistIdx);
-			}, [connection, conversation, sessionId]);
+			}, [connection, conversation, sessionId, engine, isPrimary]);
+
+			/** Map a click on the screencast <img> (object-fit:contain) → CDP viewport CSS px. */
+			const onRemotePointer = React.useCallback(async (ev) => {
+				if (!connection || engine !== "remote") return;
+				const img = remoteImgRef.current;
+				if (!img || !img.naturalWidth || !img.naturalHeight) return;
+				ev.preventDefault();
+				ev.stopPropagation();
+				const rect = img.getBoundingClientRect();
+				const scale = Math.min(rect.width / img.naturalWidth, rect.height / img.naturalHeight);
+				const dispW = img.naturalWidth * scale;
+				const dispH = img.naturalHeight * scale;
+				const offX = (rect.width - dispW) / 2;
+				const offY = (rect.height - dispH) / 2;
+				const localX = ev.clientX - rect.left - offX;
+				const localY = ev.clientY - rect.top - offY;
+				if (localX < 0 || localY < 0 || localX > dispW || localY > dispH) return;
+				const frameX = localX / scale;
+				const frameY = localY / scale;
+				const meta = remoteFrameMeta || {};
+				const deviceW = Number(meta.deviceWidth) || img.naturalWidth;
+				const deviceH = Number(meta.deviceHeight) || img.naturalHeight;
+				const x = Math.round((frameX / img.naturalWidth) * deviceW);
+				const y = Math.round((frameY / img.naturalHeight) * deviceH);
+				try {
+					await callRpc(connection, "remote.input", {
+						kind: "click",
+						x,
+						y,
+						button: ev.button === 2 ? "right" : "left",
+					});
+				} catch (err) {
+					setError(err?.message || String(err));
+				}
+			}, [connection, engine, remoteFrameMeta]);
+
+			const setEngineMode = React.useCallback(async (next, { retryUrl } = {}) => {
+				const engineNext = next === "remote" ? "remote" : "builtin";
+				setEngine(engineNext);
+				setBlocked(null);
+				setError("");
+				if (engineNext !== "remote") setRemoteFrame(null);
+				try {
+					if (connection) {
+						const cfg = await callRpc(connection, "setConfig", { engine: engineNext });
+						applyConfig(cfg);
+						try {
+							window.dispatchEvent(new CustomEvent(CONFIG_EVENT, { detail: cfg }));
+						} catch { /* ignore */ }
+					}
+				} catch (err) {
+					setError(err?.message || String(err));
+					return;
+				}
+				const target = String(retryUrl || urlInput || "").trim();
+				const normalized = normalizeUrl(target) || target;
+				if (engineNext === "remote" && target && isBrowseUrl(normalized)) {
+					setCurrentUrl("");
+					await loadLive(normalized, { push: true });
+				}
+			}, [connection, applyConfig, urlInput, loadLive]);
+
+			// Settings already Remote, but tab still showing a Gate CF block → auto-retry once via CDP.
+			const autoRemoteRetryRef = React.useRef("");
+			React.useEffect(() => {
+				if (engine !== "remote" || !blocked?.url || busy) return;
+				const url = String(blocked.url || "").trim();
+				if (!url || autoRemoteRetryRef.current === url) return;
+				autoRemoteRetryRef.current = url;
+				setBlocked(null);
+				setError("");
+				setCurrentUrl("");
+				loadLive(url, { push: false });
+			}, [engine, blocked, busy, loadLive]);
 
 			React.useEffect(() => {
+				// Only the primary Browser tab consumes open-in-browser events.
+				if (!isPrimary) return undefined;
 				const onPending = (url) => {
 					if (url) loadLive(url, { push: true });
 				};
@@ -1352,7 +1618,7 @@ window.__ModuleLoader__.load({
 					loadLive(u, { push: true });
 				}
 				return () => pendingOpen.listeners.delete(onPending);
-			}, [loadLive]);
+			}, [isPrimary, loadLive]);
 
 			React.useEffect(() => { ensureStyles(); }, []);
 
@@ -1875,8 +2141,11 @@ window.__ModuleLoader__.load({
 			};
 
 			const blankHome = isBlankHome(currentUrl);
-			const showFrame = !!currentUrl && !blankHome;
-			const hasUrl = showFrame || !!normalizeUrl(urlInput);
+			const showRemote = engine === "remote" && !!currentUrl && !blankHome && !blocked
+				&& !String(currentUrl).includes("/api/browser-live/")
+				&& !String(currentUrl).includes("/api/browser-gate/");
+			const showFrame = !!currentUrl && !blankHome && !blocked && !showRemote;
+			const hasUrl = showFrame || showRemote || !!normalizeUrl(urlInput) || !!blocked;
 
 			const onFrameLoad = () => {
 				// Address bar only — never setCurrentUrl (that remounts and kills Inspect).
@@ -1887,6 +2156,17 @@ window.__ModuleLoader__.load({
 						setUrlInput(pub);
 						writePersisted({ urlInput: pub, mode: "live" });
 					}
+				}
+				try {
+					const doc = iframeRef.current?.contentDocument;
+					const title = (doc?.title || "").trim();
+					if (/just a moment/i.test(title) || doc?.querySelector?.("[data-dsh-browser-blocked]")) {
+						const pub = fromGateUrl(href || currentUrl) || urlInput;
+						setBlocked({ url: pub, reason: "cloudflare_challenge" });
+						setError("Blocked by Cloudflare — use Settings → Browser → Remote Chromium, or open externally.");
+					}
+				} catch {
+					/* cross-origin */
 				}
 				if (selectModeRef.current) {
 					postSelectMode(true);
@@ -1973,6 +2253,26 @@ window.__ModuleLoader__.load({
 					),
 					React.createElement("div", { className: "db_tools" },
 						React.createElement("div", {
+							className: "db_split db_engineToggle",
+							role: "group",
+							"aria-label": "Browser engine",
+						},
+							React.createElement("button", {
+								type: "button",
+								className: "db_btn" + (engine === "builtin" ? " db_btnActive" : ""),
+								disabled: busy,
+								onClick: () => setEngineMode("builtin"),
+								title: "Built-in gate (Live Server / local Inspect)",
+							}, "Gate"),
+							React.createElement("button", {
+								type: "button",
+								className: "db_btn" + (engine === "remote" ? " db_btnActive" : ""),
+								disabled: busy,
+								onClick: () => setEngineMode("remote", { retryUrl: urlInput || blocked?.url }),
+								title: "Remote Chromium CDP (live screencast; better for Cloudflare)",
+							}, "Remote"),
+						),
+						React.createElement("div", {
 							className: "db_split",
 							role: "group",
 							"aria-label": "Inspect and selections",
@@ -1980,11 +2280,13 @@ window.__ModuleLoader__.load({
 							React.createElement("button", {
 								type: "button",
 								className: "db_btn db_btnIcon" + (selectMode ? " db_btnActive" : ""),
-								disabled: busy || !hasUrl,
+								disabled: busy || !hasUrl || engine === "remote",
 								onClick: toggleInspect,
-								title: selectMode
-									? "Stop inspecting"
-									: "Inspect element (opens selections panel)",
+								title: engine === "remote"
+									? "Inspect is for Gate / Live Server pages"
+									: (selectMode
+										? "Stop inspecting"
+										: "Inspect element (opens selections panel)"),
 							}, React.createElement(IconInspect)),
 							React.createElement("button", {
 								type: "button",
@@ -2005,40 +2307,118 @@ window.__ModuleLoader__.load({
 						React.createElement("button", {
 							type: "button",
 							className: "db_btn db_btnIcon" + (devtoolsOpen ? " db_btnActive" : ""),
-							disabled: busy || !hasUrl,
+							disabled: busy || !hasUrl || engine === "remote",
 							onClick: toggleDevtools,
-							title: "DevTools",
+							title: engine === "remote" ? "DevTools panel is for Gate pages" : "DevTools",
 						}, React.createElement(IconDevtools)),
 					),
 				),
 				error && React.createElement("div", { className: "db_err" }, error),
+				engine === "remote" && !error && React.createElement("div", {
+					className: "db_err",
+					style: { color: "var(--dsw-alias-label-tertiary)" },
+				}, "Remote Chromium — live screencast from CDP (Settings → Browser for URL)"),
+				engine !== "remote" && agentActivity.length > 0 && React.createElement("div", {
+					className: "db_err",
+					style: { color: "var(--dsw-alias-label-tertiary)", fontFamily: "ui-monospace,monospace", maxHeight: 88, overflow: "auto" },
+				},
+					React.createElement("div", { style: { fontWeight: 600, marginBottom: 2 } }, "Agent browser activity"),
+					agentActivity.slice().reverse().slice(0, 6).map((e, i) =>
+						React.createElement("div", {
+							key: `${e.at}-g-${i}`,
+							style: e.ok ? undefined : { color: "var(--dsw-alias-state-error-primary)" },
+						}, `${e.ok ? "✓" : "✗"} ${e.action}${e.detail ? ` ${e.detail}` : ""}${e.error ? ` · ${e.error}` : ""}`),
+					),
+				),
 				React.createElement("div", {
 					className: "db_mid" + (devtoolsOpen && dtDock === "right" ? " db_midDockRight" : ""),
 					ref: midRef,
 				},
 					React.createElement("div", { className: "db_body" + (sideOpen ? "" : " db_bodySideCollapsed") },
 						React.createElement("div", { className: "db_frameWrap" },
-							showFrame
-								? React.createElement("iframe", {
-									key: `live:${currentUrl}`,
-									ref: iframeRef,
-									className: "db_frame",
-									title: "Browser",
-									onLoad: onFrameLoad,
-									src: currentUrl,
-									referrerPolicy: "no-referrer-when-downgrade",
-								})
-								: React.createElement("div", { className: "db_empty" },
-									busy && normalizeUrl(urlInput)
-										? `Loading ${fromGateUrl(urlInput) || urlInput}…`
-										: React.createElement(React.Fragment, null,
-											React.createElement("div", { className: "db_emptyTitle" }, "No page loaded"),
-											React.createElement("div", { className: "db_emptyHint" },
-												"Type a URL above and press Go. You can also open a published container port from the Containers tab."),
-											React.createElement("div", { className: "db_emptyHint" },
-												"LAN and localhost go through the browser gate, so mixed content works on HTTPS."),
+							blocked
+								? React.createElement("div", { className: "db_blocked" },
+									React.createElement("div", { className: "db_blockedTitle" }, "Blocked by Cloudflare"),
+									React.createElement("div", null,
+										"The built-in Gate cannot pass this site's bot check. Use the Remote toggle in the toolbar (CDP Chromium), or open externally."),
+									React.createElement("div", { className: "db_blockedUrl" }, blocked.url || urlInput),
+									React.createElement("div", { className: "db_blockedActions" },
+										React.createElement("button", {
+											type: "button",
+											className: "db_btn db_btnPrimary",
+											disabled: busy,
+											onClick: () => setEngineMode("remote", { retryUrl: blocked.url || urlInput }),
+										}, "Retry with Remote"),
+										React.createElement("button", {
+											type: "button",
+											className: "db_btn",
+											onClick: () => openUrlExternally(blocked.url || urlInput),
+										}, "Open externally"),
+									),
+								)
+								: showRemote
+									? React.createElement(React.Fragment, null,
+										React.createElement("div", { className: "db_remoteBadge" },
+											remoteMeta.title ? `Remote · ${remoteMeta.title}` : "Remote Chromium"),
+										remoteFrame
+											? React.createElement(React.Fragment, null,
+												React.createElement("div", { className: "db_remoteFrameHint" },
+													"Click the live view to control remote Chrome"),
+												React.createElement("img", {
+													ref: remoteImgRef,
+													className: "db_remoteFrame",
+													src: remoteFrame,
+													alt: remoteMeta.title || "Remote browser",
+													draggable: false,
+													onContextMenu: (e) => e.preventDefault(),
+													onPointerDown: onRemotePointer,
+												}),
+											)
+											: React.createElement("div", { className: "db_empty" },
+												busy ? `Loading ${urlInput}…` : "Waiting for remote screencast…"),
+										React.createElement("div", { className: "db_agentActivity", title: "Recent agent browser tools (does not block clicks)" },
+											React.createElement("div", { className: "db_agentActivityHead" }, "Agent browser activity"),
+											agentActivity.length === 0
+												? React.createElement("div", { className: "db_agentActivityEmpty" },
+													"Waiting for browser_* tools… (this is where stuck loops show up)")
+												: agentActivity.slice().reverse().map((e, i) => {
+													const ago = typeof e.agoMs === "number"
+														? (e.agoMs < 5000 ? "now" : `${Math.round(e.agoMs / 1000)}s`)
+														: "";
+													const err = e.error ? ` · ${e.error}` : "";
+													return React.createElement("div", {
+														key: `${e.at}-${i}`,
+														className: "db_agentActivityRow",
+														"data-ok": e.ok ? "true" : "false",
+													}, `${ago} ${e.ok ? "✓" : "✗"} ${e.action}${e.detail ? ` ${e.detail}` : ""}${err}`);
+												}),
 										),
-								),
+									)
+									: showFrame
+										? React.createElement("iframe", {
+											key: `live:${currentUrl}`,
+											ref: iframeRef,
+											className: "db_frame",
+											title: "Browser",
+											onLoad: onFrameLoad,
+											src: currentUrl,
+											referrerPolicy: "no-referrer-when-downgrade",
+										})
+										: React.createElement("div", { className: "db_empty" },
+											busy && normalizeUrl(urlInput)
+												? `Loading ${fromGateUrl(urlInput) || urlInput}…`
+												: React.createElement(React.Fragment, null,
+													React.createElement("div", { className: "db_emptyTitle" }, "No page loaded"),
+													React.createElement("div", { className: "db_emptyHint" },
+														engine === "remote"
+															? "Remote Chromium is enabled. Type a URL and press Go — the agent can also drive this session."
+															: "Type a URL above and press Go. You can also open a published container port from the Containers tab."),
+													React.createElement("div", { className: "db_emptyHint" },
+														engine === "remote"
+															? "Live view shows a screencast of the remote Chrome container."
+															: "LAN and localhost go through the browser gate, so mixed content works on HTTPS."),
+												),
+										),
 						),
 						sideOpen && React.createElement("div", { className: "db_side" },
 							React.createElement("div", { className: "db_sideTitle" },
@@ -2511,6 +2891,110 @@ window.__ModuleLoader__.load({
 			};
 		}
 
+		function BrowserSettings({ connection }) {
+			const [engine, setEngine] = React.useState("builtin");
+			const [cdpHttp, setCdpHttp] = React.useState("http://192.168.0.130:9222");
+			const [msg, setMsg] = React.useState("");
+			const [busy, setBusy] = React.useState(false);
+
+			const reload = React.useCallback(() => {
+				if (!connection) return;
+				callRpc(connection, "getConfig").then((cfg) => {
+					setEngine(cfg.engine === "remote" ? "remote" : "builtin");
+					setCdpHttp(cfg.cdpHttp || "http://192.168.0.130:9222");
+				}).catch((err) => setMsg(err.message));
+			}, [connection]);
+
+			React.useEffect(() => { reload(); }, [reload]);
+
+			const save = async () => {
+				setBusy(true);
+				setMsg("");
+				try {
+					const cfg = await callRpc(connection, "setConfig", { engine, cdpHttp });
+					setEngine(cfg.engine);
+					setCdpHttp(cfg.cdpHttp);
+					try {
+						window.dispatchEvent(new CustomEvent(CONFIG_EVENT, { detail: cfg }));
+					} catch { /* ignore */ }
+					setMsg(cfg.engine === "remote"
+						? "Saved — Remote Chromium active. Use the Gate/Remote toggle on the Browser tab; press Go (or Retry with Remote) to load via CDP."
+						: "Saved — built-in gate active.");
+				} catch (err) {
+					setMsg(err.message);
+				} finally {
+					setBusy(false);
+				}
+			};
+
+			const test = async () => {
+				setBusy(true);
+				setMsg("");
+				try {
+					const res = await callRpc(connection, "remote.test", { cdpHttp });
+					setMsg(`OK — ${res.browser || "Chromium"} (protocol ${res.protocolVersion || "?"})`);
+				} catch (err) {
+					setMsg(`Test failed: ${err.message}. Start: cd ~/Containers/dsh-browser-chrome && docker compose up -d`);
+				} finally {
+					setBusy(false);
+				}
+			};
+
+			return React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 16, maxWidth: 720 } },
+				React.createElement("div", null,
+					React.createElement("div", { style: { fontSize: 13, fontWeight: 600, marginBottom: 6 } }, "Browser engine"),
+					React.createElement("p", { style: { margin: "0 0 10px", fontSize: 12, color: "var(--dsw-alias-label-tertiary)", lineHeight: 1.45 } },
+						"Built-in gate is same-origin Live/Inspect (good for local HTML). Remote Chromium drives a real Chrome over CDP — better for Cloudflare and agent browsing. Live view shows a screencast of that session."),
+					React.createElement("label", { style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 8, fontSize: 13 } },
+						React.createElement("input", {
+							type: "radio",
+							name: "dsh-browser-engine",
+							checked: engine === "builtin",
+							onChange: () => setEngine("builtin"),
+						}),
+						"Built-in gate",
+					),
+					React.createElement("label", { style: { display: "flex", gap: 8, alignItems: "center", fontSize: 13 } },
+						React.createElement("input", {
+							type: "radio",
+							name: "dsh-browser-engine",
+							checked: engine === "remote",
+							onChange: () => setEngine("remote"),
+						}),
+						"Remote Chromium (CDP)",
+					),
+				),
+				React.createElement("div", null,
+					React.createElement("div", { style: { fontSize: 13, fontWeight: 600, marginBottom: 6 } }, "CDP HTTP base"),
+					React.createElement("input", {
+						value: cdpHttp,
+						onChange: (e) => setCdpHttp(e.target.value),
+						placeholder: "http://192.168.0.130:9222",
+						style: {
+							height: 32, borderRadius: 8, border: "1px solid var(--dsw-alias-border-l2)",
+							padding: "0 10px", width: "100%", boxSizing: "border-box",
+							fontFamily: "var(--ds-font-family-code)", fontSize: 12,
+						},
+					}),
+					React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 10 } },
+						React.createElement("button", {
+							type: "button",
+							disabled: busy,
+							onClick: save,
+							style: { height: 32, borderRadius: 8, padding: "0 12px", cursor: "pointer" },
+						}, "Save"),
+						React.createElement("button", {
+							type: "button",
+							disabled: busy,
+							onClick: test,
+							style: { height: 32, borderRadius: 8, padding: "0 12px", cursor: "pointer" },
+						}, "Test"),
+					),
+				),
+				msg && React.createElement("div", { style: { fontSize: 12, whiteSpace: "pre-wrap" } }, msg),
+			);
+		}
+
 		function apply(ctx) {
 			const connection = ctx.get("connection");
 			const conversation = ctx.get("conversation");
@@ -2674,22 +3158,35 @@ window.__ModuleLoader__.load({
 			ctx.effect(() => ctx.slots.inject("conversation.view", () => ctx.slots.register({
 				name: "conversation.view",
 				id: "browser",
-				order: 9,
+				order: 10,
 				label: () => "Browser",
-				inject: (sessionId) => ({ connection, conversation, sessionId }),
+				inject: (sessionId) => ({ connection, conversation, sessionId, surface: "main" }),
 			}, BrowserView)), `${PLUGIN}: tab`);
 
 			ctx.effect(() => {
 				ensureHeroRegistry();
-				return window.__dshHeroToolRegistry.register("browser", () =>
+				return window.__dshHeroToolRegistry.register("browser", (opts = {}) =>
 					React.createElement(BrowserView, {
 						connection,
 						conversation,
-						sessionId: resolveCurrentSessionId(conversation),
+						sessionId: opts.sessionId || resolveCurrentSessionId(conversation),
+						surface: opts.surface === "split" ? "split" : "hero",
 						useInput: () => "",
 						inputActions: null,
 					}));
 			}, `${PLUGIN}: hero`);
+
+			try {
+				ctx.slots.inject("settings.section", () => ctx.slots.register({
+					name: "settings.section",
+					id: "browser",
+					order: 185,
+					label: () => "Browser",
+					inject: () => ({ connection }),
+				}, BrowserSettings), `${PLUGIN}: settings`);
+			} catch (err) {
+				console.warn(`[${PLUGIN}] settings inject failed`, err);
+			}
 		}
 
 		return { apply, inject };

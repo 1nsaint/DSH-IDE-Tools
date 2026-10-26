@@ -31,6 +31,7 @@ window.__ModuleLoader__.load({
 			try {
 				res = await fetch("/api/files/" + endpoint, {
 					method: "POST",
+					credentials: "same-origin",
 					headers: { "content-type": "application/json" },
 					body: JSON.stringify({
 						type: "client-request",

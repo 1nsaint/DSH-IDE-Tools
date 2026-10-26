@@ -1,13 +1,13 @@
 // dsh-files — standalone filesystem Remote for sidebar + Code tab.
 // Gateway: POST /api/files/<method>
-// Methods: root | list | search | read | write | remove | rename | stat
+// Methods: root | list | search | read | write | remove | rename | stat | download
 //
 // Independent of dsh-filelens (UI). Same containment rules:
 //   - guard fail-closed when root is supplied
 //   - write / remove REQUIRE an explicit root
 // Remote dssh:// paths are handled via dsh-ssh-workspace SFTP bridge.
 import path from "node:path";
-import { cp, rename, rm } from "node:fs/promises";
+import { cp, readFile, rename, rm } from "node:fs/promises";
 import { TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 import * as ssh from "./ssh-delegate.js";
 
@@ -15,11 +15,13 @@ export class FilesService extends TypertRemoteService {
 	constructor(ctx) {
 		super(ctx, "files");
 		this.MAX_PREVIEW = 256 * 1024;
+		/** Browser download via base64 — keep under a sane in-memory budget. */
+		this.MAX_DOWNLOAD = 32 * 1024 * 1024;
 		this.activeSearches = new Map();
 		this.fs = ctx.get("fs");
 		this.sandboxPolicy = ctx.get("sandboxPolicy");
 
-		const invocations = ["root", "list", "stat", "search", "read", "write", "mkdir", "remove", "rename", "move", "copy"].map((method) => ({
+		const invocations = ["root", "list", "stat", "search", "read", "write", "mkdir", "remove", "rename", "move", "copy", "download"].map((method) => ({
 			id: "dsh-files#files/" + method,
 			service: "files",
 			namespace: "files",
@@ -305,6 +307,58 @@ export class FilesService extends TypertRemoteService {
 			}
 			const text = await this.fs.readText(target);
 			return { ok: true, text, truncated: false, size, version: info.version };
+		} catch (err) {
+			return this.fail(err);
+		}
+	}
+
+	/**
+	 * Binary-safe file download for the sidebar / Code tab.
+	 * Returns base64 so the browser can synthesize a Blob (text or binary).
+	 */
+	async download(args) {
+		const a = args && typeof args === "object" ? args : {};
+		if (typeof a.path !== "string" || !a.path) {
+			return { ok: false, kind: "error", message: "missing path" };
+		}
+		const maxBytes = typeof a.maxBytes === "number" && a.maxBytes > 0
+			? Math.min(a.maxBytes, this.MAX_DOWNLOAD)
+			: this.MAX_DOWNLOAD;
+		if (ssh.pathIsRemote(a.path)) {
+			try {
+				return await ssh.remoteDownload(a, maxBytes);
+			} catch (err) {
+				return this.fail(err);
+			}
+		}
+		const root = typeof a.root === "string" && a.root ? a.root : null;
+		try {
+			const target = await this.fs.resolve(a.path);
+			await this.guard(root, target);
+			const info = await this.fs.stat(target);
+			if (!info) return { ok: false, kind: "missing", message: "file not found" };
+			if (info.type !== "file") return { ok: false, kind: "not-file", message: "not a regular file" };
+			const size = typeof info.size === "number" ? info.size : null;
+			if (size !== null && size > maxBytes) {
+				const err = new Error(`file too large to download (${size} bytes; max ${maxBytes})`);
+				err.code = "FS_TOO_LARGE";
+				throw err;
+			}
+			const abs = this.fs.processPath(target);
+			const buf = await readFile(abs);
+			if (buf.length > maxBytes) {
+				const err = new Error(`file too large to download (${buf.length} bytes; max ${maxBytes})`);
+				err.code = "FS_TOO_LARGE";
+				throw err;
+			}
+			const name = path.basename(a.path) || "download";
+			return {
+				ok: true,
+				name,
+				path: a.path,
+				size: buf.length,
+				base64: buf.toString("base64"),
+			};
 		} catch (err) {
 			return this.fail(err);
 		}

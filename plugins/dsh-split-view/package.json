@@ -1,6 +1,6 @@
 {
   "name": "dsh-split-view",
-  "version": "0.2.12",
+  "version": "0.2.15",
   "description": "Split workbench — pass surface=split so Terminal gets its own PTY.",
   "type": "module",
   "main": "lib/index.js",

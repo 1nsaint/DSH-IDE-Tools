@@ -67,6 +67,21 @@ export async function remoteRead(args, maxPreview) {
 	return { ok: true, text: data.content, truncated: false, size: data.size, version: null };
 }
 
+export async function remoteDownload(args, maxBytes) {
+	const resolved = await resolveDsshPath(args.path);
+	if (!resolved) throw new Error("invalid dssh path");
+	const data = await remoteReadFileBytes(resolved.hostId, resolved.remotePath, maxBytes);
+	const buf = Buffer.isBuffer(data.content) ? data.content : Buffer.from(data.content);
+	const name = path.posix.basename(resolved.remotePath) || path.basename(args.path) || "download";
+	return {
+		ok: true,
+		name,
+		path: args.path,
+		size: buf.length,
+		base64: buf.toString("base64"),
+	};
+}
+
 export async function remoteWrite(args) {
 	const resolved = await resolveDsshPath(args.path);
 	if (!resolved) throw new Error("invalid dssh path");

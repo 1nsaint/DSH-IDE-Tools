@@ -857,7 +857,10 @@ html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1
 			try {
 				res = await fetch("/api/files/" + endpoint, {
 					method: "POST",
+					credentials: "same-origin",
 					headers: { "content-type": "application/json" },
+					// Typert 0.2 descriptor param is named `args`; value must be `{ args: <fields> }`
+					// (double wrap). Flat `{ path, root }` → gateway/arguments-invalid.
 					body: JSON.stringify({
 						type: "client-request",
 						rpcId,
@@ -893,6 +896,8 @@ html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1
 		const FILES_CHANGED_EVENT = "dsh-sf-files-changed";
 		const CLIPBOARD_KEY = "dsh-sf-clipboard/v1";
 		const CLIPBOARD_EVENT = "dsh-sf-clipboard";
+		/** In-memory drag payload — Chromium often hides custom MIME types during dragover. */
+		let activeSidebarDrag = null;
 
 		function getFileClipboard() {
 			try {
@@ -923,9 +928,12 @@ html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1
 		}
 
 		function dragHasSidebarFile(dt) {
+			if (activeSidebarDrag?.path) return true;
 			if (!dt || !dt.types) return false;
 			const types = [...dt.types];
-			return types.includes(DRAG_MIME) || types.includes("application/x-dsh-sidebar-file");
+			if (types.includes(DRAG_MIME) || types.includes("application/x-dsh-sidebar-file")) return true;
+			// Fallback: we also put JSON / absolute paths on text/plain
+			return types.includes("text/plain");
 		}
 
 		function clearDropHoverHighlights() {
@@ -939,6 +947,9 @@ html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1
 		}
 
 		function readDragPayload(ev) {
+			if (activeSidebarDrag?.path && activeSidebarDrag?.root) {
+				return { ...activeSidebarDrag };
+			}
 			let raw;
 			try {
 				raw = ev.dataTransfer.getData(DRAG_MIME);
@@ -947,7 +958,7 @@ html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1
 			}
 			if (!raw) {
 				try {
-					// legacy: JSON was stuffed into text/plain
+					// JSON also on text/plain — custom MIME is unreliable across drag phases
 					raw = ev.dataTransfer.getData("text/plain");
 				} catch {
 					return null;
@@ -957,7 +968,7 @@ html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1
 			try {
 				const payload = JSON.parse(raw);
 				if (payload && typeof payload === "object" && payload.__dshFile && payload.path && payload.root) return payload;
-			} catch { /* not ours */ }
+			} catch { /* plain path — not enough for move without root */ }
 			return null;
 		}
 
@@ -1290,16 +1301,17 @@ html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1
 				return () => document.removeEventListener("pointerdown", onPointerDown, true);
 			}, [renameAt, cancelRename]);
 
-			// Clear × → ? confirm if user clicks elsewhere or waits too long.
+			// Clear two-step delete confirm if user clicks elsewhere or waits too long.
 			React.useEffect(() => {
 				if (!pendingDelete) return;
 				const onPointerDown = (e) => {
 					const t = e.target;
 					if (!(t instanceof Element)) return;
-					if (t.closest(".dsh-sf-rowDel.confirm")) return;
+					// Old inline × used .dsh-sf-rowDel; current UI uses the ⋯ portal menu.
+					if (t.closest(".dsh-sf-rowDel.confirm, .dsh-sf-rowMenu")) return;
 					setPendingDelete(null);
 				};
-				const timer = window.setTimeout(() => setPendingDelete(null), 4000);
+				const timer = window.setTimeout(() => setPendingDelete(null), 8000);
 				document.addEventListener("pointerdown", onPointerDown, true);
 				return () => {
 					window.clearTimeout(timer);
@@ -1511,6 +1523,34 @@ html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1
 				});
 				closeRowMenu();
 				setCreateErr(null);
+			};
+
+			const downloadEntry = async (entry) => {
+				if (!entry?.path || entry.type === "directory") return;
+				closeRowMenu();
+				setCreateErr(null);
+				setCreateWarn(null);
+				try {
+					const res = await callRemote("file.download", { path: entry.path, root });
+					if (!res?.ok || typeof res.base64 !== "string") {
+						setCreateErr((res && (res.message || res.error)) || "download failed");
+						return;
+					}
+					const bin = atob(res.base64);
+					const bytes = new Uint8Array(bin.length);
+					for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+					const blob = new Blob([bytes], { type: "application/octet-stream" });
+					const url = URL.createObjectURL(blob);
+					const anchor = document.createElement("a");
+					anchor.href = url;
+					anchor.download = res.name || entry.name || "download";
+					document.body.appendChild(anchor);
+					anchor.click();
+					anchor.remove();
+					URL.revokeObjectURL(url);
+				} catch (err) {
+					setCreateErr(err && err.message || String(err));
+				}
 			};
 
 			const resolvePasteName = async (destDir, originalName) => {
@@ -1785,7 +1825,7 @@ html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1
 					className: "dsh-sf-rowMore" + (menuOpen ? " open" : ""),
 					role: "button",
 					tabIndex: 0,
-					title: "File actions (Copy, Paste, Rename, Delete)",
+					title: "File actions (Copy, Paste, Download, Rename, Delete)",
 					"aria-label": "File actions for " + entry.name,
 					"aria-expanded": menuOpen ? "true" : "false",
 					"aria-haspopup": "menu",
@@ -1956,17 +1996,20 @@ html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1
 							ev.stopPropagation();
 							setDraggingPath(e.path);
 							ev.dataTransfer.effectAllowed = "copyMove";
+							const obj = {
+								__dshFile: true, path: e.path, root, name: e.name, isDir,
+							};
+							activeSidebarDrag = obj;
 							try {
-								const payload = JSON.stringify({
-									__dshFile: true, path: e.path, root, name: e.name, isDir,
-								});
+								const payload = JSON.stringify(obj);
 								ev.dataTransfer.setData(DRAG_MIME, payload);
-								// Plain path so chat / other text drops get a usable reference
-								ev.dataTransfer.setData("text/plain", e.path);
+								// Keep JSON on text/plain so drop still works if custom MIME is stripped
+								ev.dataTransfer.setData("text/plain", payload);
 							} catch { /* ignore */ }
 						},
 						onDragEnd: (ev) => {
 							ev.stopPropagation();
+							activeSidebarDrag = null;
 							setDraggingPath(null);
 							setDragOverPath(null);
 							clearDropHoverHighlights();
@@ -2073,15 +2116,18 @@ html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1
 						},
 							menuItem("Copy", () => copyEntry(menuEntry)),
 							isDir ? menuItem("Paste", () => pasteInto(menuEntry.path), null, !clip) : null,
+							!isDir ? menuItem("Download", () => { downloadEntry(menuEntry); }) : null,
 							menuItem("Rename", () => { closeRowMenu(); beginRename(menuEntry); }),
 							menuItem(confirming ? "Confirm delete" : "Delete", () => {
 								if (confirming) {
+									const entry = menuEntry;
 									closeRowMenu();
-									deleteEntry(menuEntry);
+									setPendingDelete(null);
+									deleteEntry(entry);
 									return;
 								}
 								setPendingDelete(menuEntry.path);
-							}, "danger"),
+							}, "danger" + (confirming ? " confirm" : "")),
 						);
 					})(), document.body)
 					: null,
@@ -2216,6 +2262,7 @@ html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1
 				const destDir = row.dataset.dshSfCwd;
 				if (!destDir) return;
 				ev.preventDefault();
+				ev.stopPropagation();
 				const payload = readDragPayload(ev);
 				if (!payload || payload.path === destDir) return;
 				try {
@@ -2225,15 +2272,26 @@ html[data-dsh-sf-view="files"] [class*="_groupSection"][data-dsh-sf-ungrouped="1
 						destDir,
 						destRoot: destDir,
 					});
+					activeSidebarDrag = null;
 					if (res && res.ok) {
 						window.dispatchEvent(new CustomEvent(MOVE_EVENT, {
 							detail: { srcPath: payload.path, srcRoot: payload.root, destDir, destRoot: destDir },
 						}));
+						window.dispatchEvent(new CustomEvent(FILES_CHANGED_EVENT, {
+							detail: { root: payload.root, path: payload.path },
+						}));
+						window.dispatchEvent(new CustomEvent(FILES_CHANGED_EVENT, {
+							detail: { root: destDir, path: destDir },
+						}));
 					} else {
+						const msg = (res && (res.message || res.error)) || "move failed";
 						console.warn("[dsh-sidebar-files] move failed", res);
+						window.alert(`Could not move into workspace:\n${msg}`);
 					}
 				} catch (err) {
+					activeSidebarDrag = null;
 					console.warn("[dsh-sidebar-files] move failed", err);
+					window.alert(`Could not move into workspace:\n${err?.message || err}`);
 				}
 			});
 		}

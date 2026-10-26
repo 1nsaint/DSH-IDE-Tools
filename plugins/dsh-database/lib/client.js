@@ -1303,7 +1303,7 @@ window.__ModuleLoader__.load({
 			ctx.effect(() => ctx.slots.inject("conversation.view", () => ctx.slots.register({
 				name: "conversation.view",
 				id: "db",
-				order: 10,
+				order: 11,
 				label: () => "Database",
 				inject: () => ({ connection }),
 			}, DatabaseView)), `${PLUGIN}: tab`);

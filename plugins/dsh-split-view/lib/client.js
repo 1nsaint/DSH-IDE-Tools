@@ -398,29 +398,116 @@ window.__ModuleLoader__.load({
   box-sizing:border-box;
   z-index:5;
 }
+/* Only the composer shell — NOT nested module roots (bOPqQW_/JObwrW_/uV2eYG_/hSW_).
+   Those also contain "_root" and were forced to width:100%, so dock pills stacked on top of each other. */
 [class*="_root"][data-dsh-split="1"] [class*="_composerSeat"] [class*="_composerStack"],
 [class*="_root"][data-dsh-split="1"] [class*="_composerSeat"] [data-composer-card],
-[class*="_root"][data-dsh-split="1"] [class*="_composerSeat"] [class*="_root"],
-[class*="_root"][data-dsh-split="1"] [class*="_composerSeat"] [class*="_card"]{
+[class*="_root"][data-dsh-split="1"] [class*="_composerSeat"] [class*="_card"]:not([class*="hSW_"]):not([class*="OPqQW_"]):not([class*="ObwrW_"]):not([class*="V2eYG_"]){
   max-width:100%!important;
   width:100%!important;
   box-sizing:border-box;
 }
+/* Input dock metrics (tok/s, cache, context %) — keep intrinsic width + gap */
+[class*="_root"][data-dsh-split="1"] [class*="uV2eYG_dock"],
+[class*="_root"][data-dsh-split="1"] [class*="V2eYG_dock"]{
+  display:flex!important;
+  flex-direction:row!important;
+  flex-wrap:nowrap!important;
+  align-items:center!important;
+  gap:8px!important;
+  min-width:0!important;
+  width:100%!important;
+  box-sizing:border-box!important;
+}
+/* Always-on dock (dsh-composer-dock) owns the metrics row — do not resurrect
+   stock StatsPills / ContextMeter with display:inline-flex (that doubles the bar). */
+[class*="_root"][data-dsh-split="1"] [class*="bOPqQW_root"][data-dsh-always-stats],
+[class*="_root"][data-dsh-split="1"] [class*="OPqQW_root"][data-dsh-always-stats],
+[class*="_root"][data-dsh-split="1"] .dcd_root,
+[class*="_root"][data-dsh-split="1"] [data-dsh-always-stats]{
+  position:static!important;
+  width:auto!important;
+  max-width:100%!important;
+  min-width:0!important;
+  flex:0 1 auto!important;
+  display:flex!important;
+  gap:8px!important;
+}
+[class*="_root"][data-dsh-split="1"] .uV2eYG_dock [class*="bOPqQW_root"]:not([data-dsh-always-stats]),
+[class*="_root"][data-dsh-split="1"] .uV2eYG_dock [class*="OPqQW_root"]:not([data-dsh-always-stats]),
+[class*="_root"][data-dsh-split="1"] .uV2eYG_dock > [class*="JObwrW_root"],
+[class*="_root"][data-dsh-split="1"] .uV2eYG_dock > [class*="ObwrW_root"]{
+  display:none!important;
+}
+[class*="_root"][data-dsh-split="1"] [class*="bOPqQW_pill"],
+[class*="_root"][data-dsh-split="1"] [class*="OPqQW_pill"],
+[class*="_root"][data-dsh-split="1"] [class*="JObwrW_trigger"],
+[class*="_root"][data-dsh-split="1"] [class*="ObwrW_trigger"]{
+  width:auto!important;
+  min-width:0!important;
+  max-width:100%!important;
+  flex:0 1 auto!important;
+}
+/* To-dos strip (lXshSW_*): stock width calc subtracts composer insets again inside an
+   already-narrow split seat, so "To-dos" wraps on the hyphen. Keep one line. */
+[class*="_root"][data-dsh-split="1"] [class*="hSW_root"]{
+  width:100%!important;
+  max-width:100%!important;
+  margin-left:0!important;
+  margin-right:0!important;
+  box-sizing:border-box!important;
+}
+[class*="_root"][data-dsh-split="1"] [class*="hSW_body"]{
+  min-width:0!important;
+}
+[class*="_root"][data-dsh-split="1"] [class*="hSW_header"]{
+  display:flex!important;
+  flex-direction:row!important;
+  flex-wrap:nowrap!important;
+  align-items:center!important;
+  gap:10px!important;
+  min-width:0!important;
+  width:100%!important;
+  /* must NOT inherit session-chrome grid (selector used to match *_header) */
+  grid-template-columns:none!important;
+  grid-template-rows:none!important;
+}
+[class*="_root"][data-dsh-split="1"] [class*="hSW_lead"],
+[class*="_root"][data-dsh-split="1"] [class*="hSW_chevron"]{
+  flex:0 0 auto!important;
+  width:auto!important;
+  max-width:none!important;
+  min-width:0!important;
+  display:grid!important;
+  place-items:center!important;
+}
+[class*="_root"][data-dsh-split="1"] [class*="hSW_title"]{
+  flex:0 0 auto!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+}
+[class*="_root"][data-dsh-split="1"] [class*="hSW_progress"]{
+  flex:1 1 auto!important;
+  min-width:0!important;
+  white-space:nowrap!important;
+  text-overflow:ellipsis!important;
+  overflow:hidden!important;
+}
 /* Session + hero headers share the same split chrome (0.1.5 session chrome is a <header> child of root) */
 [class*="_root"][data-dsh-split="1"] > header:not([class*="_headerHidden"]),
-[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]){
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]):not([class*="hSW_header"]){
   display:grid!important;
   grid-template-columns:minmax(0,var(--dsh-split-left,50%)) 11px minmax(0,1fr);
   grid-template-rows:auto auto;
   align-items:end;
   overflow:hidden;
 }
-[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) [class*="_titleRow"]{
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]):not([class*="hSW_header"]) [class*="_titleRow"]{
   grid-column:1 / -1;
   grid-row:1;
   align-self:center;
 }
-[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) [class*="_tabs"]{
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]):not([class*="hSW_header"]) [class*="_tabs"]{
   grid-column:1;
   grid-row:2;
   max-width:100%!important;
@@ -436,9 +523,9 @@ window.__ModuleLoader__.load({
   flex-wrap:nowrap!important;
   scrollbar-width:none;
 }
-[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) [class*="_tabs"]::-webkit-scrollbar{display:none;height:0}
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]):not([class*="hSW_header"]) [class*="_tabs"]::-webkit-scrollbar{display:none;height:0}
 /* Dual mode: icon-only on the stock (left) tab strip — override session-tabs 104px desktop widths */
-[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) [class*="_tabs"] [class*="_tab"].dsh-tab-enhanced{
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]):not([class*="hSW_header"]) [class*="_tabs"] [class*="_tab"].dsh-tab-enhanced{
   flex:0 0 auto!important;
   gap:0!important;
   width:40px!important;
@@ -447,15 +534,15 @@ window.__ModuleLoader__.load({
   justify-content:center!important;
   padding:4px 0 11px!important;
 }
-[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) [class*="_tabs"] [class*="_tab"] .dsh-tab-label{display:none!important}
-[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) [class*="_tabs"] [class*="_tab"] .dsh-tab-icon svg{width:16px!important;height:16px!important;opacity:1}
-[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) .dsplit_headerGap{
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]):not([class*="hSW_header"]) [class*="_tabs"] [class*="_tab"] .dsh-tab-label{display:none!important}
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]):not([class*="hSW_header"]) [class*="_tabs"] [class*="_tab"] .dsh-tab-icon svg{width:16px!important;height:16px!important;opacity:1}
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]):not([class*="hSW_header"]) .dsplit_headerGap{
   grid-column:2;
   grid-row:2;
   align-self:stretch;
   min-width:0;
 }
-[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) .dsplit_rightTabsAnchor{
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]):not([class*="hSW_header"]) .dsplit_rightTabsAnchor{
   grid-column:3;
   grid-row:2;
   position:static;
@@ -468,7 +555,7 @@ window.__ModuleLoader__.load({
   pointer-events:auto;
   z-index:2;
 }
-[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) .dsplit_rightTabsAnchor>*{width:100%;min-width:0;max-width:100%}
+[class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]):not([class*="hSW_header"]) .dsplit_rightTabsAnchor>*{width:100%;min-width:0;max-width:100%}
 
 .dsplit_rightFrame{display:flex;flex-direction:column;height:100%;min-height:0;min-width:0;overflow:hidden}
 .dsplit_rightTabsRow{
@@ -555,10 +642,10 @@ window.__ModuleLoader__.load({
   .fex-ibtn.dsplit-toggle{display:none!important}
 }
 @media (max-width:900px){
-  [class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]){
+  [class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]):not([class*="hSW_header"]){
     display:flex!important;flex-direction:column;overflow:visible;
   }
-  [class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]) [class*="_tabs"]{max-width:100%;width:100%}
+  [class*="_root"][data-dsh-split="1"] [class*="_header"]:not([class*="_headerHidden"]):not([class*="hSW_header"]) [class*="_tabs"]{max-width:100%;width:100%}
   [class*="_root"][data-dsh-split="1"] .dsplit_rightTabsAnchor,
   [class*="_root"][data-dsh-split="1"] .dsplit_headerGap{display:none!important}
   [class*="_root"][data-dsh-split="1"] [class*="_scrollBody"]{

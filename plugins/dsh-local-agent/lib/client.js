@@ -29,7 +29,16 @@ window.__ModuleLoader__.load({
 .dla_catItem input{margin-top:3px;flex:none}
 .dla_catItem small{display:block;margin-top:4px;font-size:11px;line-height:1.35;color:var(--dsw-alias-label-tertiary)}
 .dla_fieldRow{align-items:center;gap:10px;display:flex;flex-wrap:wrap}
-.dla_fieldRow .rtSEdW_input{width:120px;height:36px;padding:6px 10px}
+.dla_fieldRow .rtSEdW_fieldLabel{font-size:12px;color:var(--dsw-alias-label-secondary,var(--dsw-alias-label-tertiary));line-height:1.3}
+.dla_fieldRow .rtSEdW_input,.dla_fieldRow input.dla_numInput{
+	box-sizing:border-box;width:112px;min-width:0;height:28px!important;min-height:28px!important;max-height:28px;
+	padding:2px 8px!important;margin:0;font-size:13px;line-height:22px;border-radius:8px;
+	border:.5px solid var(--dsw-alias-border-l4);background:var(--dsw-alias-bg-module-platform,transparent);
+	color:var(--dsw-alias-label-primary)
+}
+.dla_fieldRow input.dla_numInput[type=number]{-moz-appearance:textfield;appearance:textfield}
+.dla_fieldRow input.dla_numInput[type=number]::-webkit-outer-spin-button,
+.dla_fieldRow input.dla_numInput[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .dla_toggleRow{display:flex;flex-direction:column;gap:8px}
 .dla_toggle{align-items:flex-start;gap:8px;display:flex;font-size:13px;line-height:1.45;color:var(--dsw-alias-label-primary)}
 .dla_toggle input{margin-top:3px;flex:none}
@@ -56,9 +65,9 @@ window.__ModuleLoader__.load({
 		}
 
 		const PRESET_BLURBS = {
-			lite: "Files + shell only",
+			lite: "Files + shell; hard truncate + stubs",
 			balanced: "+ web, search & agent meta (todo, goals)",
-			jetson: "Goals/todo, no cron/browser",
+			jetson: "Web ok, no browser; rescue-level caps",
 			full: "All tool categories",
 			custom: "Per-category toggles",
 		};
@@ -143,6 +152,22 @@ window.__ModuleLoader__.load({
 				}
 			};
 
+			const applyJetsonRescue = async () => {
+				setSaving(true);
+				setStatus("");
+				try {
+					const data = await callRpc(connection, "applyJetsonRescue");
+					setCfg(data.config);
+					setStatus(
+						"Jetson rescue applied (tight caps, stubs, no screenshots). Start a New Session if this chat already feels stuck — old history is still huge.",
+					);
+				} catch (err) {
+					setStatus(err instanceof Error ? err.message : String(err));
+				} finally {
+					setSaving(false);
+				}
+			};
+
 			const save = async () => {
 				if (!cfg) return;
 				setSaving(true);
@@ -175,7 +200,32 @@ window.__ModuleLoader__.load({
 			return React.createElement(
 				"div",
 				{ className: "dla_lite_section" },
-				React.createElement("p", { className: "rtSEdW_intro" }, "Trim agent context for local GPUs: disabled categories are removed from each model request (not just blocked at runtime), with optional truncation of large tool output."),
+				React.createElement(
+					"p",
+					{ className: "rtSEdW_intro" },
+					"Trim agent context for local GPUs: disabled categories are removed from each model request (not just blocked at runtime), with optional truncation / stubs so browser + search dumps do not balloon Jetson prefill.",
+				),
+				React.createElement(
+					"div",
+					{ className: "rtSEdW_group" },
+					React.createElement("p", { className: "rtSEdW_groupHead" }, "Emergency"),
+					React.createElement(
+						"p",
+						{ className: "rtSEdW_intro", style: { marginBottom: 8 } },
+						"Chat already crawling (minutes of silence after send)? Keep your tool categories, slam on hard truncation + stubs + no screenshots. Then open New Session — rescue cannot shrink history already in this thread.",
+					),
+					React.createElement(
+						"button",
+						{
+							type: "button",
+							className: "rtSEdW_creatorButton",
+							style: { height: 40, alignSelf: "flex-start", minWidth: 160 },
+							disabled: saving,
+							onClick: () => void applyJetsonRescue(),
+						},
+						saving ? "Applying…" : "Jetson rescue",
+					),
+				),
 				React.createElement(
 					"div",
 					{ className: "rtSEdW_group" },
@@ -253,10 +303,78 @@ window.__ModuleLoader__.load({
 							{ className: "dla_toggle" },
 							React.createElement("input", {
 								type: "checkbox",
+								checked: Boolean(cfg.deferToolResultShrink),
+								onChange: (e) => setField("deferToolResultShrink", e.target.checked),
+							}),
+							"Defer shrink — full result while recent; cull older ones every N steps + at turn end",
+						),
+						cfg.deferToolResultShrink &&
+							React.createElement(
+								"div",
+								{ className: "dla_fieldRow" },
+								React.createElement("span", { className: "rtSEdW_fieldLabel" }, "Keep recent results full"),
+								React.createElement("input", {
+									type: "number",
+									className: "dla_numInput",
+									min: 0,
+									max: 32,
+									step: 1,
+									value: cfg.keepRecentToolResults ?? 3,
+									onChange: (e) => setField("keepRecentToolResults", Number(e.target.value)),
+								}),
+							),
+						cfg.deferToolResultShrink &&
+							React.createElement(
+								"div",
+								{ className: "dla_fieldRow" },
+								React.createElement("span", { className: "rtSEdW_fieldLabel" }, "Cull older every N steps (0 = turn end only)"),
+								React.createElement("input", {
+									type: "number",
+									className: "dla_numInput",
+									min: 0,
+									max: 64,
+									step: 1,
+									value: cfg.shrinkEverySteps ?? 4,
+									onChange: (e) => setField("shrinkEverySteps", Number(e.target.value)),
+								}),
+							),
+						cfg.deferToolResultShrink &&
+							React.createElement(
+								"div",
+								{ className: "dla_fieldRow" },
+								React.createElement("span", { className: "rtSEdW_fieldLabel" }, "Hard max (first delivery)"),
+								React.createElement("input", {
+									type: "number",
+									className: "dla_numInput",
+									min: 4000,
+									max: 200000,
+									step: 1000,
+									value: cfg.hardMaxInlineChars ?? 48000,
+									onChange: (e) => setField("hardMaxInlineChars", Number(e.target.value)),
+								}),
+							),
+						React.createElement(
+							"label",
+							{ className: "dla_toggle" },
+							React.createElement("input", {
+								type: "checkbox",
 								checked: Boolean(cfg.truncateToolResults),
 								onChange: (e) => setField("truncateToolResults", e.target.checked),
 							}),
-							"Truncate large read / shell / search / browser results before they enter chat history",
+							cfg.deferToolResultShrink
+								? "When shrinking older results: truncate to max inline chars"
+								: "Truncate large results immediately (before the model reads them)",
+						),
+						React.createElement(
+							"label",
+							{ className: "dla_toggle" },
+							React.createElement("input", {
+								type: "checkbox",
+								checked: Boolean(cfg.truncateAllToolResults),
+								disabled: !cfg.truncateToolResults,
+								onChange: (e) => setField("truncateAllToolResults", e.target.checked),
+							}),
+							"Truncate every tool (not only the built-in allowlist)",
 						),
 						React.createElement(
 							"div",
@@ -264,10 +382,10 @@ window.__ModuleLoader__.load({
 							React.createElement("span", { className: "rtSEdW_fieldLabel" }, "Max inline characters"),
 							React.createElement("input", {
 								type: "number",
-								className: "rtSEdW_input",
-								min: 2000,
+								className: "dla_numInput",
+								min: 1000,
 								max: 120000,
-								step: 1000,
+								step: 500,
 								value: cfg.maxInlineChars,
 								onChange: (e) => setField("maxInlineChars", Number(e.target.value)),
 							}),
@@ -280,7 +398,9 @@ window.__ModuleLoader__.load({
 								checked: Boolean(cfg.stubToolResults),
 								onChange: (e) => setField("stubToolResults", e.target.checked),
 							}),
-							"Replace large tool results with cache references (full body on host; model sees index + path only)",
+							cfg.deferToolResultShrink
+								? "When shrinking older results: replace with cache stub (+ short preview)"
+								: "Replace large tool results with cache references immediately",
 						),
 						cfg.stubToolResults &&
 							React.createElement(
@@ -289,7 +409,7 @@ window.__ModuleLoader__.load({
 								React.createElement("span", { className: "rtSEdW_fieldLabel" }, "Stub after (chars)"),
 								React.createElement("input", {
 									type: "number",
-									className: "rtSEdW_input",
+									className: "dla_numInput",
 									min: 500,
 									max: 80000,
 									step: 500,
@@ -297,15 +417,26 @@ window.__ModuleLoader__.load({
 									onChange: (e) => setField("stubAfterChars", Number(e.target.value)),
 								}),
 							),
+						!cfg.deferToolResultShrink &&
+							React.createElement(
+								"label",
+								{ className: "dla_toggle" },
+								React.createElement("input", {
+									type: "checkbox",
+									checked: Boolean(cfg.earlyPruneToolResults),
+									onChange: (e) => setField("earlyPruneToolResults", e.target.checked),
+								}),
+								"Early prune (stock head/tail) before each LLM step",
+							),
 						React.createElement(
 							"label",
 							{ className: "dla_toggle" },
 							React.createElement("input", {
 								type: "checkbox",
-								checked: Boolean(cfg.earlyPruneToolResults),
-								onChange: (e) => setField("earlyPruneToolResults", e.target.checked),
+								checked: Boolean(cfg.denyHeavyMedia),
+								onChange: (e) => setField("denyHeavyMedia", e.target.checked),
 							}),
-							"Early prune tool results before each LLM step (stock head/tail pruner, not only at auto-compaction)",
+							"Deny heavy media tools (browser_screenshot, read_image) — vision blobs nuke Jetson context",
 						),
 					),
 				),
@@ -334,7 +465,32 @@ window.__ModuleLoader__.load({
 								checked: Boolean(cfg.liteSystemHint),
 								onChange: (e) => setField("liteSystemHint", e.target.checked),
 							}),
-							"Short system hint for local models (included on Lite profile)",
+							"Short system hint for local models (keep turns small, targeted reads)",
+						),
+						React.createElement(
+							"label",
+							{ className: "dla_toggle" },
+							React.createElement("input", {
+								type: "checkbox",
+								checked: Boolean(cfg.sessionHygieneHint),
+								onChange: (e) => setField("sessionHygieneHint", e.target.checked),
+							}),
+							"Session hygiene hint — nudge New Session after heavy browser/search instead of stacking more context",
+						),
+						React.createElement(
+							"label",
+							{ className: "dla_toggle" },
+							React.createElement("input", {
+								type: "checkbox",
+								checked: cfg.breakGenerationLoops !== false,
+								onChange: (e) => setField("breakGenerationLoops", e.target.checked),
+							}),
+							"Break generation loops — stop the stream when Think/prose repeats without a tool call",
+						),
+						React.createElement(
+							"p",
+							{ className: "rtSEdW_intro", style: { marginTop: 0 } },
+							"KV reuse is on automatically for Jetson: same loaded model keeps its prompt prefix warm across agent steps (cache_prompt). This is not a second model — you still run one model at a time.",
 						),
 					),
 				),
@@ -395,10 +551,19 @@ window.__ModuleLoader__.load({
 			if (mount) mount.hidden = next !== "lite";
 		}
 
+		function findAgentPresetsSection(panel) {
+			if (!panel) return null;
+			const options = panel.querySelector(".VOzbGW_options") || panel;
+			for (const section of options.querySelectorAll(".rtSEdW_section")) {
+				if (section.querySelector(".rtSEdW_cards, ul.rtSEdW_cards")) return section;
+			}
+			return options.querySelector(".rtSEdW_section");
+		}
+
 		function ensureAgentPresetsTabs(connection) {
 			const panel = document.querySelector('.VOzbGW_panel[role="dialog"], [class*="_panel"][role="dialog"]');
 			if (!panel) return;
-			const section = panel.querySelector(".rtSEdW_section");
+			const section = findAgentPresetsSection(panel);
 			if (!section || section.dataset.dlaTabs === "1") return;
 
 			section.dataset.dlaTabs = "1";
@@ -453,12 +618,30 @@ window.__ModuleLoader__.load({
 		const inject = ["slots", "connection"];
 
 		function apply(ctx) {
-			const connection = ctx.get("connection");
+			window.__dshAgentPresetsTab = (tab) => {
+				if (tab === "lite") {
+					try {
+						window.__dshOpenSettings?.("lite-mode");
+					} catch { /* ignore */ }
+					return;
+				}
+				setAgentPresetsTab(tab);
+			};
 
-			window.__dshAgentPresetsTab = (tab) => setAgentPresetsTab(tab);
+			try {
+				ctx.slots.inject("settings.section", () => ctx.slots.register({
+					name: "settings.section",
+					id: "lite-mode",
+					order: 21,
+					label: () => "Lite mode",
+					inject: () => ({ connection: ctx.get("connection") }),
+				}, LocalAgentSettings), `${PLUGIN}: settings`);
+			} catch (err) {
+				console.warn(`[${PLUGIN}] settings section inject failed`, err);
+			}
 
 			ctx.effect(() => {
-				if (!connection) return;
+				const connection = ctx.get("connection");
 				injectCss();
 				const root = document.getElementById("root") || document.body;
 				const mo = new MutationObserver(() => {
