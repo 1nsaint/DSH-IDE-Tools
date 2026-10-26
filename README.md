@@ -1,10 +1,48 @@
 # DSH IDE Tools
 
-Collection of plugins for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — IDE-style tabs and workbench chrome (Code, Git, Terminal, Containers, Database, Browser, files sidebar, workspaces, and more).
+IDE-style plugins for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — Code, Git, Terminal, Containers, Database, Browser, Scheduled tasks, files sidebar, workspaces, and more.
 
-## Quick start (turnkey — friend / Antigravity agent)
+## Install on stock DeepSeek Harness (recommended)
 
-Plugins are **baked into the image** and seeded on first boot. No manual `install-ide-tools.sh` needed.
+1. Open **Plugins** in the left sidebar.
+2. Click **Add plugin**.
+3. Paste this repo URL and click **Install**:
+
+```text
+https://github.com/1nsaint/DSH-IDE-Tools
+```
+
+(Shorthand also works: `github:1nsaint/DSH-IDE-Tools`.)
+
+4. Wait for pnpm to finish, then **hard-refresh** the browser (Ctrl+Shift+R).
+5. Open **Settings** for anything host-specific (LLM base URL, Browser CDP, metrics, search keys). Those live in `$DSH_HOME/plugins-data/` and are **not** shipped by the suite.
+
+<p align="center">
+  <img src="docs/images/01-plugins-panel.png" alt="Plugins panel with Add plugin and installed dsh-ide-tools" width="900" />
+</p>
+
+<p align="center">
+  <img src="docs/images/02-add-plugin-dialog.png" alt="Add plugin dialog with the GitHub repo URL pasted" width="900" />
+</p>
+
+The suite installs as one package (`dsh-ide-tools`). Uninstall that row to remove the whole suite. À la carte:
+
+```text
+github:1nsaint/DSH-IDE-Tools#path:plugins/dsh-browser
+```
+
+**Notes**
+
+- Repo must stay **public** (stock Harness clones with no GitHub credentials).
+- Not published to npm yet — use the GitHub URL above, not bare `dsh-ide-tools`.
+- Do not also bake the same plugins into `dsh.profile.bundles` on the same profile (duplicate loader ids).
+- Optional headed Chromium for Remote Browser is a **separate** Docker companion — see Settings → Browser after install.
+
+Full details: [`docs/INSTALL.md`](docs/INSTALL.md) · [`docs/FAQ.md`](docs/FAQ.md)
+
+## Turnkey Docker (friend / agent)
+
+Plugins baked into the image and seeded on first boot:
 
 ```bash
 git clone https://github.com/1nsaint/DSH-IDE-Tools.git
@@ -13,9 +51,7 @@ cp .env.example .env   # DOCKER_GID + OPENAI_API_* + CONTAINERS_HOST_ROOT
 docker compose -f docker-compose.yml up -d --build
 ```
 
-Open **http://127.0.0.1:3080**. Agent install brief: [`deploy/AGENTS.md`](deploy/AGENTS.md).
-
-Full details: [`docs/INSTALL.md`](docs/INSTALL.md) · [`docs/FAQ.md`](docs/FAQ.md)
+Open **http://127.0.0.1:3080**. Agent brief: [`deploy/AGENTS.md`](deploy/AGENTS.md).
 
 ## Layout
 
@@ -26,50 +62,23 @@ DSH-IDE-Tools/
   plugins/                         # Cordis plugin packages (dsh-*)
   packages/dsh-ide-tools/          # Same suite via #path:packages/dsh-ide-tools
   scripts/install-ide-tools.sh     # Wire plugins into stock Harness (CLI)
-  scripts/sync-to-harness.sh       # ProDesk maintainer sync only
-  deploy/                          # Turnkey Docker bake
-  docs/                            # Install & FAQ
+  deploy/                          # Turnkey Docker bake + sandbox
+  docs/                            # Install, FAQ, screenshots
   examples/                        # Profile wiring (used by install script)
-  CREDITS.md
-  LICENSE
 ```
 
 Plugin authoring: [`plugins/PLUGIN_DEV.md`](plugins/PLUGIN_DEV.md).
 
-## Install paths
+## Other install paths
 
 | Audience | What to use |
 |----------|-------------|
-| **Stock Harness (Add plugin)** | Plugins → Add plugin → `https://github.com/1nsaint/DSH-IDE-Tools` |
-| **One plugin only** | `github:1nsaint/DSH-IDE-Tools#path:plugins/dsh-browser` (swap the folder name) |
-| **New users / turnkey Docker** | `deploy/` compose — plugins baked into the image |
-| **ProDesk maintainer** | Git submodule in [`Containers`](https://github.com/1nsaint/Containers) + `sync-to-harness.sh` |
+| **Stock Harness** | Plugins → Add plugin → URL above |
+| **One plugin only** | `github:1nsaint/DSH-IDE-Tools#path:plugins/<name>` |
+| **CLI / bind-mount** | `./scripts/install-ide-tools.sh` — see [`docs/INSTALL.md`](docs/INSTALL.md) |
+| **Maintainer DIY** | Bind-mount `plugins/` (e.g. ProDesk) instead of the meta package |
 
-The repo **root** is an installable Cordis bundle (`package.json` + `dsh.bundle` + `cordis.patch.yml`). Stock DSH clones it with pnpm and pulls each plugin via `file:./plugins/…`. Details: [`docs/INSTALL.md`](docs/INSTALL.md).
-
-Stock Harness core is unmodified `@deepseek-ai/dsh` — all IDE behaviour comes from plugins + profile config.
-
-## SSH remote workspaces
-
-The `dsh-ssh-workspace` plugin adds Cursor-style remote folders:
-
-1. **Settings → SSH** — save hosts (user, hostname, identity file).
-2. **Add workspace → SSH** — browse remote directories over SFTP, register as `dssh://host/path`.
-3. Sidebar chips show **local** vs remote host label.
-4. **Files / Code / Terminal** follow the remote path when that workspace is active.
-
-Requirements: SSH keys inside the Harness container (`~/.ssh` mount in compose). Agent tools on the remote host are not yet routed.
-
-Details: [`docs/FAQ.md`](docs/FAQ.md#ssh-remote-workspaces-cursor-comparison)
-
-## ProDesk reference install
-
-This repo is a **git submodule** of `Containers` at `DSH-IDE-Tools/`. ProDesk bind-mounts `plugins/` in `deepseek-harness/docker-compose.yml` instead of copying into `./data`.
-
-```bash
-cd ~/Containers/DSH-IDE-Tools && git push
-cd ~/Containers && git add DSH-IDE-Tools && git commit -m "chore: bump DSH-IDE-Tools"
-```
+Stock Harness core is unmodified `@deepseek-ai/dsh` — IDE behaviour comes from plugins + profile config.
 
 ## License
 
