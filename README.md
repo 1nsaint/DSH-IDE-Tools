@@ -35,7 +35,6 @@ github:1nsaint/DSH-IDE-Tools#path:plugins/dsh-browser
 
 **Notes**
 
-- Needs a **public** repo (stock Harness clones with no GitHub login).
 - Not on npm yet — paste the GitHub URL, not bare `dsh-ide-tools`.
 - Optional headed Chromium for Remote Browser is a separate Docker companion — see **Settings → Browser** after install.
 
