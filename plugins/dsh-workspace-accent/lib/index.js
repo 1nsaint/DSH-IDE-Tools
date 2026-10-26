@@ -1,12 +1,12 @@
 /**
  * dsh-workspace-accent — host half: stores workspace accent color overrides
  * centrally in plugins-data/dsh-workspace-accents.json so all origins
- * (agent.rubberrobo.nl, 127.0.0.1, localhost) share identical workspace colors.
+ * (public hostname, 127.0.0.1, localhost) share identical workspace colors.
  */
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
+import { registerRpcChannel } from "dsh-ide-shared/register-rpc-channel.js";
 
 const name = "dsh-workspace-accent";
 const inject = ["connection", "webServer"];

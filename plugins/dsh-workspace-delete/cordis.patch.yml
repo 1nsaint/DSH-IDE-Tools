@@ -1,0 +1,4 @@
+# Bundle patch for dsh-workspace-delete (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-workspace-delete
+      name: dsh-workspace-delete

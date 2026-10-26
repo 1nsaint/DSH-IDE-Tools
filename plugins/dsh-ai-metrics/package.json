@@ -1,7 +1,7 @@
 {
   "name": "dsh-ai-metrics",
-  "version": "0.4.0",
-  "description": "Sidebar memory donut + Jetson/Ollama metrics proxies + auto-sync switcher models into Harness catalog.",
+  "version": "0.4.1",
+  "description": "Sidebar memory donut + metrics/Ollama proxies + auto-sync switcher models into Harness catalog.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -23,6 +23,9 @@
         "@deepseek-ai/dsh-client-ui-slots",
         "@deepseek-ai/dsh-client-ui-sidebar"
       ]
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
     }
   },
   "peerDependencies": {
@@ -30,5 +33,8 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "dsh-ide-shared": "file:../dsh-ide-shared"
+  }
 }

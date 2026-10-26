@@ -1,4 +1,4 @@
-# Mount the provider and browser settings page in a profile.
+# Bundle patch for dsh-web-search-router (installable via Add plugin / profile.bundles).
 - insert:
     - id: web-search-router
       name: dsh-web-search-router

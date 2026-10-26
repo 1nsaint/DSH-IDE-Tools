@@ -1,0 +1,4 @@
+# Bundle patch for dsh-workspace-sync (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-workspace-sync
+      name: dsh-workspace-sync

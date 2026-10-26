@@ -1,0 +1,19 @@
+{
+  "name": "dsh-ide-shared",
+  "version": "0.1.0",
+  "description": "Shared helpers for DSH IDE Tools plugins (RPC channel registration).",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./register-rpc-channel.js",
+    "./register-rpc-channel.js": "./register-rpc-channel.js"
+  },
+  "files": [
+    "register-rpc-channel.js",
+    "register-rpc-channel.d.ts",
+    "package.json"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  }
+}

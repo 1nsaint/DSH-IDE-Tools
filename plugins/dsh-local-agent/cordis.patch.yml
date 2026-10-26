@@ -1,0 +1,4 @@
+# Bundle patch for dsh-local-agent (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-local-agent
+      name: dsh-local-agent

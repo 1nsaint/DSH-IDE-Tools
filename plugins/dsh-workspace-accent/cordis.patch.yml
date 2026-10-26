@@ -1,0 +1,4 @@
+# Bundle patch for dsh-workspace-accent (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-workspace-accent
+      name: dsh-workspace-accent

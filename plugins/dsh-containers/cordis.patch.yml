@@ -1,0 +1,4 @@
+# Bundle patch for dsh-containers (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-containers
+      name: dsh-containers

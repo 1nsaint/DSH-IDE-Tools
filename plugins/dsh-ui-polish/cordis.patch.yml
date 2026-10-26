@@ -1,0 +1,4 @@
+# Bundle patch for dsh-ui-polish (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-ui-polish
+      name: dsh-ui-polish

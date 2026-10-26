@@ -78,14 +78,11 @@ window.__ModuleLoader__.load({
 			return m ? m[1] : null;
 		}
 
-		/** Fallback LAN address for "This host" when the page itself was loaded via a public
-		 * domain (e.g. agent.rubberrobo.nl) — that hostname can't reach an arbitrary container
-		 * port, but the Browser tab's server-side proxy (/api/browser-gate/...) can reach the
-		 * Docker host's LAN IP directly. */
-		const LOCAL_HOST_LAN_FALLBACK = "192.168.0.130";
+		/** Fallback LAN for "This host" when the page is on a public hostname — set via
+		 * plugins-data `lanHostFallback` / Settings (or env DSH_LAN_HOST on the host). */
 		const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
 
-		function hostnameFor(hostId, hosts) {
+		function hostnameFor(hostId, hosts, lanFallback = "") {
 			const h = Array.isArray(hosts) ? hosts.find((x) => x.id === hostId) : null;
 			if (h && h.endpoint) {
 				try {
@@ -95,7 +92,8 @@ window.__ModuleLoader__.load({
 			}
 			const pageHost = (typeof window !== "undefined" && window.location && window.location.hostname) || "";
 			if (IPV4_RE.test(pageHost) || pageHost === "localhost") return pageHost;
-			return LOCAL_HOST_LAN_FALLBACK;
+			const fb = String(lanFallback || "").trim();
+			return fb || pageHost || "127.0.0.1";
 		}
 
 		function globeIcon() {
@@ -111,9 +109,9 @@ window.__ModuleLoader__.load({
 		}
 
 		/** Open a container's published port in the built-in Browser tab. */
-		function openContainerPort(hostPort, hostId, hosts) {
+		function openContainerPort(hostPort, hostId, hosts, lanFallback) {
 			if (typeof window === "undefined" || !hostPort) return;
-			const url = `http://${hostnameFor(hostId, hosts)}:${hostPort}`;
+			const url = `http://${hostnameFor(hostId, hosts, lanFallback)}:${hostPort}`;
 			window.dispatchEvent(new CustomEvent("dsh-open-browser-url", { detail: { url } }));
 			const tabs = document.querySelectorAll('[role="tab"]');
 			for (const tab of tabs) {
@@ -180,6 +178,7 @@ window.__ModuleLoader__.load({
 			const [error, setError] = React.useState("");
 			const [busy, setBusy] = React.useState(false);
 			const [allowText, setAllowText] = React.useState("");
+			const [lanHostFallback, setLanHostFallback] = React.useState("");
 			const [showTestEnv, setShowTestEnv] = React.useState(() => !!viewCache.showTestEnv);
 
 			React.useEffect(() => {
@@ -202,6 +201,7 @@ window.__ModuleLoader__.load({
 					const next = res.containers || [];
 					setItems(next);
 					if (Array.isArray(res.hosts) && res.hosts.length) setHosts(res.hosts);
+					if (typeof res.lanHostFallback === "string") setLanHostFallback(res.lanHostFallback);
 					if (res.hostId) {
 						setHostId((prev) => (prev === res.hostId ? prev : res.hostId));
 					}
@@ -412,7 +412,7 @@ window.__ModuleLoader__.load({
 											key: "open-" + hp,
 											className: "dc_btn dc_btnOpen",
 											title: `Open :${hp} in the built-in browser`,
-											onClick: (e) => { e.stopPropagation(); openContainerPort(hp, hostId, hosts); },
+											onClick: (e) => { e.stopPropagation(); openContainerPort(hp, hostId, hosts, lanHostFallback); },
 										}, globeIcon(), `:${hp}`)),
 								),
 							);
@@ -439,8 +439,9 @@ window.__ModuleLoader__.load({
 		function ContainersSettings({ connection }) {
 			const [allowText, setAllowText] = React.useState("");
 			const [hosts, setHosts] = React.useState([{ id: "local", label: "This host", endpoint: "" }]);
-			const [draftLabel, setDraftLabel] = React.useState("Jetson");
-			const [draftEndpoint, setDraftEndpoint] = React.useState("ssh://mic-733ao@192.168.0.146");
+			const [draftLabel, setDraftLabel] = React.useState("");
+			const [draftEndpoint, setDraftEndpoint] = React.useState("");
+			const [lanHostFallback, setLanHostFallback] = React.useState("");
 			const [msg, setMsg] = React.useState("");
 			const [busy, setBusy] = React.useState(false);
 
@@ -449,6 +450,8 @@ window.__ModuleLoader__.load({
 				callRpc(connection, "getConfig").then((c) => {
 					setAllowText((c.allowPrefixes || []).join(", "));
 					if (Array.isArray(c.hosts) && c.hosts.length) setHosts(c.hosts);
+					setLanHostFallback(c.lanHostFallback || "");
+					if (c.draftSshEndpoint) setDraftEndpoint(c.draftSshEndpoint);
 				}).catch((err) => setMsg(err.message));
 			}, [connection]);
 
@@ -461,9 +464,12 @@ window.__ModuleLoader__.load({
 					const cfg = await callRpc(connection, "setConfig", {
 						hosts: nextHosts,
 						allowPrefixes: allowText.split(",").map((s) => s.trim()).filter(Boolean),
+						lanHostFallback,
+						draftSshEndpoint: draftEndpoint.trim(),
 						...extra,
 					});
 					setHosts(cfg.hosts || nextHosts);
+					if (typeof cfg.lanHostFallback === "string") setLanHostFallback(cfg.lanHostFallback);
 					setMsg("Saved");
 				} catch (err) {
 					setMsg(err.message);
@@ -476,7 +482,7 @@ window.__ModuleLoader__.load({
 				const label = draftLabel.trim() || "Remote";
 				const endpoint = draftEndpoint.trim();
 				if (!endpoint) {
-					setMsg("Endpoint required (e.g. ssh://user@192.168.0.146)");
+					setMsg("Endpoint required (e.g. ssh://user@host)");
 					return;
 				}
 				const id = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `host-${Date.now()}`;
@@ -509,7 +515,7 @@ window.__ModuleLoader__.load({
 				React.createElement("div", null,
 					React.createElement("div", { style: { fontSize: 13, fontWeight: 600, marginBottom: 6 } }, "Docker hosts"),
 					React.createElement("p", { style: { margin: "0 0 10px", fontSize: 12, color: "var(--dsw-alias-label-tertiary)", lineHeight: 1.45 } },
-						"This Harness container talks to Docker on the machine where it runs (mounted socket). To list containers on another PC (e.g. Jetson), add an SSH or TCP endpoint. SSH needs a key available to the Harness process (HOME/.ssh)."),
+						"This Harness container talks to Docker on the machine where it runs (mounted socket). To list containers on another host, add an SSH or TCP endpoint. SSH needs a key available to the Harness process (HOME/.ssh)."),
 					hosts.map((h) => React.createElement("div", {
 						key: h.id,
 						style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" },
@@ -534,7 +540,7 @@ window.__ModuleLoader__.load({
 						React.createElement("input", {
 							value: draftLabel,
 							onChange: (e) => setDraftLabel(e.target.value),
-							placeholder: "Label (e.g. Jetson)",
+							placeholder: "Label (e.g. gpu-box)",
 							style: { height: 32, borderRadius: 8, border: "1px solid var(--dsw-alias-border-l2)", padding: "0 10px" },
 						}),
 						React.createElement("input", {
@@ -550,6 +556,23 @@ window.__ModuleLoader__.load({
 							style: { height: 32, borderRadius: 8, alignSelf: "flex-start", padding: "0 12px", cursor: "pointer" },
 						}, "Add host"),
 					),
+				),
+				React.createElement("div", null,
+					React.createElement("div", { style: { fontSize: 13, fontWeight: 600, marginBottom: 6 } }, "LAN host fallback"),
+					React.createElement("p", { style: { margin: "0 0 8px", fontSize: 12, color: "var(--dsw-alias-label-tertiary)", lineHeight: 1.45 } },
+						"When you open Harness via a public hostname, published-port “open in Browser” links use this LAN IP (stored in plugins-data). Leave empty to use the page hostname / 127.0.0.1."),
+					React.createElement("input", {
+						value: lanHostFallback,
+						onChange: (e) => setLanHostFallback(e.target.value),
+						placeholder: "e.g. 192.168.0.10  (or env DSH_LAN_HOST)",
+						style: { height: 32, borderRadius: 8, border: "1px solid var(--dsw-alias-border-l2)", padding: "0 10px", width: "100%", boxSizing: "border-box", fontFamily: "var(--ds-font-family-code)", fontSize: 12 },
+					}),
+					React.createElement("button", {
+						type: "button",
+						disabled: busy,
+						onClick: () => saveHosts(hosts),
+						style: { height: 32, borderRadius: 8, marginTop: 8, padding: "0 12px", cursor: "pointer" },
+					}, "Save LAN fallback"),
 				),
 				React.createElement("div", null,
 					React.createElement("div", { style: { fontSize: 13, fontWeight: 600, marginBottom: 6 } }, "Name allowlist"),

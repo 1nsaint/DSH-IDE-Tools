@@ -1,7 +1,7 @@
 /**
  * dsh-local-agent — host: tool guards, result truncation, settings.yaml stream timeout.
  */
-import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
+import { registerRpcChannel } from "dsh-ide-shared/register-rpc-channel.js";
 import {
 	PLUGIN,
 	RPC_CHANNEL,
@@ -24,6 +24,7 @@ import {
 	bindJetsonKvSession,
 	installJetsonKvFetch,
 	isJetsonKvFetchInstalled,
+	setJetsonKvUrlHosts,
 } from "./kv-cache.js";
 import { wrapStreamAgainstGenerationLoop } from "./stream-loop.js";
 
@@ -55,8 +56,13 @@ function transportError(error) {
 	};
 }
 
+function applyKvHostConfig(cfg) {
+	setJetsonKvUrlHosts(cfg?.jetsonKvUrlHosts || "");
+}
+
 async function reloadConfig() {
 	activeConfig = await loadConfig();
+	applyKvHostConfig(activeConfig);
 	return activeConfig;
 }
 
@@ -202,7 +208,7 @@ function rewriteBashWebFetch(toolName, args, text) {
 }
 
 /**
- * After a turn finishes, shrink older tool/result surface nodes so Jetson
+ * After a turn finishes, shrink older tool/result surface nodes so local GPU
  * context does not keep every dump forever — without mutating the prompt
  * prefix mid tool-loop (which would kill llama.cpp KV reuse).
  * @param {import('@deepseek-ai/dsh-session').Session} session
@@ -448,6 +454,7 @@ function registerRpc(ctx) {
 						await syncJetsonStreamTimeout(next.patientJetsonStream);
 					}
 					activeConfig = next;
+					applyKvHostConfig(activeConfig);
 					return ok({ config: activeConfig });
 				}
 				case "applyPreset": {
@@ -467,6 +474,7 @@ function registerRpc(ctx) {
 						await syncJetsonStreamTimeout(next.patientJetsonStream);
 					}
 					activeConfig = next;
+					applyKvHostConfig(activeConfig);
 					return ok({ config: activeConfig });
 				}
 				case "applyJetsonRescue": {
@@ -484,6 +492,7 @@ function registerRpc(ctx) {
 						await syncJetsonStreamTimeout(next.patientJetsonStream);
 					}
 					activeConfig = next;
+					applyKvHostConfig(activeConfig);
 					return ok({ config: activeConfig });
 				}
 				case "syncStreamTimeout": {
@@ -646,6 +655,7 @@ export function apply(ctx, cordisConfig = {}) {
 	ctx.inject(["tools", "connection", "webServer", "systemPrompt", "llm"], (scope) => {
 		scope.effect(() => registerRpc(scope), `${PLUGIN}: rpc`);
 
+		applyKvHostConfig(activeConfig);
 		installJetsonKvFetch(activeConfig.jetsonKvSlots ?? 1, scope.logger);
 		const offLlm = scope.on(
 			"llm/stream",
@@ -671,7 +681,7 @@ export function apply(ctx, cordisConfig = {}) {
 			) {
 				return (
 					`Tool "${exec.name}" is blocked by Lite mode “Deny heavy media” ` +
-					`(screenshots blow up Jetson context). Disable that toggle or use browser_snapshot/text instead.`
+					`(screenshots blow up small-GPU context). Disable that toggle or use browser_snapshot/text instead.`
 				);
 			}
 			const bashDeny = bashLoopGuardReason(exec);
@@ -758,7 +768,7 @@ export function apply(ctx, cordisConfig = {}) {
 					}
 					if (activeConfig.sessionHygieneHint) {
 						parts.push(
-							"Session hygiene: after many browser/search tool calls the Jetson prefill becomes minutes-long. Prefer a fresh short session over continuing a bloated thread; if the user says the chat is stuck/slow, tell them to open New Session.",
+							"Session hygiene: after many browser/search tool calls local-GPU prefill becomes minutes-long. Prefer a fresh short session over continuing a bloated thread; if the user says the chat is stuck/slow, tell them to open New Session.",
 						);
 					}
 					if (activeConfig.stubToolResults || activeConfig.deferToolResultShrink) {
@@ -797,6 +807,7 @@ export function apply(ctx, cordisConfig = {}) {
 					activeConfig = merged;
 					await saveConfig(merged);
 				}
+				applyKvHostConfig(activeConfig);
 			} catch (err) {
 				scope.logger?.warn?.(
 					`[${PLUGIN}] config load failed: ${err instanceof Error ? err.message : err}`,

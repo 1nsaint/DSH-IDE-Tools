@@ -1,12 +1,16 @@
 {
   "name": "dsh-terminal",
   "version": "0.3.14",
-  "description": "Interactive PTY terminal — serialized writes + per-surface PTYs (stable typing).",
+  "description": "Interactive PTY terminal \u2014 serialized writes + per-surface PTYs (stable typing).",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
-    ".": { "default": "./lib/index.js" },
-    "./client": { "default": "./lib/client.js" },
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
     "./package.json": "./package.json"
   },
   "dsh": {
@@ -18,11 +22,17 @@
         "@deepseek-ai/dsh-client-ui-slots",
         "@deepseek-ai/dsh-client-ui-conversation"
       ]
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
     }
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "react": "^18.2.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "dsh-ide-shared": "file:../dsh-ide-shared"
+  }
 }

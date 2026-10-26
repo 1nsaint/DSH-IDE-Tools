@@ -2893,15 +2893,17 @@ window.__ModuleLoader__.load({
 
 		function BrowserSettings({ connection }) {
 			const [engine, setEngine] = React.useState("builtin");
-			const [cdpHttp, setCdpHttp] = React.useState("http://192.168.0.130:9222");
+			const [cdpHttp, setCdpHttp] = React.useState("");
 			const [msg, setMsg] = React.useState("");
 			const [busy, setBusy] = React.useState(false);
+			const cdpTrim = String(cdpHttp || "").trim();
+			const remoteNeedsCdp = engine === "remote" && !cdpTrim;
 
 			const reload = React.useCallback(() => {
 				if (!connection) return;
 				callRpc(connection, "getConfig").then((cfg) => {
 					setEngine(cfg.engine === "remote" ? "remote" : "builtin");
-					setCdpHttp(cfg.cdpHttp || "http://192.168.0.130:9222");
+					setCdpHttp(cfg.cdpHttp || "");
 				}).catch((err) => setMsg(err.message));
 			}, [connection]);
 
@@ -2911,9 +2913,13 @@ window.__ModuleLoader__.load({
 				setBusy(true);
 				setMsg("");
 				try {
-					const cfg = await callRpc(connection, "setConfig", { engine, cdpHttp });
+					if (engine === "remote" && !cdpTrim) {
+						setMsg("Remote Chromium needs a CDP HTTP base (e.g. http://127.0.0.1:9222). Start a CDP Chrome stack first, then paste its URL.");
+						return;
+					}
+					const cfg = await callRpc(connection, "setConfig", { engine, cdpHttp: cdpTrim });
 					setEngine(cfg.engine);
-					setCdpHttp(cfg.cdpHttp);
+					setCdpHttp(cfg.cdpHttp || "");
 					try {
 						window.dispatchEvent(new CustomEvent(CONFIG_EVENT, { detail: cfg }));
 					} catch { /* ignore */ }
@@ -2931,20 +2937,41 @@ window.__ModuleLoader__.load({
 				setBusy(true);
 				setMsg("");
 				try {
-					const res = await callRpc(connection, "remote.test", { cdpHttp });
+					if (!cdpTrim) {
+						setMsg("Enter a CDP HTTP base first (host:9222 from your chrome stack).");
+						return;
+					}
+					const res = await callRpc(connection, "remote.test", { cdpHttp: cdpTrim });
 					setMsg(`OK — ${res.browser || "Chromium"} (protocol ${res.protocolVersion || "?"})`);
 				} catch (err) {
-					setMsg(`Test failed: ${err.message}. Start: cd ~/Containers/dsh-browser-chrome && docker compose up -d`);
+					setMsg(
+						`Test failed: ${err.message}. Start any CDP Chromium (companion: dsh-browser-chrome compose), then use http://HOST:9222.`,
+					);
 				} finally {
 					setBusy(false);
 				}
 			};
 
+			const hintStyle = { margin: "0 0 8px", fontSize: 12, color: "var(--dsw-alias-label-tertiary)", lineHeight: 1.5 };
+			const codeStyle = {
+				margin: "0 0 10px",
+				padding: "10px 12px",
+				borderRadius: 8,
+				border: "1px solid var(--dsw-alias-border-l3)",
+				background: "var(--dsw-alias-bg-layer-1)",
+				fontFamily: "var(--ds-font-family-code)",
+				fontSize: 11,
+				lineHeight: 1.55,
+				whiteSpace: "pre-wrap",
+				overflowWrap: "anywhere",
+			};
+			const olStyle = { margin: "0 0 10px", paddingLeft: 18, fontSize: 12, color: "var(--dsw-alias-label-secondary)", lineHeight: 1.55 };
+
 			return React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 16, maxWidth: 720 } },
 				React.createElement("div", null,
 					React.createElement("div", { style: { fontSize: 13, fontWeight: 600, marginBottom: 6 } }, "Browser engine"),
-					React.createElement("p", { style: { margin: "0 0 10px", fontSize: 12, color: "var(--dsw-alias-label-tertiary)", lineHeight: 1.45 } },
-						"Built-in gate is same-origin Live/Inspect (good for local HTML). Remote Chromium drives a real Chrome over CDP — better for Cloudflare and agent browsing. Live view shows a screencast of that session."),
+					React.createElement("p", { style: hintStyle },
+						"Built-in gate is same-origin Live/Inspect (fine for local HTML). Remote Chromium drives a real headed Chrome over CDP — needed for Cloudflare / bot checks and for agent browsing with a live screencast. The CDP URL is stored in plugins-data (survives plugin upgrades)."),
 					React.createElement("label", { style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 8, fontSize: 13 } },
 						React.createElement("input", {
 							type: "radio",
@@ -2965,27 +2992,66 @@ window.__ModuleLoader__.load({
 					),
 				),
 				React.createElement("div", null,
+					React.createElement("div", { style: { fontSize: 13, fontWeight: 600, marginBottom: 6 } }, "Set up Remote Chromium"),
+					React.createElement("p", { style: hintStyle },
+						"This plugin does not start Chrome. Remote mode needs a headed Chromium with DevTools Protocol on your LAN (or the Harness host). Headless Chrome usually fails Cloudflare — the companion stack uses Xvfb so the browser is headed."),
+					React.createElement("p", { style: { ...hintStyle, marginBottom: 4, fontWeight: 600, color: "var(--dsw-alias-label-secondary)" } },
+						"Recommended companion (separate Docker project — not installed by Add plugin):"),
+					React.createElement("ol", { style: olStyle },
+						React.createElement("li", null,
+							"On the machine that should run Chrome, get the ",
+							React.createElement("code", null, "dsh-browser-chrome"),
+							" compose stack (sibling of your Harness data / Containers folder, or copy from the DSH-IDE-Tools companion docs)."),
+						React.createElement("li", null, "Start it once:"),
+						React.createElement("pre", { style: codeStyle },
+							"cd /path/to/dsh-browser-chrome\ndocker compose up -d --build"),
+						React.createElement("li", null,
+							"Confirm CDP is up: open ",
+							React.createElement("code", null, "http://HOST:9222/json/version"),
+							" in a normal browser (replace HOST with that machine’s LAN IP, or ",
+							React.createElement("code", null, "127.0.0.1"),
+							" if Harness and Chrome share the same host network view)."),
+						React.createElement("li", null,
+							"Paste the base URL below (no path — e.g. ",
+							React.createElement("code", null, "http://192.168.1.10:9222"),
+							"), click ",
+							React.createElement("strong", null, "Test"),
+							", then ",
+							React.createElement("strong", null, "Save"),
+							" with Remote selected."),
+						React.createElement("li", null,
+							"On the Browser tab, use the Gate/Remote toggle and press Go. First connect after idle may take 1–2s (companion pauses Chrome when unused)."),
+					),
+					React.createElement("p", { style: hintStyle },
+						"Any other CDP Chromium works the same way — paste its DevTools HTTP base. Keep :9222 on the LAN only; do not expose it publicly. Soft JS challenges usually pass; interactive Turnstile may still need a click in the live Remote feed."),
+				),
+				React.createElement("div", null,
 					React.createElement("div", { style: { fontSize: 13, fontWeight: 600, marginBottom: 6 } }, "CDP HTTP base"),
+					React.createElement("p", { style: hintStyle },
+						"Required for Remote. Discovery base only (the plugin appends /json/version). Example: http://127.0.0.1:9222 or http://LAN-IP:9222."),
 					React.createElement("input", {
 						value: cdpHttp,
 						onChange: (e) => setCdpHttp(e.target.value),
-						placeholder: "http://192.168.0.130:9222",
+						placeholder: "http://127.0.0.1:9222",
 						style: {
 							height: 32, borderRadius: 8, border: "1px solid var(--dsw-alias-border-l2)",
 							padding: "0 10px", width: "100%", boxSizing: "border-box",
 							fontFamily: "var(--ds-font-family-code)", fontSize: 12,
 						},
 					}),
+					remoteNeedsCdp && React.createElement("p", {
+						style: { margin: "8px 0 0", fontSize: 12, color: "var(--dsw-alias-state-error-primary)", lineHeight: 1.45 },
+					}, "Set a CDP URL before saving Remote mode."),
 					React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 10 } },
 						React.createElement("button", {
 							type: "button",
-							disabled: busy,
+							disabled: busy || remoteNeedsCdp,
 							onClick: save,
 							style: { height: 32, borderRadius: 8, padding: "0 12px", cursor: "pointer" },
 						}, "Save"),
 						React.createElement("button", {
 							type: "button",
-							disabled: busy,
+							disabled: busy || !cdpTrim,
 							onClick: test,
 							style: { height: 32, borderRadius: 8, padding: "0 12px", cursor: "pointer" },
 						}, "Test"),

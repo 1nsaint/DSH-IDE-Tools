@@ -1,0 +1,71 @@
+{
+  "name": "dsh-ide-tools",
+  "version": "0.1.2",
+  "description": "Full DeepSeek Harness IDE Tools suite \u2014 paste this repo into Plugins \u2192 Add plugin.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1nsaint/DSH-IDE-Tools.git"
+  },
+  "homepage": "https://github.com/1nsaint/DSH-IDE-Tools#readme",
+  "bugs": {
+    "url": "https://github.com/1nsaint/DSH-IDE-Tools/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "plugins"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "dsh-ai-metrics": "file:./plugins/dsh-ai-metrics",
+    "dsh-image-upload": "file:./plugins/dsh-image-upload",
+    "dsh-archive": "file:./plugins/dsh-archive",
+    "dsh-session-move": "file:./plugins/dsh-session-move",
+    "dsh-files": "file:./plugins/dsh-files",
+    "dsh-code-tab": "file:./plugins/dsh-code-tab",
+    "dsh-web-search-router": "file:./plugins/dsh-web-search-router",
+    "dsh-workspace-accent": "file:./plugins/dsh-workspace-accent",
+    "dsh-sidebar-files": "file:./plugins/dsh-sidebar-files",
+    "dsh-ssh-workspace": "file:./plugins/dsh-ssh-workspace",
+    "dsh-workspace-sync": "file:./plugins/dsh-workspace-sync",
+    "dsh-workspace-delete": "file:./plugins/dsh-workspace-delete",
+    "dsh-git": "file:./plugins/dsh-git",
+    "dsh-agent-review": "file:./plugins/dsh-agent-review",
+    "dsh-live-write": "file:./plugins/dsh-live-write",
+    "dsh-containers": "file:./plugins/dsh-containers",
+    "dsh-torrent": "file:./plugins/dsh-torrent",
+    "dsh-testenv": "file:./plugins/dsh-testenv",
+    "dsh-terminal": "file:./plugins/dsh-terminal",
+    "dsh-database": "file:./plugins/dsh-database",
+    "dsh-browser": "file:./plugins/dsh-browser",
+    "dsh-hero-tools": "file:./plugins/dsh-hero-tools",
+    "dsh-settings-polish": "file:./plugins/dsh-settings-polish",
+    "dsh-plugin-list-filter": "file:./plugins/dsh-plugin-list-filter",
+    "dsh-ui-polish": "file:./plugins/dsh-ui-polish",
+    "dsh-runtime-clock": "file:./plugins/dsh-runtime-clock",
+    "dsh-split-view": "file:./plugins/dsh-split-view",
+    "dsh-local-agent": "file:./plugins/dsh-local-agent",
+    "dsh-mcp-manager": "file:./plugins/dsh-mcp-manager",
+    "dsh-composer-dock": "file:./plugins/dsh-composer-dock",
+    "dsh-ide-shared": "file:./plugins/dsh-ide-shared",
+    "dsh-automation": "file:./plugins/dsh-automation",
+    "dsh-cron": "file:./plugins/dsh-cron"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "files": [
+    "cordis.patch.yml",
+    "plugins/",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ]
+}

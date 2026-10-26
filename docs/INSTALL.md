@@ -31,9 +31,36 @@ cp .env.example .env
 docker compose -f docker-compose.yml up -d --build
 ```
 
-## Quick install (existing Harness)
+## Quick install (stock Harness — Plugins → Add plugin)
 
-If you already run stock Harness (native or your own Docker):
+On any stock DeepSeek Harness (native or Docker) that already shows **Plugins**:
+
+1. Open **Plugins** → **Add plugin**
+2. Paste one of:
+
+| Goal | Paste into “Package name or address” |
+| --- | --- |
+| **Full suite** | `https://github.com/1nsaint/DSH-IDE-Tools` |
+| Same (shorthand) | `github:1nsaint/DSH-IDE-Tools` |
+| **Local path (dev/sandbox)** | `file:/absolute/path/to/DSH-IDE-Tools` — must use the `file:` prefix (bare `/path` becomes `link:` and skips nested plugin deps) |
+| **One plugin** (example) | `github:1nsaint/DSH-IDE-Tools#path:plugins/dsh-browser` |
+
+3. Confirm install, wait for pnpm to finish, hard-refresh the browser.
+4. Open **Settings** for anything host-specific (CDP URL, metrics upstreams, SSH hosts, search keys). Those live in `$DSH_HOME/plugins-data/` and are **not** shipped by the suite.
+
+**Requirements:**
+
+- Repo visibility **Public** — stock Harness runs `git ls-remote` with no credentials. Private repos fail Add plugin unless that host already has GitHub auth.
+- This change must be **pushed to `main`** (root `package.json` + `cordis.patch.yml`). Until then, GitHub installs have no suite bundle.
+- Headed Chromium for Remote browser is a separate Docker companion — not part of Add plugin.
+
+**Not yet on npm:** typing bare `dsh-ide-tools` only works after someone publishes that name to the registry. Until then use the GitHub URL above.
+
+Do **not** also run `install-ide-tools.sh` / bake the same plugins into `dsh.profile.bundles` on the same profile — duplicate loader ids.
+
+## Quick install (existing Harness — CLI / bind-mount)
+
+If you prefer the host script instead of Add plugin:
 
 ```bash
 git clone https://github.com/1nsaint/DSH-IDE-Tools.git
@@ -78,6 +105,31 @@ cp -a DSH-IDE-Tools/plugins/* "$DSH_HOME/plugins/"
 
 The install script handles profile wiring and dependency installs automatically.
 
+## Bundles vs suite
+
+Plugins are Cordis **bundles** (`dsh.bundle` + `cordis.patch.yml`). You can:
+
+- Paste the **repo root** (`https://github.com/1nsaint/DSH-IDE-Tools`) — installs meta package `dsh-ide-tools` and every suite dependency via `file:./plugins/…`
+- Paste **one plugin** with `#path:plugins/dsh-…` (see table above)
+- List individuals in `dsh.profile.bundles` (ProDesk / Docker bake — see `install-ide-tools.sh`) — do not mix with the meta package on the same profile
+
+Soft dependency groups: [`packages/dsh-ide-tools/README.md`](../packages/dsh-ide-tools/README.md).
+
+## Config durability (survives upgrades)
+
+Three layers — do not mix personal secrets into plugin **code**:
+
+| Layer | Where | Survives `git pull` / image recreate? | Examples |
+| --- | --- | --- | --- |
+| **Plugin code** | `plugins/dsh-*` (this repo or npm) | Updated on upgrade | Defaults are empty / off — never your LAN IPs |
+| **User settings** | `$DSH_HOME/plugins-data/*.json` | **Yes** (bind-mount `data/home`) | Browser CDP URL, metrics upstreams, containers SSH hosts, Lite mode |
+| **Secrets / compose** | `.env`, Harness credentials, `settings.yaml` | Yes if on the host volume | Search API keys, LLM API keys, `OPENAI_API_BASE_URL` |
+
+- **Never commit** `plugins-data/` or live credentials.
+- After upgrading plugins or Harness: restart / `dsh-reload` — your `plugins-data` stays. Re-enter Settings only if you wiped `$DSH_HOME`.
+- Fresh install: configure Settings (or seed env like metrics/switcher upstreams, `DSH_LAN_HOST`) before Remote browser / AI Metrics work.
+- Optional companion stacks (e.g. headed Chromium for CDP) are **separate Docker projects** — not installed by Add plugin. Point Settings at `http://HOST:9222`.
+
 ## Development notes
 
 See [`plugins/PLUGIN_DEV.md`](../plugins/PLUGIN_DEV.md) for inject rules, deploy habit, and debugging.
@@ -85,5 +137,6 @@ See [`plugins/PLUGIN_DEV.md`](../plugins/PLUGIN_DEV.md) for inject rules, deploy
 ## Security
 
 - Do not commit API keys, PATs, or `settings.yaml` with live credentials.
+- Do not commit `$DSH_HOME/plugins-data/` (personal hosts, CDP URLs, DB connections).
 - Mounting the Docker socket grants full engine control — treat as privileged.
 - Keep agent preset **workspace-write** so shell/Docker actions prompt for approval.

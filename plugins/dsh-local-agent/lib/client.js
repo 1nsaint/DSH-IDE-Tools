@@ -75,7 +75,7 @@ window.__ModuleLoader__.load({
 		const PRESET_LABELS = {
 			lite: "Lite",
 			balanced: "Balanced",
-			jetson: "Jetson",
+			jetson: "Edge GPU",
 			full: "Full",
 			custom: "Custom",
 		};
@@ -159,7 +159,7 @@ window.__ModuleLoader__.load({
 					const data = await callRpc(connection, "applyJetsonRescue");
 					setCfg(data.config);
 					setStatus(
-						"Jetson rescue applied (tight caps, stubs, no screenshots). Start a New Session if this chat already feels stuck — old history is still huge.",
+						"Context rescue applied (tight caps, stubs, no screenshots). Start a New Session if this chat already feels stuck — old history is still huge.",
 					);
 				} catch (err) {
 					setStatus(err instanceof Error ? err.message : String(err));
@@ -203,7 +203,7 @@ window.__ModuleLoader__.load({
 				React.createElement(
 					"p",
 					{ className: "rtSEdW_intro" },
-					"Trim agent context for local GPUs: disabled categories are removed from each model request (not just blocked at runtime), with optional truncation / stubs so browser + search dumps do not balloon Jetson prefill.",
+					"Trim agent context for local / small GPUs: disabled categories are removed from each model request (not just blocked at runtime), with optional truncation / stubs so browser + search dumps do not balloon prefill.",
 				),
 				React.createElement(
 					"div",
@@ -223,7 +223,7 @@ window.__ModuleLoader__.load({
 							disabled: saving,
 							onClick: () => void applyJetsonRescue(),
 						},
-						saving ? "Applying…" : "Jetson rescue",
+						saving ? "Applying…" : "Context rescue",
 					),
 				),
 				React.createElement(
@@ -436,7 +436,7 @@ window.__ModuleLoader__.load({
 								checked: Boolean(cfg.denyHeavyMedia),
 								onChange: (e) => setField("denyHeavyMedia", e.target.checked),
 							}),
-							"Deny heavy media tools (browser_screenshot, read_image) — vision blobs nuke Jetson context",
+							"Deny heavy media tools (browser_screenshot, read_image) — vision blobs blow up small-GPU context",
 						),
 					),
 				),
@@ -455,7 +455,7 @@ window.__ModuleLoader__.load({
 								checked: Boolean(cfg.patientJetsonStream),
 								onChange: (e) => setField("patientJetsonStream", e.target.checked),
 							}),
-							"Patient stream idle timeout (15 min) for jetson-llamacpp — avoids abort during slow prefill",
+							"Patient stream idle timeout (15 min) for slow local llama.cpp / OpenAI-compatible backends — avoids abort during long prefill",
 						),
 						React.createElement(
 							"label",
@@ -488,9 +488,28 @@ window.__ModuleLoader__.load({
 							"Break generation loops — stop the stream when Think/prose repeats without a tool call",
 						),
 						React.createElement(
+							"label",
+							{ className: "dla_toggle", style: { flexDirection: "column", alignItems: "stretch", gap: 6 } },
+							React.createElement("span", null, "KV inject URL hosts (comma-separated host or host:port)"),
+							React.createElement("input", {
+								type: "text",
+								value: cfg.jetsonKvUrlHosts || "",
+								placeholder: "e.g. 192.168.1.10:8100  (empty = switcher proxy path only)",
+								onChange: (e) => setField("jetsonKvUrlHosts", e.target.value),
+								style: {
+									height: 32,
+									borderRadius: 8,
+									border: "1px solid var(--dsw-alias-border-l2)",
+									padding: "0 10px",
+									fontFamily: "var(--ds-font-family-code)",
+									fontSize: 12,
+								},
+							}),
+						),
+						React.createElement(
 							"p",
 							{ className: "rtSEdW_intro", style: { marginTop: 0 } },
-							"KV reuse is on automatically for Jetson: same loaded model keeps its prompt prefix warm across agent steps (cache_prompt). This is not a second model — you still run one model at a time.",
+							"KV reuse injects cache_prompt on matching chat/completions URLs. The built-in switcher proxy path always matches. Extra hosts are stored in plugins-data.",
 						),
 					),
 				),

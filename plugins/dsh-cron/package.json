@@ -226,5 +226,8 @@
       "hotReload": null,
       "remove": null
     }
+  },
+  "dependencies": {
+    "dsh-ide-shared": "file:../dsh-ide-shared"
   }
 }

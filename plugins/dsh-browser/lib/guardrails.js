@@ -166,7 +166,7 @@ function assertNotLooping(action, params = {}) {
 	}
 
 	// Already have the page body — stop accordion-click / evaluate spirals that
-	// look like "hung after error" while Jetson prefills a bloated context.
+	// look like "hung after error" while a local GPU prefills a bloated context.
 	const havePageText =
 		lastPageTextChars >= PAGE_TEXT_ENOUGH
 		&& Date.now() - lastPageTextAt < WINDOW_MS;
@@ -179,7 +179,7 @@ function assertNotLooping(action, params = {}) {
 		throw new Error(
 			`Page text (~${lastPageTextChars} chars) is already in context from browser_text/evaluate. ` +
 			`Answer the user now with what you have — do not call more browser click/fill/evaluate this turn. ` +
-			`(This is not STOP:; it is a soft gate so Jetson does not stall on more tool dumps.)`,
+			`(This is not STOP:; it is a soft gate so a small local GPU does not stall on more tool dumps.)`,
 		);
 	}
 

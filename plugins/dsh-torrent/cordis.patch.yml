@@ -1,0 +1,4 @@
+# Bundle patch for dsh-torrent (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-torrent
+      name: dsh-torrent

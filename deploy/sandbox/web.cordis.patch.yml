@@ -1,0 +1,6 @@
+# 0.2.1+ rejects wildcard binds. Loopback + entrypoint eth0 relay.
+- id: webserver
+  name: "@deepseek-ai/dsh-host-webserver"
+  config:
+    host: "127.0.0.1"
+    port: !!js ctx.webStartup.port ?? 3080

@@ -5,7 +5,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
+import { registerRpcChannel } from "dsh-ide-shared/register-rpc-channel.js";
 
 const name = "dsh-agent-review";
 const RPC_CHANNEL = "/agent-review";

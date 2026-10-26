@@ -11,7 +11,7 @@ import { isDsshPath, openSshShell } from "../../dsh-ssh-workspace/lib/ssh.js";
 import { parseDsshPath } from "../../dsh-ssh-workspace/lib/config.js";
 import { buildLocalMotd, localMotdEnabled } from "./local-motd.js";
 import { buildLocalPtyEnv } from "./terminal-env.js";
-import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
+import { registerRpcChannel } from "dsh-ide-shared/register-rpc-channel.js";
 
 const name = "dsh-terminal";
 const inject = ["connection", "webServer"];

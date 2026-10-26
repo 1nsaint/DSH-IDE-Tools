@@ -15,7 +15,7 @@ window.__ModuleLoader__.load({
 			{ id: "json", label: "JSON (total_bytes + used/available)" },
 			{ id: "ollama", label: "Ollama (/api/ps)" },
 			{ id: "prometheus", label: "Prometheus (/metrics text)" },
-			{ id: "jetson", label: "Jetson / rubberrobo metrics-api" },
+			{ id: "jetson", label: "Host metrics-api (model / apps / system)" },
 		];
 
 		const DEFAULT_COLORS = {
@@ -32,9 +32,9 @@ window.__ModuleLoader__.load({
 
 		const COLOR_FIELDS = [
 			{ key: "used", label: "Used / models", hint: "JSON / Ollama / Prometheus used slice" },
-			{ key: "model", label: "Model (Jetson)", hint: "Active model weight" },
-			{ key: "programs", label: "Apps (Jetson)", hint: "Containers / programs" },
-			{ key: "system", label: "System (Jetson)", hint: "OS / other used" },
+			{ key: "model", label: "Model weights", hint: "Active model weight" },
+			{ key: "programs", label: "Apps / containers", hint: "Containers / programs" },
+			{ key: "system", label: "System / other", hint: "OS / other used" },
 			{ key: "free", label: "Free", hint: "Available slice" },
 			{ key: "cpu", label: "CPU bar", hint: "CPU load bar fill" },
 			{ key: "gpu", label: "GPU bar", hint: "GPU load bar fill" },
@@ -43,12 +43,15 @@ window.__ModuleLoader__.load({
 		];
 
 		const DEFAULTS = {
-			adapter: "jetson",
+			adapter: "off",
 			url: "/jetson-metrics-api/api/ai/active",
-			label: "Jetson RAM",
-			clickUrl: "https://rubberrobo.nl/ai/",
+			label: "AI RAM",
+			clickUrl: "",
 			totalBytes: "",
 			colors: { ...DEFAULT_COLORS },
+			metricsUpstream: "",
+			switcherUpstream: "",
+			ollamaUpstream: "",
 		};
 
 		const css = `
@@ -170,18 +173,25 @@ window.__ModuleLoader__.load({
 		let activeConnection = null;
 		let cachedConfig = null;
 
+		function mergeConfigFields(raw) {
+			if (!raw || typeof raw !== "object") return { ...DEFAULTS, colors: { ...DEFAULT_COLORS } };
+			return {
+				adapter: ADAPTERS.some((a) => a.id === raw.adapter) ? raw.adapter : DEFAULTS.adapter,
+				url: typeof raw.url === "string" ? raw.url : DEFAULTS.url,
+				label: typeof raw.label === "string" && raw.label.trim() ? raw.label.trim() : DEFAULTS.label,
+				clickUrl: typeof raw.clickUrl === "string" ? raw.clickUrl : DEFAULTS.clickUrl,
+				totalBytes: raw.totalBytes != null ? String(raw.totalBytes) : "",
+				colors: resolveColors({ colors: raw.colors }),
+				metricsUpstream: typeof raw.metricsUpstream === "string" ? raw.metricsUpstream : "",
+				switcherUpstream: typeof raw.switcherUpstream === "string" ? raw.switcherUpstream : "",
+				ollamaUpstream: typeof raw.ollamaUpstream === "string" ? raw.ollamaUpstream : "",
+			};
+		}
+
 		function getRawLocalConfig() {
 			try {
 				const raw = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
-				if (!raw || typeof raw !== "object") return { ...DEFAULTS, colors: { ...DEFAULT_COLORS } };
-				return {
-					adapter: ADAPTERS.some((a) => a.id === raw.adapter) ? raw.adapter : DEFAULTS.adapter,
-					url: typeof raw.url === "string" ? raw.url : DEFAULTS.url,
-					label: typeof raw.label === "string" && raw.label.trim() ? raw.label.trim() : DEFAULTS.label,
-					clickUrl: typeof raw.clickUrl === "string" ? raw.clickUrl : DEFAULTS.clickUrl,
-					totalBytes: raw.totalBytes != null ? String(raw.totalBytes) : "",
-					colors: resolveColors({ colors: raw.colors }),
-				};
+				return mergeConfigFields(raw);
 			} catch {
 				return { ...DEFAULTS, colors: { ...DEFAULT_COLORS } };
 			}
@@ -218,16 +228,7 @@ window.__ModuleLoader__.load({
 			try {
 				const res = await callRpc(target, "syncConfig", { config: local });
 				if (res?.config && typeof res.config === "object") {
-					const s = res.config;
-					const merged = {
-						adapter: ADAPTERS.some((a) => a.id === s.adapter) ? s.adapter : DEFAULTS.adapter,
-						url: typeof s.url === "string" ? s.url : DEFAULTS.url,
-						label: typeof s.label === "string" && s.label.trim() ? s.label.trim() : DEFAULTS.label,
-						clickUrl: typeof s.clickUrl === "string" ? s.clickUrl : DEFAULTS.clickUrl,
-						totalBytes: s.totalBytes != null ? String(s.totalBytes) : "",
-						colors: resolveColors({ colors: s.colors }),
-					};
-					return saveLocalConfig(merged);
+					return saveLocalConfig(mergeConfigFields(res.config));
 				}
 			} catch (err) {
 				console.warn(`[${PLUGIN}] server sync failed`, err);
@@ -469,7 +470,7 @@ window.__ModuleLoader__.load({
 				if (!res.ok) throw new Error(`HTTP ${res.status}`);
 				const snapshot = await res.json();
 				const layout = resolveJetsonLayout(snapshot);
-				if (!layout) throw new Error("No memory in Jetson payload");
+				if (!layout) throw new Error("No memory in metrics-api payload");
 				const segments = [];
 				if (layout.model_bytes > 0) {
 					segments.push({ key: "model", bytes: layout.model_bytes, color: COLORS.model, label: "Model" });
@@ -484,7 +485,7 @@ window.__ModuleLoader__.load({
 				const active = snapshot.active?.model || "";
 				const loads = await fetchJetsonLoads(url || DEFAULTS.url, snapshot);
 				return {
-					title: cfg.label || "Jetson RAM",
+					title: cfg.label || "Host RAM",
 					detail: active,
 					segments,
 					_free: layout.free_bytes,
@@ -989,22 +990,22 @@ window.__ModuleLoader__.load({
 
 			return React.createElement("div", { className: "dam_form" },
 				React.createElement("p", { className: "dam_hint" },
-					"Sidebar memory donut. Point at any reachable URL. JSON expects ",
+					"Sidebar memory donut. Widget URL is what the browser fetches (usually same-origin ",
+					React.createElement("code", null, "/jetson-metrics-api/…"),
+					" — proxy path name is historical). Host proxy upstreams below are stored in plugins-data and survive upgrades. ",
+					"JSON expects ",
 					React.createElement("code", null, "total_bytes"), " + ",
 					React.createElement("code", null, "used_bytes"), " or ",
 					React.createElement("code", null, "available_bytes"),
 					". Ollama uses ", React.createElement("code", null, "/api/ps"),
-					" (set Total bytes for a real free slice). Prometheus scrapes text gauges. Jetson uses the rubberrobo metrics-api shape. ",
-					"CPU/GPU bars appear when the source exposes load (Jetson overview + gpu util; JSON ",
-					React.createElement("code", null, "cpu_percent"), "/",
-					React.createElement("code", null, "gpu_percent"),
-					"; some Prometheus gauges)."),
+					". Host metrics-api adapter expects ",
+					React.createElement("code", null, "/api/ai/active"), " shape."),
 				React.createElement("label", null, "Adapter"),
 				React.createElement("select", {
 					value: cfg.adapter,
 					onChange: (e) => set({ adapter: e.target.value }),
 				}, ADAPTERS.map((a) => React.createElement("option", { key: a.id, value: a.id }, a.label))),
-				React.createElement("label", null, "URL"),
+				React.createElement("label", null, "Widget URL"),
 				React.createElement("input", {
 					value: cfg.url,
 					onChange: (e) => set({ url: e.target.value }),
@@ -1013,6 +1014,24 @@ window.__ModuleLoader__.load({
 						: cfg.adapter === "prometheus"
 							? "http://host:8080/metrics"
 							: "/jetson-metrics-api/api/ai/active",
+				}),
+				React.createElement("label", null, "Metrics upstream (host proxy)"),
+				React.createElement("input", {
+					value: cfg.metricsUpstream || "",
+					onChange: (e) => set({ metricsUpstream: e.target.value }),
+					placeholder: "http://HOST:8001",
+				}),
+				React.createElement("label", null, "Switcher upstream (clear-cache / model sync)"),
+				React.createElement("input", {
+					value: cfg.switcherUpstream || "",
+					onChange: (e) => set({ switcherUpstream: e.target.value }),
+					placeholder: "http://HOST:8100",
+				}),
+				React.createElement("label", null, "Ollama upstream"),
+				React.createElement("input", {
+					value: cfg.ollamaUpstream || "",
+					onChange: (e) => set({ ollamaUpstream: e.target.value }),
+					placeholder: "http://HOST:11434  (or env OLLAMA_BASE_URL)",
 				}),
 				React.createElement("label", null, "Label"),
 				React.createElement("input", {
@@ -1035,7 +1054,7 @@ window.__ModuleLoader__.load({
 				React.createElement("div", { className: "dam_colors" },
 					React.createElement("div", { className: "dam_colorsHead" }, "Donut colors"),
 					React.createElement("p", { className: "dam_hint" },
-						"Hex (#rrggbb) or rgba(…). Jetson uses model / apps / system / free; other adapters mostly use Used + Free."),
+						"Hex (#rrggbb) or rgba(…). Host metrics-api uses model / apps / system / free; other adapters mostly use Used + Free."),
 					...COLOR_FIELDS.map((field) => {
 						const saved = resolveColors(cfg)[field.key];
 						const draft = (cfg.colors && cfg.colors[field.key] != null)

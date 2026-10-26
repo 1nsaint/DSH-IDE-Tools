@@ -1,0 +1,4 @@
+# Bundle patch for dsh-session-move (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-session-move
+      name: dsh-session-move

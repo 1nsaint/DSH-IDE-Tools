@@ -1,0 +1,4 @@
+# Bundle patch for dsh-git (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-git
+      name: dsh-git

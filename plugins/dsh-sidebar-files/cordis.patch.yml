@@ -1,0 +1,4 @@
+# Bundle patch for dsh-sidebar-files (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-sidebar-files
+      name: dsh-sidebar-files

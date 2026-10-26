@@ -7,12 +7,42 @@
         "@deepseek-ai/dsh-base",
         "@deepseek-ai/dsh-web-app",
         "dsh-automation",
-        "dsh-cron"
+        "dsh-cron",
+        "dsh-ai-metrics",
+        "dsh-image-upload",
+        "dsh-archive",
+        "dsh-session-move",
+        "dsh-files",
+        "dsh-code-tab",
+        "dsh-web-search-router",
+        "dsh-workspace-accent",
+        "dsh-sidebar-files",
+        "dsh-ssh-workspace",
+        "dsh-workspace-sync",
+        "dsh-workspace-delete",
+        "dsh-git",
+        "dsh-agent-review",
+        "dsh-live-write",
+        "dsh-containers",
+        "dsh-torrent",
+        "dsh-testenv",
+        "dsh-terminal",
+        "dsh-database",
+        "dsh-browser",
+        "dsh-hero-tools",
+        "dsh-settings-polish",
+        "dsh-plugin-list-filter",
+        "dsh-ui-polish",
+        "dsh-runtime-clock",
+        "dsh-split-view",
+        "dsh-local-agent",
+        "dsh-mcp-manager",
+        "dsh-composer-dock"
       ]
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-typert-protocol": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-typert-protocol": "0.2.0-rc.2",
     "dsh-automation": "link:__DSH_LINK_PREFIX__/plugins/dsh-automation",
     "dsh-cron": "link:__DSH_LINK_PREFIX__/plugins/dsh-cron",
     "dsh-notify": "link:__DSH_LINK_PREFIX__/plugins/dsh-notify",
@@ -32,7 +62,9 @@
     "dsh-workspace-delete": "link:__DSH_LINK_PREFIX__/plugins/dsh-workspace-delete",
     "dsh-git": "link:__DSH_LINK_PREFIX__/plugins/dsh-git",
     "dsh-agent-review": "link:__DSH_LINK_PREFIX__/plugins/dsh-agent-review",
+    "dsh-live-write": "link:__DSH_LINK_PREFIX__/plugins/dsh-live-write",
     "dsh-containers": "link:__DSH_LINK_PREFIX__/plugins/dsh-containers",
+    "dsh-torrent": "link:__DSH_LINK_PREFIX__/plugins/dsh-torrent",
     "dsh-testenv": "link:__DSH_LINK_PREFIX__/plugins/dsh-testenv",
     "dsh-terminal": "link:__DSH_LINK_PREFIX__/plugins/dsh-terminal",
     "dsh-database": "link:__DSH_LINK_PREFIX__/plugins/dsh-database",
@@ -45,6 +77,7 @@
     "dsh-runtime-clock": "link:__DSH_LINK_PREFIX__/plugins/dsh-runtime-clock",
     "dsh-split-view": "link:__DSH_LINK_PREFIX__/plugins/dsh-split-view",
     "dsh-local-agent": "link:__DSH_LINK_PREFIX__/plugins/dsh-local-agent",
-    "dsh-mcp-manager": "link:__DSH_LINK_PREFIX__/plugins/dsh-mcp-manager"
+    "dsh-mcp-manager": "link:__DSH_LINK_PREFIX__/plugins/dsh-mcp-manager",
+    "dsh-composer-dock": "link:__DSH_LINK_PREFIX__/plugins/dsh-composer-dock"
   }
 }

@@ -1,7 +1,7 @@
 {
   "name": "dsh-local-agent",
-  "version": "0.1.5",
-  "description": "Local-model optimizations: Jetson KV (cache_prompt/id_slot), turn-end deferred shrink, profiles, rescue.",
+  "version": "0.1.6",
+  "description": "Local-model optimizations: KV reuse (cache_prompt/id_slot), turn-end deferred shrink, profiles, context rescue.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -23,11 +23,17 @@
         "@deepseek-ai/dsh-client-ui-slots",
         "@deepseek-ai/dsh-client-ui-renderer"
       ]
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
     }
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-system-prompt": ">=0.1.1-rc.2 <0.3.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "dsh-ide-shared": "file:../dsh-ide-shared"
+  }
 }

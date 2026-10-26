@@ -1,0 +1,4 @@
+# Bundle patch for dsh-agent-review (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-agent-review
+      name: dsh-agent-review

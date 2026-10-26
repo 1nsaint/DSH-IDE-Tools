@@ -12,7 +12,7 @@
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { readdir, readFile, rm, writeFile, unlink } from "node:fs/promises";
-import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
+import { registerRpcChannel } from "dsh-ide-shared/register-rpc-channel.js";
 
 const name = "dsh-archive";
 const inject = ["connection", "webServer"];

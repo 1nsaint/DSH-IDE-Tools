@@ -9,26 +9,29 @@ deepseek-harness/
   data/home/                          → /home/node/.dsh (bind mount)
     plugins/
       my-plugin/
-        package.json
+        package.json          # dsh.bundle.patch + optional dsh.client
+        cordis.patch.yml      # insert: id/name for this plugin
         lib/
-          index.js      # host (Node) — required even if empty
-          client.js     # browser — window.__ModuleLoader__.load(...)
+          index.js            # host (Node) — required even if empty
+          client.js           # browser — window.__ModuleLoader__.load(...)
+    plugins-data/             # USER settings (survives upgrades) — do not commit
     profiles/web/
-      package.json      # links plugins into web profile
-      cordis.patch.yml  # enables plugin ids in cordis tree
+      package.json            # dsh.profile.bundles + link: deps
+      cordis.patch.yml        # user overlays only (LLM, timezone) — not plugin inserts
       pnpm-lock.yaml
   docker-compose.yml
 ```
+
+List the package in `dsh.profile.bundles` (and as a `link:` dependency). **Do not** also `- insert:` the same id in the profile `cordis.patch.yml` (duplicate loader). Suite meta-package: `packages/dsh-ide-tools`.
 
 After changes:
 
 ```bash
 cd ~/Containers/deepseek-harness
-docker exec deepseek-harness sh -c 'cd /home/node/.dsh/profiles/web && pnpm install'
-docker compose up -d --force-recreate deepseek-harness dsh-https
+./scripts/dsh-reload.sh
 ```
 
-Browser: hard refresh (Ctrl+Shift+R).
+Browser: hard refresh (Ctrl+Shift+R) only after reload exits 0.
 
 ---
 

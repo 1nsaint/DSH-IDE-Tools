@@ -4,7 +4,7 @@
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
+import { registerRpcChannel } from "dsh-ide-shared/register-rpc-channel.js";
 import {
 	readFile,
 	writeFile,
@@ -50,13 +50,14 @@ function containersRoot() {
 }
 
 function containersHostRoot() {
-	return resolve(process.env.CONTAINERS_HOST_ROOT || "/home/insaint/Containers");
+	return resolve(process.env.CONTAINERS_HOST_ROOT || "/containers-host");
 }
 
 function workspaceHostRoot() {
 	return resolve(
 		process.env.WORKSPACE_HOST_ROOT
-			|| "/home/insaint/Containers/deepseek-harness/data/workspace",
+			|| process.env.DSH_WORKSPACE_HOST_ROOT
+			|| "/workspace-host",
 	);
 }
 

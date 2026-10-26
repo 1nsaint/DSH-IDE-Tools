@@ -9,7 +9,7 @@ import { readFile, writeFile, mkdir, readdir, access } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
-import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
+import { registerRpcChannel } from "dsh-ide-shared/register-rpc-channel.js";
 
 const name = "dsh-containers";
 const inject = ["connection", "webServer"];
@@ -77,6 +77,10 @@ function defaultConfig() {
 		allowPrefixes: [],
 		activeHostId: LOCAL_HOST.id,
 		hosts: [{ ...LOCAL_HOST }],
+		/** LAN IP used when opening published ports from a public hostname (not loopback). */
+		lanHostFallback: String(process.env.DSH_LAN_HOST || "").trim(),
+		/** Prefill for the Add-host form in Settings (optional). */
+		draftSshEndpoint: "",
 	};
 }
 
@@ -103,7 +107,15 @@ async function loadConfig() {
 		const activeHostId = hosts.some((h) => h.id === raw.activeHostId)
 			? raw.activeHostId
 			: hosts[0].id;
-		return { allowPrefixes, hosts, activeHostId };
+		const lanHostFallback =
+			typeof raw.lanHostFallback === "string"
+				? raw.lanHostFallback.trim()
+				: base.lanHostFallback;
+		const draftSshEndpoint =
+			typeof raw.draftSshEndpoint === "string"
+				? raw.draftSshEndpoint.trim()
+				: base.draftSshEndpoint;
+		return { allowPrefixes, hosts, activeHostId, lanHostFallback, draftSshEndpoint };
 	} catch {
 		const env = process.env.DSH_CONTAINERS_ALLOW || "";
 		return {
@@ -331,7 +343,21 @@ function registerRpc(ctx) {
 							activeHostId = hosts[0].id;
 						}
 
-						const cfg = { allowPrefixes: prefixes, hosts, activeHostId };
+						const lanHostFallback =
+							typeof payload?.lanHostFallback === "string"
+								? payload.lanHostFallback.trim()
+								: (current.lanHostFallback || "");
+						const draftSshEndpoint =
+							typeof payload?.draftSshEndpoint === "string"
+								? payload.draftSshEndpoint.trim()
+								: (current.draftSshEndpoint || "");
+						const cfg = {
+							allowPrefixes: prefixes,
+							hosts,
+							activeHostId,
+							lanHostFallback,
+							draftSshEndpoint,
+						};
 						await saveConfig(cfg);
 						clearIdleComposeCache();
 						return ok(cfg);
@@ -475,6 +501,7 @@ function registerRpc(ctx) {
 								hosts: cfg.hosts,
 								activeHostId: host.id,
 								env: envMode,
+								lanHostFallback: cfg.lanHostFallback || "",
 							});
 						}
 

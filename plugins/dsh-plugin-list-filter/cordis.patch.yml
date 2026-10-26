@@ -1,0 +1,4 @@
+# Bundle patch for dsh-plugin-list-filter (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-plugin-list-filter
+      name: dsh-plugin-list-filter

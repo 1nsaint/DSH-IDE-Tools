@@ -8,7 +8,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-connection'
-import { registerRpcChannel, ok, transportError } from '../../_shared/register-rpc-channel.js'
+import { registerRpcChannel, ok, transportError } from 'dsh-ide-shared/register-rpc-channel.js'
 import type { CronService } from './scheduler.ts'
 import { targetFromPayload } from './target.ts'
 

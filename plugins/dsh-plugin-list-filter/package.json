@@ -1,12 +1,16 @@
 {
   "name": "dsh-plugin-list-filter",
   "version": "0.1.2",
-  "description": "Settings → Plugins → Plugin list: origin filter and short descriptions from package.json.",
+  "description": "Settings \u2192 Plugins \u2192 Plugin list: origin filter and short descriptions from package.json.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
-    ".": { "default": "./lib/index.js" },
-    "./client": { "default": "./lib/client.js" },
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
     "./package.json": "./package.json"
   },
   "dsh": {
@@ -17,10 +21,16 @@
         "@deepseek-ai/dsh-client-connection",
         "@deepseek-ai/dsh-client-runtime"
       ]
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
     }
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "dsh-ide-shared": "file:../dsh-ide-shared"
+  }
 }

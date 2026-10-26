@@ -620,7 +620,7 @@ export class CdpSession {
 		// Tool output must be lossless JSON — coerce undefined/NaN/etc.
 		const safe = toLosslessJson(result?.value);
 		let value = safe.value;
-		// Cap huge evaluate dumps (innerHTML / body text) so sessions stay usable on Jetson.
+		// Cap huge evaluate dumps (innerHTML / body text) so sessions stay usable on small GPUs.
 		if (typeof value === "string" && value.length > 3000) {
 			value = `${value.slice(0, 3000)}…`;
 		} else if (value && typeof value === "object") {

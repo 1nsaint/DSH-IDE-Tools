@@ -1,0 +1,4 @@
+# Bundle patch for dsh-composer-dock (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-composer-dock
+      name: dsh-composer-dock

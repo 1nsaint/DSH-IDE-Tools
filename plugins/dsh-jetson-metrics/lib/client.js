@@ -1,5 +1,5 @@
-// Jetson RAM donut for Harness sidebar — polls /jetson-metrics-api/api/ai/active
-// (same memory breakdown as rubberrobo.nl AI Hub).
+// Deprecated host RAM donut — polls /jetson-metrics-api/api/ai/active.
+// Prefer dsh-ai-metrics (Settings → AI Metrics).
 window.__ModuleLoader__.load({
 	id: "dsh-jetson-metrics",
 	factory: (require) => {
@@ -192,13 +192,13 @@ window.__ModuleLoader__.load({
 		function tooltipContent(snapshot, loading) {
 			if (loading) {
 				return [
-					(0, react_jsx_runtime.jsx)("strong", { children: "Jetson memory" }),
+					(0, react_jsx_runtime.jsx)("strong", { children: "Host memory" }),
 					"Loading…",
 				];
 			}
 			if (!snapshot) {
 				return [
-					(0, react_jsx_runtime.jsx)("strong", { children: "Jetson memory" }),
+					(0, react_jsx_runtime.jsx)("strong", { children: "Host memory" }),
 					"Could not reach metrics-api.",
 				];
 			}
@@ -209,7 +209,7 @@ window.__ModuleLoader__.load({
 			return [
 				(0, react_jsx_runtime.jsxs)("strong", {
 					children: [
-						"Jetson · ",
+						"Host · ",
 						formatBytes(total),
 						active?.model ? ` · ${active.model}` : "",
 					],
@@ -278,10 +278,8 @@ window.__ModuleLoader__.load({
 			const button = (0, react_jsx_runtime.jsxs)("button", {
 				type: "button",
 				className: "djm_btn",
-				title: "Jetson memory",
-				onClick: () => {
-					window.open("https://rubberrobo.nl/ai/", "_blank", "noopener");
-				},
+				title: "Host memory",
+				onClick: () => {},
 				children: [
 					(0, react_jsx_runtime.jsx)(MemoryDonut, {
 						segments,
@@ -291,7 +289,7 @@ window.__ModuleLoader__.load({
 					wide && (0, react_jsx_runtime.jsxs)("span", {
 						className: "djm_line",
 						children: [
-							(0, react_jsx_runtime.jsx)("span", { className: "djm_label", children: "Jetson RAM" }),
+							(0, react_jsx_runtime.jsx)("span", { className: "djm_label", children: "Host RAM" }),
 							(0, react_jsx_runtime.jsxs)("span", {
 								className: "djm_sub",
 								children: ["·\u00a0", formatBytes(freeBytes), "\u00a0free"],

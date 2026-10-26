@@ -1,7 +1,7 @@
 {
   "name": "dsh-jetson-metrics",
   "version": "0.1.0",
-  "description": "Jetson RAM donut in the Harness sidebar (same breakdown as AI Hub).",
+  "description": "Deprecated host RAM donut (use dsh-ai-metrics). Kept for reference.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

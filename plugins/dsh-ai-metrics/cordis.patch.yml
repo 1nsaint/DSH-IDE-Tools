@@ -1,0 +1,4 @@
+# Bundle patch for dsh-ai-metrics (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-ai-metrics
+      name: dsh-ai-metrics

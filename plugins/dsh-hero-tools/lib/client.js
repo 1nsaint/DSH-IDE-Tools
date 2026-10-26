@@ -217,8 +217,10 @@ window.__ModuleLoader__.load({
   padding-left:12px;
   padding-right:12px;
 }
-.dsh-hero-header [class*="_titleRow"]{display:flex;align-items:center;gap:12px;min-width:0;width:100%}
-.dsh-hero-header [class*="_titleCluster"]{display:flex;align-items:center;gap:8px;min-width:0;flex:1 1 auto}
+.dsh-hero-header [class*="_titleRow"]{display:flex;align-items:center;gap:12px;min-width:0;width:100%;flex-wrap:nowrap}
+.dsh-hero-header [class*="_titleCluster"]{display:flex;align-items:center;gap:8px;min-width:0;flex:1 1 auto;width:auto!important;max-width:100%}
+/* Stock blank session header still mounts the right-sidebar toggle; hide it once we adopt the corner. */
+[class*="_root"][data-phase=hero] [class*="_header"][class*="_headerBlank"]{display:none!important}
 .dsh-hero-header .dsh-hero-title{
   font-size:14px;font-weight:500;line-height:20px;color:var(--dsw-alias-label-primary);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
@@ -236,8 +238,12 @@ window.__ModuleLoader__.load({
   text-transform:uppercase;letter-spacing:.03em;
 }
 .dsh-hero-header [class*="_headerActions"]{
-  display:inline-flex;align-items:center;gap:6px;flex:none;margin-left:auto;
+  display:inline-flex;align-items:center;gap:8px;flex:none;margin-left:auto;
   pointer-events:auto;position:relative;z-index:6;
+}
+/* Stock corner uses margin-right:-16px to eat header padding; that overlaps siblings here. */
+.dsh-hero-header [class*="_headerActions"] [class*="_headerCorner"]{
+  margin-left:0!important;margin-right:0!important;
 }
 .dsh-hero-header [class*="_tabs"]{
   display:flex;align-items:flex-end;gap:6px;margin-top:4px;padding:0;min-width:0;max-width:100%;
@@ -641,11 +647,24 @@ window.__ModuleLoader__.load({
 			}
 		}
 
+		/** Pull stock right-sidebar toggle into hero headerActions; blank header is CSS-hidden. */
+		function adoptStockHeaderCorner(root, headerHost) {
+			if (!(root instanceof HTMLElement) || !(headerHost instanceof HTMLElement)) return;
+			const actions = headerHost.querySelector("[data-dsh-hero-header-actions]");
+			if (!(actions instanceof HTMLElement)) return;
+			root.querySelectorAll('[class*="_header"][class*="_headerBlank"] [class*="_headerCorner"]').forEach((corner) => {
+				if (!(corner instanceof HTMLElement)) return;
+				if (actions.contains(corner)) return;
+				actions.appendChild(corner);
+			});
+		}
+
 		function maintainHeroChrome() {
 			purgeHeroChromeFromNonHeroRoots();
 			const root = document.querySelector('[class*="_root"][data-phase=hero]');
 			if (!root) return;
-			ensureHeroChrome(root);
+			const { headerHost } = ensureHeroChrome(root);
+			adoptStockHeaderCorner(root, headerHost);
 			patchComposerPreviewBadges();
 			if (!heroToolRestored) {
 				heroToolRestored = true;
@@ -985,8 +1004,8 @@ window.__ModuleLoader__.load({
     <div class="${stockClass("titleCluster")}">
       <span class="dsh-hero-title" data-dsh-hero-title></span>
       <span class="dsh-hero-titleBadge" data-dsh-hero-title-badge hidden></span>
-      <div class="${stockClass("headerActions")}" data-dsh-hero-header-actions="1" aria-label="Workbench controls"></div>
     </div>
+    <div class="${stockClass("headerActions")}" data-dsh-hero-header-actions="1" aria-label="Workbench controls"></div>
   </div>
   <div class="${stockClass("tabs")}" role="tablist" aria-label="Views" data-dsh-hero-tabs="1">${tabBtns}</div>`;
 			}

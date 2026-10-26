@@ -9,7 +9,7 @@ import path from "node:path";
 import { createReadStream } from "node:fs";
 import { statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
+import { registerRpcChannel } from "dsh-ide-shared/register-rpc-channel.js";
 import { CHROME_UA, isCloudflareChallenge, cloudflareErrorMessage, cloudflareDone } from "./cf.js";
 import { loadConfig, saveConfig } from "./config.js";
 import { remoteBrowser, testCdpHttp } from "./cdp.js";
@@ -1159,7 +1159,7 @@ function rewriteScriptSrcsThroughGate(html, pageUrl, harnessOrigin) {
 			const u = new URL(raw, pageUrl);
 			if (u.origin !== page.origin) return null;
 			// Must be absolute to harness — <base href=public> would otherwise send
-			// path-absolute /api/browser-gate/... to rubberrobo.nl and 404.
+			// path-absolute /api/browser-gate/... to the public hostname and 404.
 			return `${origin}${GATE_PREFIX}/${u.protocol.replace(":", "")}/${u.host}${u.pathname}${u.search}`;
 		} catch {
 			return null;

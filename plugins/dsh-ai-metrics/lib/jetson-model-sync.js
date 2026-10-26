@@ -21,7 +21,7 @@ const NAME_OVERRIDES = {
 };
 
 /**
- * @param {string} upstreamBase e.g. http://192.168.0.146:8100
+ * @param {string} upstreamBase e.g. http://192.168.1.10:8100
  * @param {AbortSignal} [signal]
  */
 export async function fetchSwitcherModels(upstreamBase, signal) {
@@ -191,7 +191,7 @@ export async function syncJetsonModels({ ctx, upstreamBase, log, force = false }
 	}
 
 	log?.(
-		`[dsh-ai-metrics] synced ${models.length} Jetson models: ${models.map((m) => m.id).join(", ")}`,
+		`[dsh-ai-metrics] synced ${models.length} switcher models: ${models.map((m) => m.id).join(", ")}`,
 	);
 	return { ok: true, changed: true, models };
 }
@@ -199,20 +199,28 @@ export async function syncJetsonModels({ ctx, upstreamBase, log, force = false }
 /**
  * @param {object} opts
  * @param {import('@deepseek-ai/cordis').Context} opts.ctx
- * @param {string} opts.upstreamBase
+ * @param {string} [opts.upstreamBase]
+ * @param {() => string} [opts.getUpstreamBase] live reader (preferred when Settings can change URL)
  * @param {number} [opts.intervalMs] 0 = disable periodic
  * @param {(msg: string) => void} [opts.log]
  * @returns {() => void} disposer
  */
-export function startJetsonModelSync({ ctx, upstreamBase, intervalMs = 300_000, log }) {
+export function startJetsonModelSync({ ctx, upstreamBase, getUpstreamBase, intervalMs = 300_000, log }) {
 	let stopped = false;
 	let timer = /** @type {ReturnType<typeof setInterval> | null} */ (null);
 
 	const run = (force = false) => {
 		if (stopped) return;
+		const base = typeof getUpstreamBase === "function"
+			? String(getUpstreamBase() || "").trim()
+			: String(upstreamBase || "").trim();
+		if (!base) {
+			log?.("[dsh-ai-metrics] jetson model sync skipped — switcher upstream not configured");
+			return;
+		}
 		void syncJetsonModels({
 			ctx,
-			upstreamBase,
+			upstreamBase: base,
 			log,
 			force,
 		});

@@ -1,7 +1,7 @@
 {
   "name": "dsh-database",
   "version": "0.3.0",
-  "description": "Multi-engine explorer — table search; SQL optional; Postgres clone; centralized connections.",
+  "description": "Multi-engine explorer \u2014 table search; SQL optional; Postgres clone; centralized connections.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -16,7 +16,8 @@
   "dependencies": {
     "ioredis": "^5.11.1",
     "mysql2": "^3.24.3",
-    "pg": "^8.13.1"
+    "pg": "^8.13.1",
+    "dsh-ide-shared": "file:../dsh-ide-shared"
   },
   "dsh": {
     "client": {
@@ -27,6 +28,9 @@
         "@deepseek-ai/dsh-client-ui-slots",
         "@deepseek-ai/dsh-client-ui-settings"
       ]
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
     }
   },
   "peerDependencies": {

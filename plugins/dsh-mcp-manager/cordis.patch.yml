@@ -1,0 +1,4 @@
+# Bundle patch for dsh-mcp-manager (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-mcp-manager
+      name: dsh-mcp-manager

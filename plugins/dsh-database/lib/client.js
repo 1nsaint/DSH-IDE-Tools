@@ -1202,7 +1202,7 @@ window.__ModuleLoader__.load({
 
 			return React.createElement("div", { className: "dd_form" },
 				React.createElement("p", { style: { margin: 0, fontSize: 12, color: "var(--dsw-alias-label-tertiary)" } },
-					"Database connections are stored centrally on the server (plugins-data/dsh-database-connections.json) and shared across all origins (agent.rubberrobo.nl, 127.0.0.1, localhost)."),
+					"Database connections are stored centrally on the server (plugins-data/dsh-database-connections.json) and shared across all browser origins for this Harness (public host, LAN IP, localhost)."),
 				list.map((c) => React.createElement("div", {
 					key: c.id,
 					style: { display: "flex", gap: 8, alignItems: "center" },

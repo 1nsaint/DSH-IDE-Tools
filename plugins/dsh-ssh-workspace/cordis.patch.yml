@@ -1,0 +1,4 @@
+# Bundle patch for dsh-ssh-workspace (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-ssh-workspace
+      name: dsh-ssh-workspace

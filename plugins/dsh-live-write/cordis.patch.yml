@@ -1,0 +1,4 @@
+# Bundle patch for dsh-live-write (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-live-write
+      name: dsh-live-write

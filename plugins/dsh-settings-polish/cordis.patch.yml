@@ -1,0 +1,4 @@
+# Bundle patch for dsh-settings-polish (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-settings-polish
+      name: dsh-settings-polish

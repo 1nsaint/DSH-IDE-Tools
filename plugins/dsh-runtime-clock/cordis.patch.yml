@@ -1,0 +1,4 @@
+# Bundle patch for dsh-runtime-clock (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-runtime-clock
+      name: dsh-runtime-clock

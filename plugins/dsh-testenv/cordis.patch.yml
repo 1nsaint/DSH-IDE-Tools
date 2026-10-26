@@ -1,0 +1,4 @@
+# Bundle patch for dsh-testenv (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-testenv
+      name: dsh-testenv

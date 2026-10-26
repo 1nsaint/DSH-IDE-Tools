@@ -36,3 +36,4 @@ data/certs/
 # Plugin-local test artifacts
 *.log
 .npmrc
+plugins/node_modules/

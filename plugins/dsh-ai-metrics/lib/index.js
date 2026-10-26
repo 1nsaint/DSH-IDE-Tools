@@ -1,14 +1,16 @@
 /**
  * Host half: same-origin proxies for metrics + plugins-data config store.
- * - /jetson-metrics-api/* → Jetson metrics-api (optional)
- * - /jetson-switcher-api/* → Jetson model switcher :8100 (clear-cache, health)
- * - /ollama-metrics-api/* → host Ollama (browser cannot hit :11434 directly — CORS)
- * - auto-sync Jetson switcher /v1/models → llm-pi-ai jetson-llamacpp catalog
+ * - /jetson-metrics-api/* → metrics upstream (optional)
+ * - /jetson-switcher-api/* → model switcher (clear-cache, health)
+ * - /ollama-metrics-api/* → Ollama (browser cannot hit :11434 directly — CORS)
+ * - auto-sync switcher /v1/models → llm-pi-ai jetson-llamacpp catalog
+ *
+ * Upstream URLs: plugins-data → env → empty (never hardcode LAN IPs in code).
  */
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
+import { registerRpcChannel } from "dsh-ide-shared/register-rpc-channel.js";
 import { startJetsonModelSync, syncJetsonModels } from "./jetson-model-sync.js";
 
 const name = "dsh-ai-metrics";
@@ -16,13 +18,16 @@ const inject = ["webServer", "connection", "settings"];
 const PROXY_PREFIX = "/jetson-metrics-api";
 const SWITCHER_PROXY_PREFIX = "/jetson-switcher-api";
 const OLLAMA_PROXY_PREFIX = "/ollama-metrics-api";
-const DEFAULT_UPSTREAM = "http://192.168.0.146:8001";
-const DEFAULT_SWITCHER_UPSTREAM = "http://192.168.0.146:8100";
-/** Docker→host bridge; override with OLLAMA_BASE_URL (e.g. http://192.168.0.50:11434). */
-const DEFAULT_OLLAMA_UPSTREAM = "http://172.17.0.1:11434";
 const RPC_CHANNEL = "/ai-metrics-config";
 /** Periodic catalog sync; set DSH_JETSON_MODEL_SYNC_MS=0 to disable. Default 5 min. */
 const DEFAULT_SYNC_MS = 300_000;
+
+/** Live proxy targets — updated when config is saved / migrated. */
+const liveUpstreams = {
+	metrics: "",
+	switcher: "",
+	ollama: "",
+};
 
 function sendJson(res, status, body) {
 	const buf = Buffer.from(JSON.stringify(body), "utf8");
@@ -54,6 +59,33 @@ function transportError(error) {
 	};
 }
 
+function trimUrl(v) {
+	return String(v || "").trim().replace(/\/+$/, "");
+}
+
+function envUpstream(name, fallback = "") {
+	return trimUrl(process.env[name] || fallback);
+}
+
+/**
+ * Normalize widget + upstream fields. Does not invent LAN defaults.
+ * @param {unknown} raw
+ */
+function normalizeUserConfig(raw) {
+	const o = raw && typeof raw === "object" ? /** @type {Record<string, unknown>} */ (raw) : {};
+	return {
+		adapter: typeof o.adapter === "string" ? o.adapter : "off",
+		url: typeof o.url === "string" ? o.url : "/jetson-metrics-api/api/ai/active",
+		label: typeof o.label === "string" && o.label.trim() ? o.label.trim() : "AI RAM",
+		clickUrl: typeof o.clickUrl === "string" ? o.clickUrl : "",
+		totalBytes: o.totalBytes != null ? String(o.totalBytes) : "",
+		colors: o.colors && typeof o.colors === "object" ? o.colors : {},
+		metricsUpstream: trimUrl(o.metricsUpstream),
+		switcherUpstream: trimUrl(o.switcherUpstream),
+		ollamaUpstream: trimUrl(o.ollamaUpstream),
+	};
+}
+
 async function loadStore() {
 	try {
 		const raw = JSON.parse(await readFile(configPath(), "utf8"));
@@ -68,9 +100,57 @@ async function loadStore() {
 async function saveStore(cfg) {
 	const p = configPath();
 	await mkdir(dirname(p), { recursive: true });
-	const clean = cfg && typeof cfg === "object" ? cfg : {};
+	const clean = normalizeUserConfig(cfg);
 	await writeFile(p, `${JSON.stringify({ initialized: true, config: clean }, null, 2)}\n`, "utf8");
+	applyLiveUpstreams(clean);
 	return clean;
+}
+
+function applyLiveUpstreams(cfg) {
+	liveUpstreams.metrics = trimUrl(cfg?.metricsUpstream) || envUpstream("JETSON_METRICS_URL");
+	liveUpstreams.switcher = trimUrl(cfg?.switcherUpstream) || envUpstream("JETSON_SWITCHER_URL");
+	liveUpstreams.ollama = trimUrl(cfg?.ollamaUpstream) || envUpstream("OLLAMA_BASE_URL");
+}
+
+/**
+ * One-time: if store lacks upstream fields, seed from env (or leave empty).
+ * Existing ProDesk installs that already have widget config keep labels/colors
+ * and gain upstreams from env when present.
+ */
+async function migrateAndLoadConfig() {
+	const store = await loadStore();
+	let cfg = normalizeUserConfig(store.config || {});
+	let changed = false;
+
+	const envMetrics = envUpstream("JETSON_METRICS_URL");
+	const envSwitcher = envUpstream("JETSON_SWITCHER_URL");
+	const envOllama = envUpstream("OLLAMA_BASE_URL");
+
+	if (!cfg.metricsUpstream && envMetrics) {
+		cfg.metricsUpstream = envMetrics;
+		changed = true;
+	}
+	if (!cfg.switcherUpstream && envSwitcher) {
+		cfg.switcherUpstream = envSwitcher;
+		changed = true;
+	}
+	if (!cfg.ollamaUpstream && envOllama) {
+		cfg.ollamaUpstream = envOllama;
+		changed = true;
+	}
+
+	// Legacy: initialized jetson widget but no upstream keys yet — seed from
+	// env only. If env empty, leave blank (user configures in Settings).
+	if (store.initialized && store.config && !("metricsUpstream" in (store.config || {}))) {
+		changed = true;
+	}
+
+	if (changed || (store.initialized && store.config && !("metricsUpstream" in store.config))) {
+		cfg = await saveStore({ ...store.config, ...cfg });
+	} else {
+		applyLiveUpstreams(cfg);
+	}
+	return { initialized: store.initialized || changed, config: cfg };
 }
 
 function syncIntervalMs() {
@@ -81,47 +161,72 @@ function syncIntervalMs() {
 	return Math.round(n);
 }
 
-function registerRpc(ctx, switcherUpstream) {
+function registerRpc(ctx) {
 	return registerRpcChannel(ctx, RPC_CHANNEL, async (endpoint, payload) => {
-			try {
-				if (endpoint === "loadConfig") {
-					const store = await loadStore();
-					return ok({ config: store.config, initialized: store.initialized });
-				}
-				if (endpoint === "saveConfig") {
-					const clean = await saveStore(payload?.config);
-					return ok({ config: clean });
-				}
-				if (endpoint === "syncConfig") {
-					const store = await loadStore();
-					const clientCfg = payload?.config && typeof payload.config === "object" ? payload.config : null;
-					if (!store.initialized && clientCfg) {
-						const saved = await saveStore(clientCfg);
-						return ok({ config: saved, migrated: true });
-					}
-					return ok({ config: store.config, migrated: false });
-				}
-				if (endpoint === "syncJetsonModels") {
-					const result = await syncJetsonModels({
-						ctx,
-						upstreamBase: switcherUpstream,
-						log: (msg) => ctx.logger?.info?.(msg),
-						force: Boolean(payload?.force),
-					});
-					return ok(result);
-				}
-				throw new Error(`unknown endpoint: ${endpoint}`);
-			} catch (error) {
-				return transportError(error);
+		try {
+			if (endpoint === "loadConfig") {
+				const store = await loadStore();
+				const config = store.config ? normalizeUserConfig(store.config) : null;
+				if (config) applyLiveUpstreams(config);
+				return ok({ config, initialized: store.initialized });
 			}
-		});
+			if (endpoint === "saveConfig") {
+				const clean = await saveStore(payload?.config);
+				return ok({ config: clean });
+			}
+			if (endpoint === "syncConfig") {
+				const store = await loadStore();
+				const clientCfg = payload?.config && typeof payload.config === "object" ? payload.config : null;
+				if (!store.initialized && clientCfg) {
+					const saved = await saveStore(clientCfg);
+					return ok({ config: saved, migrated: true });
+				}
+				const config = store.config ? normalizeUserConfig(store.config) : null;
+				if (config) applyLiveUpstreams(config);
+				return ok({ config, migrated: false });
+			}
+			if (endpoint === "syncJetsonModels") {
+				const base = liveUpstreams.switcher;
+				if (!base) {
+					return ok({
+						ok: false,
+						changed: false,
+						models: [],
+						error: "switcher upstream not configured (Settings → AI Metrics)",
+					});
+				}
+				const result = await syncJetsonModels({
+					ctx,
+					upstreamBase: base,
+					log: (msg) => ctx.logger?.info?.(msg),
+					force: Boolean(payload?.force),
+				});
+				return ok(result);
+			}
+			throw new Error(`unknown endpoint: ${endpoint}`);
+		} catch (error) {
+			return transportError(error);
+		}
+	});
 }
 
-function makePrefixProxy(ctx, { prefix, upstreamBase, label, timeoutMs = 20_000, allowMethods = ["GET", "HEAD"] }) {
-	const base = String(upstreamBase || "").replace(/\/+$/, "");
+/**
+ * @param {import('@deepseek-ai/cordis').Context} ctx
+ * @param {{ prefix: string, getBase: () => string, label: string, timeoutMs?: number, allowMethods?: string[] }} opts
+ */
+function makePrefixProxy(ctx, { prefix, getBase, label, timeoutMs = 20_000, allowMethods = ["GET", "HEAD"] }) {
 	const allowed = new Set(allowMethods.map((m) => m.toUpperCase()));
 	return async (req, res) => {
 		try {
+			const base = trimUrl(getBase());
+			if (!base) {
+				sendJson(res, 503, {
+					ok: false,
+					error: "upstream not configured",
+					detail: `Set ${label} URL in Settings → AI Metrics (or env).`,
+				});
+				return;
+			}
 			const method = (req.method || "GET").toUpperCase();
 			if (!allowed.has(method)) {
 				sendJson(res, 405, { ok: false, error: "method not allowed" });
@@ -139,7 +244,6 @@ function makePrefixProxy(ctx, { prefix, upstreamBase, label, timeoutMs = 20_000,
 				return;
 			}
 
-			// clear-cache restarts llama-server (~20–90s)
 			const slow = method === "POST" && /\/clear-cache\/?$/.test(suffix);
 			const upstream = await fetch(target, {
 				method,
@@ -166,9 +270,13 @@ function makePrefixProxy(ctx, { prefix, upstreamBase, label, timeoutMs = 20_000,
 }
 
 function apply(ctx) {
-	const jetsonUpstream = (process.env.JETSON_METRICS_URL || DEFAULT_UPSTREAM).replace(/\/+$/, "");
-	const switcherUpstream = (process.env.JETSON_SWITCHER_URL || DEFAULT_SWITCHER_UPSTREAM).replace(/\/+$/, "");
-	const ollamaUpstream = (process.env.OLLAMA_BASE_URL || DEFAULT_OLLAMA_UPSTREAM).replace(/\/+$/, "");
+	// Fire-and-forget migrate so first requests see seeded upstreams when env is set.
+	void migrateAndLoadConfig().catch((err) => {
+		ctx.logger?.warn?.(
+			`[${name}] config migrate failed: ${err instanceof Error ? err.message : err}`,
+		);
+		applyLiveUpstreams({});
+	});
 
 	ctx.effect(
 		() =>
@@ -177,8 +285,8 @@ function apply(ctx) {
 				path: PROXY_PREFIX,
 				handler: makePrefixProxy(ctx, {
 					prefix: PROXY_PREFIX,
-					upstreamBase: jetsonUpstream,
-					label: "jetson metrics",
+					getBase: () => liveUpstreams.metrics,
+					label: "metrics",
 				}),
 			}),
 		`${name}: jetson-metrics proxy`,
@@ -191,8 +299,8 @@ function apply(ctx) {
 				path: SWITCHER_PROXY_PREFIX,
 				handler: makePrefixProxy(ctx, {
 					prefix: SWITCHER_PROXY_PREFIX,
-					upstreamBase: switcherUpstream,
-					label: "jetson switcher",
+					getBase: () => liveUpstreams.switcher,
+					label: "switcher",
 					timeoutMs: 15_000,
 					allowMethods: ["GET", "HEAD", "POST"],
 				}),
@@ -207,8 +315,8 @@ function apply(ctx) {
 				path: OLLAMA_PROXY_PREFIX,
 				handler: makePrefixProxy(ctx, {
 					prefix: OLLAMA_PROXY_PREFIX,
-					upstreamBase: ollamaUpstream,
-					label: "ollama metrics",
+					getBase: () => liveUpstreams.ollama,
+					label: "ollama",
 					timeoutMs: 8_000,
 				}),
 			}),
@@ -216,12 +324,13 @@ function apply(ctx) {
 	);
 
 	ctx.inject(["connection", "webServer", "settings"], (scope) => {
-		scope.effect(() => registerRpc(scope, switcherUpstream), `${name}: rpc`);
+		scope.effect(() => registerRpc(scope), `${name}: rpc`);
 		scope.effect(
 			() =>
 				startJetsonModelSync({
 					ctx: scope,
-					upstreamBase: switcherUpstream,
+					getUpstreamBase: () => liveUpstreams.switcher,
+					upstreamBase: liveUpstreams.switcher,
 					intervalMs: syncIntervalMs(),
 					log: (msg) => scope.logger?.info?.(msg) ?? console.info(msg),
 				}),
@@ -230,5 +339,5 @@ function apply(ctx) {
 	});
 }
 
-export { apply, name, inject };
+export { apply, name, inject, liveUpstreams, normalizeUserConfig };
 export default { name, inject, apply };

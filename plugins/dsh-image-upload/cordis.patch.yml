@@ -1,0 +1,4 @@
+# Bundle patch for dsh-image-upload (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-image-upload
+      name: dsh-image-upload

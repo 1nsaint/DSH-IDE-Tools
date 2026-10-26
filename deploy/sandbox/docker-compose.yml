@@ -1,0 +1,64 @@
+# Stock DSH sandbox — test Add plugin → suite without touching ProDesk DIY (:3080).
+#
+#   cd DSH-IDE-Tools/deploy/sandbox && docker compose up -d
+#   Open http://HOST:3180/?token=$(cat data/run/dsh-web/token)
+#
+# Plugins → Add plugin → /opt/DSH-IDE-Tools
+
+name: dsh-suite-sandbox
+
+services:
+  harness:
+    image: deepseek-harness:local
+    container_name: dsh-suite-sandbox
+    restart: unless-stopped
+    ports:
+      - "${DSH_PORT:-3180}:3080"
+    command:
+      - --profile
+      - web
+      - --patch
+      - /opt/sandbox/web.cordis.patch.yml
+      - --no-open
+      - --trusted-host
+      - 127.0.0.1
+      - 127.0.0.1:${DSH_PORT:-3180}
+      - localhost
+      - localhost:${DSH_PORT:-3180}
+      - ${DSH_LAN_HOST:-127.0.0.1}
+      - ${DSH_LAN_HOST:-127.0.0.1}:${DSH_PORT:-3180}
+    environment:
+      DSH_TELEMETRY_DISABLED: "1"
+      NARB_DISABLE_NATIVE_CACHE: "1"
+      HOME: /workspace
+      DSH_WEB_TOKEN_FILE: /home/node/.dsh/run/dsh-web/token
+      OPENAI_API_BASE_URL: ${OPENAI_API_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DOCKER_HOST: unix:///var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-983}"
+    volumes:
+      - ./data:/home/node/.dsh
+      - ./workspace:/workspace
+      - ./web.cordis.patch.yml:/opt/sandbox/web.cordis.patch.yml:ro
+      - ../..:/opt/DSH-IDE-Tools:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=512m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3080/').then(r => process.exit(r.status === 401 || r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      start_period: 90s
+      retries: 8

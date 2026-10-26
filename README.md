@@ -21,12 +21,15 @@ Full details: [`docs/INSTALL.md`](docs/INSTALL.md) · [`docs/FAQ.md`](docs/FAQ.m
 
 ```text
 DSH-IDE-Tools/
+  package.json                     # Suite bundle (Add plugin → this repo)
+  cordis.patch.yml                 # Loader inserts for the full suite
   plugins/                         # Cordis plugin packages (dsh-*)
-  scripts/install-ide-tools.sh     # Wire plugins into stock Harness
-  scripts/sync-to-harness.sh         # ProDesk maintainer sync only
-  deploy/docker-compose.example.yml  # Stock dsh + data volumes + Docker socket
-  docs/                              # Install & FAQ
-  examples/                          # Profile wiring (used by install script)
+  packages/dsh-ide-tools/          # Same suite via #path:packages/dsh-ide-tools
+  scripts/install-ide-tools.sh     # Wire plugins into stock Harness (CLI)
+  scripts/sync-to-harness.sh       # ProDesk maintainer sync only
+  deploy/                          # Turnkey Docker bake
+  docs/                            # Install & FAQ
+  examples/                        # Profile wiring (used by install script)
   CREDITS.md
   LICENSE
 ```
@@ -37,8 +40,12 @@ Plugin authoring: [`plugins/PLUGIN_DEV.md`](plugins/PLUGIN_DEV.md).
 
 | Audience | What to use |
 |----------|-------------|
-| **New users / friends** | `install-ide-tools.sh` + `deploy/docker-compose.example.yml` |
+| **Stock Harness (Add plugin)** | Plugins → Add plugin → `https://github.com/1nsaint/DSH-IDE-Tools` |
+| **One plugin only** | `github:1nsaint/DSH-IDE-Tools#path:plugins/dsh-browser` (swap the folder name) |
+| **New users / turnkey Docker** | `deploy/` compose — plugins baked into the image |
 | **ProDesk maintainer** | Git submodule in [`Containers`](https://github.com/1nsaint/Containers) + `sync-to-harness.sh` |
+
+The repo **root** is an installable Cordis bundle (`package.json` + `dsh.bundle` + `cordis.patch.yml`). Stock DSH clones it with pnpm and pulls each plugin via `file:./plugins/…`. Details: [`docs/INSTALL.md`](docs/INSTALL.md).
 
 Stock Harness core is unmodified `@deepseek-ai/dsh` — all IDE behaviour comes from plugins + profile config.
 
@@ -48,7 +55,7 @@ The `dsh-ssh-workspace` plugin adds Cursor-style remote folders:
 
 1. **Settings → SSH** — save hosts (user, hostname, identity file).
 2. **Add workspace → SSH** — browse remote directories over SFTP, register as `dssh://host/path`.
-3. Sidebar chips show **local** vs host label (ProDesk, Jetson, …).
+3. Sidebar chips show **local** vs remote host label.
 4. **Files / Code / Terminal** follow the remote path when that workspace is active.
 
 Requirements: SSH keys inside the Harness container (`~/.ssh` mount in compose). Agent tools on the remote host are not yet routed.

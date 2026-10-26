@@ -1,4 +1,4 @@
-# Standalone filesystem Remote used by sidebar + Code tab (not FileLens UI).
+# Bundle patch for dsh-files (installable via Add plugin / profile.bundles).
 - insert:
     - id: dsh-files
       name: dsh-files

@@ -755,7 +755,7 @@ window.__ModuleLoader__.load({
 					"Saved PCs live in your Harness data folder and survive container rebuilds. ",
 					"Pasted private keys are written to ",
 					React.createElement("code", null, sshKeysDirPath),
-					" (on ProDesk: deepseek-harness/data/home/ssh/). ",
+					" (typical compose mount: deepseek-harness/data/home/ssh/). ",
 					"Optional: point at a read-only host key such as /home/node/.ssh/id_ed25519 instead."),
 				React.createElement("div", { className: "dsw-section" },
 					React.createElement("div", { className: "dsw-sectionTitle" }, "Saved PCs"),

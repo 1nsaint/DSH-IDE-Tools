@@ -1,0 +1,4 @@
+# Bundle patch for dsh-hero-tools (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-hero-tools
+      name: dsh-hero-tools

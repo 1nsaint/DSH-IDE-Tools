@@ -34,6 +34,7 @@ export const STORE_FILE = "dsh-local-agent.json";
  * @property {boolean} breakGenerationLoops abort mid-stream when prose/reasoning repeats without a tool call
  * @property {number} generationLoopMinChars min accumulated chars before fingerprint loop check
  * @property {number} generationLoopMaxChars hard cap on prose/reasoning without a tool call
+ * @property {string} jetsonKvUrlHosts comma-separated host:port (or host) substrings for KV cache_prompt inject; empty = path-only (/jetson-switcher-api/)
  */
 
 export const CATEGORY_META = [
@@ -86,6 +87,7 @@ export const PRESET_DEFAULTS = {
 		breakGenerationLoops: true,
 		generationLoopMinChars: 500,
 		generationLoopMaxChars: 8_000,
+		jetsonKvUrlHosts: "",
 	},
 	balanced: {
 		useCustomCategories: false,
@@ -121,6 +123,7 @@ export const PRESET_DEFAULTS = {
 		breakGenerationLoops: true,
 		generationLoopMinChars: 600,
 		generationLoopMaxChars: 10_000,
+		jetsonKvUrlHosts: "",
 	},
 	jetson: {
 		useCustomCategories: false,
@@ -156,6 +159,7 @@ export const PRESET_DEFAULTS = {
 		breakGenerationLoops: true,
 		generationLoopMinChars: 500,
 		generationLoopMaxChars: 8_000,
+		jetsonKvUrlHosts: "",
 	},
 	full: {
 		useCustomCategories: false,
@@ -179,6 +183,7 @@ export const PRESET_DEFAULTS = {
 		breakGenerationLoops: false,
 		generationLoopMinChars: 800,
 		generationLoopMaxChars: 16_000,
+		jetsonKvUrlHosts: "",
 	},
 	custom: {
 		useCustomCategories: true,
@@ -202,10 +207,11 @@ export const PRESET_DEFAULTS = {
 		breakGenerationLoops: true,
 		generationLoopMinChars: 500,
 		generationLoopMaxChars: 8_000,
+		jetsonKvUrlHosts: "",
 	},
 };
 
-/** One-click values for already-bloated Jetson chats (keeps current categories). */
+/** One-click values for already-bloated local-GPU chats (keeps current categories). */
 export const JETSON_RESCUE_OVERRIDES = {
 	truncateToolResults: true,
 	truncateAllToolResults: true,
@@ -225,6 +231,7 @@ export const JETSON_RESCUE_OVERRIDES = {
 	breakGenerationLoops: true,
 	generationLoopMinChars: 500,
 	generationLoopMaxChars: 6_000,
+	jetsonKvUrlHosts: "",
 };
 
 const SUBAGENT_TOOLS = new Set([
@@ -368,6 +375,10 @@ export function normalizeConfig(raw) {
 			64_000,
 			presetBlock.generationLoopMaxChars ?? 8_000,
 		),
+		jetsonKvUrlHosts:
+			typeof o.jetsonKvUrlHosts === "string"
+				? o.jetsonKvUrlHosts.trim()
+				: (presetBlock.jetsonKvUrlHosts ?? ""),
 	};
 }
 

@@ -1,75 +1,6 @@
-# DSH IDE Tools — full web profile overlay (installed by scripts/install-ide-tools.sh).
-# dsh-automation + dsh-cron load via dsh.profile.bundles — do not insert again.
-- insert:
-    - id: dsh-notify
-      name: dsh-notify
-      disabled: true
-    - id: dsh-jetson-metrics
-      name: dsh-jetson-metrics
-      disabled: true
-    - id: dsh-ai-metrics
-      name: dsh-ai-metrics
-    - id: dsh-image-upload
-      name: dsh-image-upload
-    - id: dsh-archive
-      name: dsh-archive
-    - id: dsh-session-move
-      name: dsh-session-move
-    - id: dsh-files
-      name: dsh-files
-    - id: dsh-code-tab
-      name: dsh-code-tab
-    - id: web-search-router
-      name: dsh-web-search-router
-    - id: dsh-workspace-accent
-      name: dsh-workspace-accent
-    - id: dsh-sidebar-files
-      name: dsh-sidebar-files
-    - id: dsh-workspace-add
-      name: dsh-workspace-add
-      disabled: true
-    - id: dsh-ssh-workspace
-      name: dsh-ssh-workspace
-    - id: dsh-workspace-sync
-      name: dsh-workspace-sync
-    - id: dsh-workspace-delete
-      name: dsh-workspace-delete
-    - id: dsh-git
-      name: dsh-git
-    - id: dsh-agent-review
-      name: dsh-agent-review
-    - id: dsh-containers
-      name: dsh-containers
-    - id: dsh-testenv
-      name: dsh-testenv
-    - id: dsh-terminal
-      name: dsh-terminal
-    - id: dsh-database
-      name: dsh-database
-    - id: dsh-browser
-      name: dsh-browser
-    - id: dsh-hero-tools
-      name: dsh-hero-tools
-    - id: dsh-session-tabs
-      name: dsh-session-tabs
-      disabled: true
-    - id: dsh-settings-polish
-      name: dsh-settings-polish
-    - id: dsh-plugin-list-filter
-      name: dsh-plugin-list-filter
-    - id: dsh-ui-polish
-      name: dsh-ui-polish
-    - id: dsh-runtime-clock
-      name: dsh-runtime-clock
-      config:
-        timezone: UTC
-        granularity: hour
-    - id: dsh-split-view
-      name: dsh-split-view
-    - id: dsh-local-agent
-      name: dsh-local-agent
-    - id: dsh-mcp-manager
-      name: dsh-mcp-manager
+# User / site overlays after bundle layers.
+# Plugins load via dsh.profile.bundles (see profile.package.json.full) — do not re-insert those ids.
+# Copy to $DSH_HOME/profiles/web/cordis.patch.yml and edit personal LLM / timezone values.
 - id: web
   config:
     searchProvider: multi-search
@@ -80,3 +11,8 @@
 - id: dsh-cron
   config:
     defaultCwd: /workspace
+# Optional personal overrides (examples — remove or edit):
+# - id: dsh-runtime-clock
+#   config:
+#     timezone: UTC
+#     granularity: hour

@@ -1,10 +1,10 @@
 /**
- * Jetson / llama.cpp KV reuse: inject `cache_prompt` + stable `id_slot` into
+ * Local llama.cpp KV reuse: inject `cache_prompt` + stable `id_slot` into
  * OpenAI-compatible chat/completions bodies aimed at the model switcher.
  *
  * pi-ai withholds sendSessionAffinityHeaders and does not forward samplingParams
  * from GenerateOptions, so we bind session identity via llm/stream + ALS and
- * patch fetch for Jetson URLs only.
+ * patch fetch for matching switcher / host URLs only.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { PLUGIN } from "./config.js";
@@ -14,8 +14,34 @@ const als = new AsyncLocalStorage();
 /** @type {((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) | null} */
 let originalFetch = null;
 
-const JETSON_URL_RE =
-	/(?:192\.168\.0\.146):(8100|8080)\b|jetson-switcher|\/jetson-switcher-api\//i;
+/** Always-on path / name markers (same-origin switcher proxy). */
+const BUILTIN_KV_URL_RE = /jetson-switcher|\/jetson-switcher-api\//i;
+
+/** @type {string[]} host:port or host substrings from plugins-data */
+let kvHostNeedles = [];
+
+/**
+ * Configure which URL hosts get cache_prompt / id_slot injection.
+ * @param {string} hostsCsv comma-separated host or host:port fragments
+ */
+export function setJetsonKvUrlHosts(hostsCsv) {
+	kvHostNeedles = String(hostsCsv || "")
+		.split(",")
+		.map((s) => s.trim())
+		.filter(Boolean);
+}
+
+/**
+ * @param {string} url
+ */
+function urlMatchesKvTarget(url) {
+	if (BUILTIN_KV_URL_RE.test(url)) return true;
+	const lower = String(url || "").toLowerCase();
+	for (const needle of kvHostNeedles) {
+		if (needle && lower.includes(needle.toLowerCase())) return true;
+	}
+	return false;
+}
 
 /**
  * @param {unknown} n
@@ -68,7 +94,7 @@ export function bindJetsonKvSession(options, nSlots = 1) {
  * @param {string} url
  */
 function isJetsonChatCompletions(url) {
-	if (!JETSON_URL_RE.test(url)) return false;
+	if (!urlMatchesKvTarget(url)) return false;
 	return /\/chat\/completions\b/i.test(url) || /\/completions\b/i.test(url);
 }
 
@@ -181,7 +207,7 @@ export function installJetsonKvFetch(nSlots = 1, log = null) {
 			}
 		} catch (err) {
 			log?.warn?.(
-				`[${PLUGIN}] jetson KV inject skipped: ${err instanceof Error ? err.message : err}`,
+				`[${PLUGIN}] KV inject skipped: ${err instanceof Error ? err.message : err}`,
 			);
 		}
 

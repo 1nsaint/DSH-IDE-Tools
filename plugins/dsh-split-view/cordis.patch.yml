@@ -1,0 +1,4 @@
+# Bundle patch for dsh-split-view (installable via Add plugin / profile.bundles).
+- insert:
+    - id: dsh-split-view
+      name: dsh-split-view

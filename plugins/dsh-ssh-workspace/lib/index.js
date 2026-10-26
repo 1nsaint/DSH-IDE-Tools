@@ -2,7 +2,7 @@
  * dsh-ssh-workspace — host: SSH hosts, remote browse, workspace bindings, SFTP file ops, SSH shells.
  */
 import { randomUUID } from "node:crypto";
-import { registerRpcChannel } from "../../_shared/register-rpc-channel.js";
+import { registerRpcChannel } from "dsh-ide-shared/register-rpc-channel.js";
 import {
 	configPath,
 	loadConfig,
