@@ -45,20 +45,100 @@ More detail: [`docs/INSTALL.md`](docs/INSTALL.md) · [`docs/FAQ.md`](docs/FAQ.md
 
 ## Features
 
+Workbench tabs after install (dark mode; sidebar collapsed in screenshots):
+
+### Overview
+
+<p align="center">
+  <img src="docs/images/03-overview-chat.png" alt="Chat overview with IDE tool tabs" width="900" />
+</p>
+
+### Code
+
+Center editor — find-in-file, edit, download; open from the file sidebar or chat links.
+
+<p align="center">
+  <img src="docs/images/05-code-tab.png" alt="Code tab" width="900" />
+</p>
+
+### Git
+
+Branches, changes, history, clone/publish, GitHub sign-in.
+
+<p align="center">
+  <img src="docs/images/06-git.png" alt="Git tab" width="900" />
+</p>
+
+### Terminal
+
+Interactive PTY (local or via SSH workspaces).
+
+<p align="center">
+  <img src="docs/images/07-terminal.png" alt="Terminal tab" width="900" />
+</p>
+
+### Downloads
+
+Aria2 — magnets, torrents, large HTTP; agent tools included.
+
+<p align="center">
+  <img src="docs/images/08-downloads.png" alt="Downloads tab" width="900" />
+</p>
+
+### Browser
+
+Live in-app browser + optional Remote Chromium (CDP).
+
+<p align="center">
+  <img src="docs/images/09-browser.png" alt="Browser tab" width="900" />
+</p>
+
+### Database
+
+Multi-engine explorer — connections, table search, optional SQL.
+
+<p align="center">
+  <img src="docs/images/10-database.png" alt="Database tab" width="900" />
+</p>
+
+### Scheduled
+
+Durable cron → fresh Automation sessions.
+
+<p align="center">
+  <img src="docs/images/11-scheduled.png" alt="Scheduled tab" width="900" />
+</p>
+
+### Containers
+
+Docker list — filters, logs, ports, remotes.
+
+<p align="center">
+  <img src="docs/images/12-containers.png" alt="Containers tab" width="900" />
+</p>
+
+### Split view
+
+Side-by-side panes; Terminal gets its own PTY in the split surface.
+
+<p align="center">
+  <img src="docs/images/13-split-view.png" alt="Split view" width="900" />
+</p>
+
+### SSH
+
+Settings → **SSH** — saved hosts, keys, remote folders, `dssh://` workspaces, SFTP + SSH terminal.
+
+<p align="center">
+  <img src="docs/images/16-ssh.png" alt="SSH settings" width="900" />
+</p>
+
+### Also included
+
 | Area | What it does |
 | --- | --- |
-| **Code** | Center editor tab — find-in-file, edit, download; opens from the file sidebar or chat links |
-| **Git** | Branches, changes, history, clone/publish, GitHub sign-in |
-| **Terminal** | Interactive PTY (local or via SSH workspaces) |
-| **Downloads** | Aria2 — magnets, torrents, large HTTP; agent tools included |
-| **Browser** | Live in-app browser + optional Remote Chromium (CDP); DevTools tools for agents |
-| **Database** | Multi-engine explorer — connections, table search, optional SQL |
-| **Scheduled** | Durable cron → fresh Automation sessions (separate from stock one-shot tasks) |
-| **Containers** | Docker list — filters, logs, ports, remotes; test-env create alongside |
 | **File sidebar** | Workspaces ↔ Files tree, search, drag paths into chat |
-| **Split view** | Side-by-side panes; Terminal gets its own PTY in the split surface |
 | **Lite mode** | Settings profiles that trim agent tool categories for small/local GPUs |
-| **SSH** | Saved hosts, keys, remote folder picker, `dssh://` workspaces, SFTP + SSH terminal |
 | **Agent review** | Cursor-style review of agent file edits — undo / keep / diff |
 | **Live write** | “Writing…” card while write/edit tool args stream |
 | **MCP** | Settings UI to add stdio / HTTP MCP servers |
