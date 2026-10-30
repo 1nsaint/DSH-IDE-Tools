@@ -138,9 +138,15 @@ export async function fetchOllamaModels(upstreamBase, signal) {
 					const id = String(m?.name || m?.model || "").trim();
 					if (!id) return null;
 					const ctx = Number(m?.details?.context_length ?? m?.context_length ?? 0);
+					const quant = typeof m?.details?.quantization_level === "string"
+						? m.details.quantization_level.trim()
+						: "";
+					const name = quant && !new RegExp(`\\b${escapeRegExp(quant)}\\b`, "i").test(id)
+						? `${id} · ${quant}`
+						: id;
 					return {
 						id,
-						name: id,
+						name,
 						input: ["text"],
 						contextWindow: Number.isFinite(ctx) && ctx > 0 ? Math.round(ctx) : 8192,
 						maxTokens: DEFAULT_MAX_TOKENS,
@@ -201,7 +207,12 @@ export function mapSwitcherModel(remote) {
 	}
 
 	const root = typeof remote.root === "string" ? remote.root : id;
-	const name = NAME_OVERRIDES[id] || friendlyName(root, id);
+	const pathHint = typeof meta.path === "string" ? meta.path : "";
+	const quant = extractQuant(root) || extractQuant(pathHint) || extractQuant(id);
+	let name = NAME_OVERRIDES[id] || friendlyName(root, id);
+	if (quant && !new RegExp(`\\b${escapeRegExp(quant)}\\b`, "i").test(name)) {
+		name = `${name} · ${quant}`;
+	}
 
 	return {
 		id,
@@ -214,14 +225,35 @@ export function mapSwitcherModel(remote) {
 }
 
 /**
+ * Pull GGUF-style quant from switcher root / filename (Q4_K_M, IQ4_XS, …).
+ * @param {string} text
+ * @returns {string | null}
+ */
+export function extractQuant(text) {
+	const s = String(text || "");
+	const m =
+		s.match(/\b(IQ\d+_[A-Z0-9]+)\b/i) ||
+		s.match(/\b(Q[2-8](?:_[A-Z0-9]+)+)\b/i) ||
+		s.match(/\b(F16|BF16|FP16|FP32)\b/i);
+	return m ? m[1].toUpperCase() : null;
+}
+
+/** @param {string} s */
+function escapeRegExp(s) {
+	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
  * @param {string} root
  * @param {string} id
  */
 function friendlyName(root, id) {
 	const cleaned = String(root)
 		.replace(/\.gguf$/i, "")
-		.replace(/-Q4_K_M$/i, "")
-		.replace(/_/g, " ")
+		// Keep quant for extractQuant; strip only for the base label when overridden fails
+		.replace(/\b(IQ\d+_[A-Z0-9]+|Q[2-8](?:_[A-Z0-9]+)+|F16|BF16|FP16|FP32)\b/gi, "")
+		.replace(/[_-]+/g, " ")
+		.replace(/\s+/g, " ")
 		.trim();
 	return cleaned || id;
 }

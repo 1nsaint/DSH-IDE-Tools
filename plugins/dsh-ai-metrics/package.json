@@ -1,6 +1,6 @@
 {
   "name": "dsh-ai-metrics",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Sidebar memory donut + metrics/Ollama proxies + auto-sync switcher/Ollama catalogs into Harness Models.",
   "type": "module",
   "main": "lib/index.js",
