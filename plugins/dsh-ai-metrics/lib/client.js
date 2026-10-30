@@ -95,6 +95,10 @@ window.__ModuleLoader__.load({
 .dam_form .dam_hint{font-size:12px;color:var(--dsw-alias-label-tertiary);line-height:1.45;margin:0}
 .dam_form .dam_btnSave{align-self:flex-start;height:32px;padding:0 12px;border-radius:8px;border:2px solid var(--dsw-alias-state-business-primary);cursor:pointer;background:transparent;color:var(--dsw-alias-state-business-primary);font:inherit;font-size:12px}
 .dam_form .dam_btnSave:hover:not(:disabled){background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent)}
+.dam_form .dam_btnRow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.dam_form .dam_btnSecondary{align-self:flex-start;height:32px;padding:0 12px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);cursor:pointer;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px}
+.dam_form .dam_btnSecondary:hover:not(:disabled){border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}
+.dam_form .dam_btnSecondary:disabled{opacity:.55;cursor:default}
 .dam_colors{display:flex;flex-direction:column;gap:8px;margin-top:4px;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l2)}
 .dam_colorsHead{font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary)}
 .dam_colorRow{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
@@ -977,6 +981,7 @@ window.__ModuleLoader__.load({
 		function MetricsSettings() {
 			const [cfg, setCfg] = React.useState(loadConfig);
 			const [msg, setMsg] = React.useState("");
+			const [syncing, setSyncing] = React.useState(false);
 
 			React.useEffect(() => { ensureStyles(); }, []);
 
@@ -986,6 +991,47 @@ window.__ModuleLoader__.load({
 					...c,
 					colors: { ...DEFAULT_COLORS, ...(c.colors || {}), [key]: value },
 				}));
+			};
+
+			const syncModelsNow = async () => {
+				if (syncing) return;
+				setSyncing(true);
+				setMsg("Syncing models…");
+				try {
+					// Persist upstreams first so the host uses the values on screen.
+					const colors = resolveColors(cfg);
+					const next = {
+						...cfg,
+						label: cfg.label.trim() || DEFAULTS.label,
+						colors,
+					};
+					saveConfig(next);
+					setCfg(next);
+					const res = await callRpc(activeConnection, "syncModelCatalog", { force: true });
+					if (!res) {
+						setMsg("Sync failed — no host connection");
+						return;
+					}
+					const sw = res.results?.switcher;
+					const ol = res.results?.ollama;
+					const bits = [];
+					if (sw) {
+						bits.push(sw.ok
+							? `switcher: ${sw.models?.length ?? 0} model(s)${sw.changed ? "" : " (unchanged)"}`
+							: `switcher: ${sw.error || "failed"}`);
+					}
+					if (ol) {
+						bits.push(ol.ok
+							? `ollama: ${ol.models?.length ?? 0} model(s)${ol.changed ? "" : " (unchanged)"}`
+							: `ollama: ${ol.error || "failed"}`);
+					}
+					if (!bits.length) bits.push(res.error || "no upstream configured");
+					setMsg(bits.join(" · "));
+				} catch (err) {
+					setMsg(err instanceof Error ? err.message : String(err));
+				} finally {
+					setSyncing(false);
+				}
 			};
 
 			return React.createElement("div", { className: "dam_form" },
@@ -1021,18 +1067,22 @@ window.__ModuleLoader__.load({
 					onChange: (e) => set({ metricsUpstream: e.target.value }),
 					placeholder: "http://HOST:8001",
 				}),
-				React.createElement("label", null, "Switcher upstream (clear-cache / model sync)"),
+				React.createElement("label", null, "Switcher upstream (OpenAI-compatible /v1 — model sync + clear-cache)"),
 				React.createElement("input", {
 					value: cfg.switcherUpstream || "",
 					onChange: (e) => set({ switcherUpstream: e.target.value }),
 					placeholder: "http://HOST:8100",
 				}),
-				React.createElement("label", null, "Ollama upstream"),
+				React.createElement("label", null, "Ollama upstream (model sync + /api/ps metrics)"),
 				React.createElement("input", {
 					value: cfg.ollamaUpstream || "",
 					onChange: (e) => set({ ollamaUpstream: e.target.value }),
 					placeholder: "http://HOST:11434  (or env OLLAMA_BASE_URL)",
 				}),
+				React.createElement("p", { className: "dam_hint" },
+					"Model sync pulls switcher ", React.createElement("code", null, "/v1/models"),
+					" and/or Ollama ", React.createElement("code", null, "/api/tags"),
+					" into Settings → Models providers whose base URL matches. Runs about once a minute; use Sync models now after add/delete."),
 				React.createElement("label", null, "Label"),
 				React.createElement("input", {
 					value: cfg.label,
@@ -1094,21 +1144,29 @@ window.__ModuleLoader__.load({
 						onClick: () => set({ colors: { ...DEFAULT_COLORS } }),
 					}, "Reset colors"),
 				),
-				React.createElement("button", {
-					type: "button",
-					className: "dam_btnSave",
-					onClick: () => {
-						const colors = resolveColors(cfg);
-						const next = {
-							...cfg,
-							label: cfg.label.trim() || DEFAULTS.label,
-							colors,
-						};
-						saveConfig(next);
-						setCfg(next);
-						setMsg("Saved");
-					},
-				}, "Save"),
+				React.createElement("div", { className: "dam_btnRow" },
+					React.createElement("button", {
+						type: "button",
+						className: "dam_btnSave",
+						onClick: () => {
+							const colors = resolveColors(cfg);
+							const next = {
+								...cfg,
+								label: cfg.label.trim() || DEFAULTS.label,
+								colors,
+							};
+							saveConfig(next);
+							setCfg(next);
+							setMsg("Saved");
+						},
+					}, "Save"),
+					React.createElement("button", {
+						type: "button",
+						className: "dam_btnSecondary",
+						disabled: syncing,
+						onClick: () => { void syncModelsNow(); },
+					}, syncing ? "Syncing…" : "Sync models now"),
+				),
 				msg && React.createElement("div", { className: "dam_hint" }, msg),
 			);
 		}

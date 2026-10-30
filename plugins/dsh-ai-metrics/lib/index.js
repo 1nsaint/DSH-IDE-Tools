@@ -3,7 +3,7 @@
  * - /jetson-metrics-api/* → metrics upstream (optional)
  * - /jetson-switcher-api/* → model switcher (clear-cache, health)
  * - /ollama-metrics-api/* → Ollama (browser cannot hit :11434 directly — CORS)
- * - auto-sync switcher /v1/models → llm-pi-ai jetson-llamacpp catalog
+ * - auto-sync switcher /v1/models + Ollama /api/tags → matching llm-pi-ai providers
  *
  * Upstream URLs: plugins-data → env → empty (never hardcode LAN IPs in code).
  */
@@ -11,7 +11,11 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { registerRpcChannel } from "dsh-ide-shared/register-rpc-channel.js";
-import { startJetsonModelSync, syncJetsonModels } from "./jetson-model-sync.js";
+import {
+	startJetsonModelSync,
+	syncJetsonModels,
+	requestModelCatalogSync,
+} from "./jetson-model-sync.js";
 
 const name = "dsh-ai-metrics";
 const inject = ["webServer", "connection", "settings"];
@@ -19,8 +23,8 @@ const PROXY_PREFIX = "/jetson-metrics-api";
 const SWITCHER_PROXY_PREFIX = "/jetson-switcher-api";
 const OLLAMA_PROXY_PREFIX = "/ollama-metrics-api";
 const RPC_CHANNEL = "/ai-metrics-config";
-/** Periodic catalog sync; set DSH_JETSON_MODEL_SYNC_MS=0 to disable. Default 5 min. */
-const DEFAULT_SYNC_MS = 300_000;
+/** Periodic catalog sync; set DSH_JETSON_MODEL_SYNC_MS=0 to disable. Default 60s. */
+const DEFAULT_SYNC_MS = 60_000;
 
 /** Live proxy targets — updated when config is saved / migrated. */
 const liveUpstreams = {
@@ -172,6 +176,14 @@ function registerRpc(ctx) {
 			}
 			if (endpoint === "saveConfig") {
 				const clean = await saveStore(payload?.config);
+				// Upstream URLs may have changed — refresh Harness model dropdowns.
+				void requestModelCatalogSync({
+					ctx,
+					switcherBase: liveUpstreams.switcher,
+					ollamaBase: liveUpstreams.ollama,
+					force: true,
+					log: (msg) => ctx.logger?.info?.(msg),
+				});
 				return ok({ config: clean });
 			}
 			if (endpoint === "syncConfig") {
@@ -185,21 +197,14 @@ function registerRpc(ctx) {
 				if (config) applyLiveUpstreams(config);
 				return ok({ config, migrated: false });
 			}
-			if (endpoint === "syncJetsonModels") {
-				const base = liveUpstreams.switcher;
-				if (!base) {
-					return ok({
-						ok: false,
-						changed: false,
-						models: [],
-						error: "switcher upstream not configured (Settings → AI Metrics)",
-					});
-				}
-				const result = await syncJetsonModels({
+			if (endpoint === "syncModelCatalog" || endpoint === "syncJetsonModels") {
+				const result = await requestModelCatalogSync({
 					ctx,
-					upstreamBase: base,
+					switcherBase: liveUpstreams.switcher,
+					ollamaBase: liveUpstreams.ollama,
+					// Legacy: syncJetsonModels with only switcher still works when ollama unset
+					force: Boolean(payload?.force ?? true),
 					log: (msg) => ctx.logger?.info?.(msg),
-					force: Boolean(payload?.force),
 				});
 				return ok(result);
 			}
@@ -329,12 +334,14 @@ function apply(ctx) {
 			() =>
 				startJetsonModelSync({
 					ctx: scope,
+					getSwitcherBase: () => liveUpstreams.switcher,
+					getOllamaBase: () => liveUpstreams.ollama,
 					getUpstreamBase: () => liveUpstreams.switcher,
 					upstreamBase: liveUpstreams.switcher,
 					intervalMs: syncIntervalMs(),
 					log: (msg) => scope.logger?.info?.(msg) ?? console.info(msg),
 				}),
-			`${name}: jetson model sync`,
+			`${name}: model catalog sync`,
 		);
 	});
 }
