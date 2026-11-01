@@ -1,6 +1,6 @@
 {
   "name": "dsh-ide-tools",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Alias of the repo-root suite \u2014 prefer https://github.com/1nsaint/DSH-IDE-Tools (no #path).",
   "license": "MIT",
   "type": "module",
@@ -15,6 +15,10 @@
     }
   },
   "dependencies": {
+    "ioredis": "^5.11.1",
+    "mysql2": "^3.24.3",
+    "pg": "^8.13.1",
+    "ssh2": "^1.16.0",
     "dsh-ai-metrics": "file:../../plugins/dsh-ai-metrics",
     "dsh-image-upload": "file:../../plugins/dsh-image-upload",
     "dsh-archive": "file:../../plugins/dsh-archive",

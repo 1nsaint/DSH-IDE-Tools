@@ -1,6 +1,7 @@
-lib/
+# lib/ is committed so github: suite installs work without running prepare/tsc.
 node_modules/
 *.tsbuildinfo
 *.tgz
 coverage/
 .pnpm-store/
+**/*.map

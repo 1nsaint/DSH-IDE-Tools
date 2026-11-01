@@ -1,0 +1,103 @@
+/**
+ * `/cron` RPC channel: browser task center create/list/update/remove/fire-now.
+ * @module dsh-cron/rpc
+ *
+ * On DSH 0.1.5+, `connection.rpc.handle()` never mounts routes (HTTP 405).
+ * Use shared `registerRpcChannel` with `webServer` inject — see `_shared/UPGRADE.md`.
+ */
+import { registerRpcChannel, ok, transportError } from 'dsh-ide-shared/register-rpc-channel.js';
+import { targetFromPayload } from "./target.js";
+export const CRON_RPC_CHANNEL = '/cron';
+function payloadId(payload) {
+    const id = payload?.id;
+    if (typeof id !== 'string' || id.trim().length === 0)
+        throw new Error('dsh-cron RPC: payload.id must be a non-blank string');
+    return id.trim();
+}
+function payloadText(payload, key) {
+    const value = payload?.[key];
+    if (value === undefined)
+        return undefined;
+    if (typeof value !== 'string')
+        throw new Error(`dsh-cron RPC: payload.${key} must be a string`);
+    return value;
+}
+function payloadOptionalId(payload, key) {
+    const value = payloadText(payload, key);
+    if (value === undefined)
+        return undefined;
+    if (value.trim().length === 0)
+        throw new Error(`dsh-cron RPC: payload.${key} must be a non-blank string`);
+    return value.trim();
+}
+/**
+ * Register the `/cron` channel handlers.
+ * @param ctx - context carrying `connection` + `webServer`.
+ * @param service - the scheduler's service view.
+ * @returns the channel disposer.
+ */
+export function registerCronRpc(ctx, service) {
+    return registerRpcChannel(ctx, CRON_RPC_CHANNEL, async (endpoint, payload, _signal) => {
+        try {
+            switch (endpoint) {
+                case 'list': return ok({
+                    jobs: service.list(),
+                    generatedAt: Date.now(),
+                    standingInstructions: service.standingInstructions(),
+                });
+                case 'setStanding': {
+                    const text = payloadText(payload, 'standingInstructions');
+                    if (text === undefined)
+                        throw new Error('dsh-cron RPC: payload.standingInstructions must be a string');
+                    return ok({ standingInstructions: service.setStandingInstructions(text) });
+                }
+                case 'add': {
+                    const cron = payloadText(payload, 'cron');
+                    const timeZone = payloadText(payload, 'timeZone');
+                    const at = payloadText(payload, 'at');
+                    const createdBy = payloadOptionalId(payload, 'createdBy');
+                    const target = targetFromPayload(payload);
+                    return ok(service.add({
+                        prompt: payloadText(payload, 'prompt') ?? '',
+                        ...(cron === undefined ? {} : { cron }),
+                        ...(timeZone === undefined ? {} : { timeZone }),
+                        ...(at === undefined ? {} : { at }),
+                        ...(createdBy === undefined ? {} : { createdBy }),
+                        ...(target === undefined ? {} : { target }),
+                    }));
+                }
+                case 'edit': {
+                    const id = payloadId(payload);
+                    const cron = payloadText(payload, 'cron');
+                    const timeZone = payloadText(payload, 'timeZone');
+                    const at = payloadText(payload, 'at');
+                    const target = targetFromPayload(payload);
+                    return ok(service.edit(id, {
+                        prompt: payloadText(payload, 'prompt') ?? '',
+                        ...(cron === undefined ? {} : { cron }),
+                        ...(timeZone === undefined ? {} : { timeZone }),
+                        ...(at === undefined ? {} : { at }),
+                        ...(target === undefined ? {} : { target }),
+                    }));
+                }
+                case 'remove': return ok({ id: payloadId(payload), removed: service.remove(payloadId(payload)) });
+                case 'update': {
+                    const paused = payload?.paused;
+                    if (typeof paused !== 'boolean')
+                        throw new Error('dsh-cron RPC: payload.paused must be a boolean');
+                    const id = payloadId(payload);
+                    return ok({ id, paused, updated: service.setPaused(id, paused) });
+                }
+                case 'fire': {
+                    const id = payloadId(payload);
+                    return ok({ id, result: await service.fireNow(id) });
+                }
+                default: return transportError(new Error(`dsh-cron RPC unknown endpoint: ${endpoint}`));
+            }
+        }
+        catch (error) {
+            return transportError(error);
+        }
+    });
+}
+//# sourceMappingURL=rpc.js.map
