@@ -1,6 +1,6 @@
 {
   "name": "dsh-ide-tools",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Alias of the repo-root suite \u2014 prefer https://github.com/1nsaint/DSH-IDE-Tools (no #path).",
   "license": "MIT",
   "type": "module",

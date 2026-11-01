@@ -280,7 +280,9 @@ function apply(ctx) {
 		}
 	}, `${name}.dispose-all`);
 
-	registerRpcChannel(ctx, RPC_CHANNEL, async (endpoint, payload) => {
+	// Must dispose the webServer prefix on unload/HMR — otherwise re-enable throws
+	// `duplicate prefix route "/mcp-manager"`.
+	ctx.effect(() => registerRpcChannel(ctx, RPC_CHANNEL, async (endpoint, payload) => {
 		try {
 			await ready;
 			if (endpoint === "list") {
@@ -341,7 +343,7 @@ function apply(ctx) {
 		} catch (error) {
 			return transportError(error);
 		}
-	});
+	}), `${name}.rpc`);
 }
 
 const PRESETS = [

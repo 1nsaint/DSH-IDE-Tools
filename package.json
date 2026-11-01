@@ -1,6 +1,6 @@
 {
   "name": "dsh-ide-tools",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Full DeepSeek Harness IDE Tools suite \u2014 paste this repo into Plugins \u2192 Add plugin.",
   "license": "MIT",
   "type": "module",

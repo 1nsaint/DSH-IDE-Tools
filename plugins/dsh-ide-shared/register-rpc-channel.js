@@ -18,7 +18,7 @@ export function registerRpcChannel(ctx, channel, handler) {
 		throw new Error(`registerRpcChannel: invalid channel ${JSON.stringify(channel)}`);
 	}
 
-	return ctx.webServer.register({
+	const route = {
 		kind: "prefix",
 		path: channel,
 		handler: async (req, res) => {
@@ -120,7 +120,20 @@ export function registerRpcChannel(ctx, channel, handler) {
 				res.end(`handler failure: ${String(error)}`);
 			}
 		},
-	});
+	};
+
+	try {
+		return ctx.webServer.register(route);
+	} catch (error) {
+		const msg = error instanceof Error ? error.message : String(error);
+		// Stale prefix after a plugin reload that forgot to dispose — drop and replace.
+		if (!msg.includes(`duplicate prefix route "${channel}"`)) throw error;
+		const table = ctx.webServer?.prefixes;
+		if (!table || typeof table.delete !== "function") throw error;
+		ctx.logger?.warn?.(`[registerRpcChannel] replacing stale prefix ${channel}`);
+		table.delete(channel);
+		return ctx.webServer.register(route);
+	}
 }
 
 function endpointFromPath(channel, pathname) {
